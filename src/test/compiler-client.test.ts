@@ -1,0 +1,161 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const settingsState = {
+  systemFontsEnabled: true,
+  googleFontsEnabled: true,
+}
+const wrapMock = vi.fn()
+
+vi.mock('comlink', () => ({
+  wrap: wrapMock,
+}))
+
+vi.mock('@/lib/compiler-backend', () => ({
+  initCompilerBackend: vi.fn(async () => {}),
+  compileTypstBackend: vi.fn(async () => ({
+    svg: '<svg/>',
+    vectorData: new Uint8Array([1]),
+    pageDimensions: [],
+    diagnostics: [],
+    success: true,
+  })),
+  compileToPdfBackend: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  configureCompilerBackend: vi.fn(),
+  ensurePackagesForCompileBackend: vi.fn(async () => {}),
+  isCompilerReadyBackend: vi.fn(() => false),
+  resolveSourceLocBackend: vi.fn(async () => undefined),
+  resolveSourceLocBatchBackend: vi.fn(async () => []),
+}))
+
+vi.mock('@/stores/settings-store', () => ({
+  useSettingsStore: {
+    getState: () => settingsState,
+  },
+}))
+
+function installWindow(overrides?: Partial<Window>): void {
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: vi.fn(() => null),
+      },
+      queryLocalFonts: undefined,
+      ...overrides,
+    },
+  })
+}
+
+describe('compiler-client', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    settingsState.systemFontsEnabled = true
+    settingsState.googleFontsEnabled = true
+    installWindow()
+    globalThis.fetch = vi.fn(async () => new Response('')) as typeof fetch
+
+    ;(globalThis as unknown as { Worker: unknown }).Worker = class {
+      constructor() {
+        throw new Error('worker unavailable')
+      }
+    }
+  })
+
+  it('falls back to backend when worker startup fails', async () => {
+    const backend = await import('@/lib/compiler-backend')
+    const {
+      initCompilerClient,
+      compileTypstClient,
+      compileToPdfClient,
+      isCompilerReadyClient,
+    } = await import('@/lib/compiler-client')
+
+    await initCompilerClient()
+    const compileResult = await compileTypstClient('= Test')
+    const pdf = await compileToPdfClient('= Test')
+
+    expect(backend.initCompilerBackend).toHaveBeenCalled()
+    expect(backend.compileTypstBackend).toHaveBeenCalled()
+    expect(backend.compileToPdfBackend).toHaveBeenCalled()
+    expect(compileResult.success).toBe(true)
+    expect(pdf).toEqual(new Uint8Array([1, 2, 3]))
+    expect(typeof isCompilerReadyClient()).toBe('boolean')
+  })
+
+  it('loads device and Google fonts for declared families', async () => {
+    installWindow({
+      queryLocalFonts: vi.fn().mockResolvedValue([
+        {
+          family: 'SF Pro Text',
+          blob: vi.fn().mockResolvedValue({
+            arrayBuffer: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer),
+          }),
+        },
+      ]),
+    } as Partial<Window>)
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.startsWith('https://fonts.googleapis.com/css?family=Inter')) {
+        return new Response('@font-face { src: url(https://fonts.gstatic.com/s/inter/test.woff2); }')
+      }
+      if (url === 'https://fonts.gstatic.com/s/inter/test.woff2') {
+        return new Response(new Uint8Array([4, 5, 6]))
+      }
+      throw new Error(`Unexpected fetch: ${url}`)
+    }) as typeof fetch
+
+    const backend = await import('@/lib/compiler-backend')
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+    await compileTypstClient('#set text(font: "SF Pro Text")\n#set text(font: "Inter")\nHello')
+
+    expect(backend.configureCompilerBackend).toHaveBeenCalledWith({
+      fontData: [new Uint8Array([1, 2, 3]), new Uint8Array([4, 5, 6])],
+    })
+    expect(backend.compileTypstBackend).toHaveBeenCalled()
+  })
+
+  it('passes cached font data into worker init without clearing it', async () => {
+    installWindow({
+      queryLocalFonts: vi.fn().mockResolvedValue([
+        {
+          family: 'SF Pro Text',
+          blob: vi.fn().mockResolvedValue({
+            arrayBuffer: vi.fn().mockResolvedValue(new Uint8Array([9, 8, 7]).buffer),
+          }),
+        },
+      ]),
+    } as Partial<Window>)
+
+    const workerApi = {
+      initCompiler: vi.fn().mockResolvedValue(undefined),
+      compileTypst: vi.fn().mockResolvedValue({
+        svg: '<svg>worker</svg>',
+        vectorData: new Uint8Array([3]),
+        pageDimensions: [],
+        diagnostics: [],
+        success: true,
+      }),
+      compileToPdf: vi.fn().mockResolvedValue(new Uint8Array([5])),
+      ensurePackagesForCompile: vi.fn().mockResolvedValue(undefined),
+      isCompilerReady: vi.fn().mockReturnValue(true),
+      resolveSourceLoc: vi.fn().mockResolvedValue(undefined),
+      resolveSourceLocBatch: vi.fn().mockResolvedValue([]),
+    }
+
+    Object.defineProperty(globalThis, 'Worker', {
+      configurable: true,
+      value: class MockWorker {},
+    })
+    wrapMock.mockReturnValue(workerApi)
+
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+    await compileTypstClient('#set text(font: "SF Pro Text")\nHello')
+
+    expect(workerApi.initCompiler).toHaveBeenCalledWith({
+      fontData: [new Uint8Array([9, 8, 7])],
+    })
+  })
+})

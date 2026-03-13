@@ -1,0 +1,318 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("@fontsource/geist-mono/files/geist-mono-latin-400-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("@fontsource/geist-mono/files/geist-mono-latin-500-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("@fontsource/geist-mono/files/geist-mono-latin-700-normal.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+}
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --color-accent-50: #FFF3ED;
+  --color-accent-100: #FFE3D1;
+  --color-accent-200: #FFC3A2;
+  --color-accent-300: #FF9B68;
+  --color-accent-400: #FF6D2D;
+  --color-accent-500: #FF4D00;
+  --color-accent-600: #E04300;
+  --color-accent-700: #B83400;
+  --color-accent-800: #932B00;
+  --color-accent-900: #792500;
+
+  --color-neutral-0: #FFFFFF;
+  --color-neutral-25: #FCFCFC;
+  --color-neutral-50: #FAFAFA;
+  --color-neutral-100: #F5F5F5;
+  --color-neutral-150: #EBEBEB;
+  --color-neutral-200: #E0E0E0;
+  --color-neutral-300: #D4D4D4;
+  --color-neutral-400: #A3A3A3;
+  --color-neutral-500: #737373;
+  --color-neutral-600: #525252;
+  --color-neutral-700: #404040;
+  --color-neutral-800: #262626;
+  --color-neutral-850: #1E1E1E;
+  --color-neutral-900: #171717;
+  --color-neutral-925: #141414;
+  --color-neutral-950: #0A0A0A;
+
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* ── Light theme ── */
+:root {
+  --bg-app: var(--color-neutral-100);
+  --bg-surface: var(--color-neutral-0);
+  --bg-elevated: var(--color-neutral-0);
+  --bg-hover: var(--color-neutral-150);
+  --bg-active: var(--color-neutral-200);
+  --bg-inset: var(--color-neutral-100);
+
+  --border-default: rgba(0, 0, 0, 0.15);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.25);
+
+  --text-primary: var(--color-neutral-950);
+  --text-secondary: var(--color-neutral-600);
+  --text-tertiary: var(--color-neutral-400);
+  --text-disabled: var(--color-neutral-300);
+
+  --accent: var(--color-accent-500);
+  --accent-hover: var(--color-accent-600);
+  --accent-muted: rgba(255, 77, 0, 0.10);
+  --accent-text: var(--color-neutral-0);
+
+  --indent-guide: rgba(0, 0, 0, 0.08);
+
+  --status-error: #dc2626;
+  --status-warning: #d97706;
+  --status-success: #16a34a;
+
+  color-scheme: light;
+}
+
+/* ── Dark theme ── */
+.dark {
+  --bg-app: var(--color-neutral-950);
+  --bg-surface: var(--color-neutral-925);
+  --bg-elevated: var(--color-neutral-850);
+  --bg-hover: var(--color-neutral-800);
+  --bg-active: var(--color-neutral-800);
+  --bg-inset: var(--color-neutral-950);
+
+  --border-default: rgba(255, 255, 255, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.25);
+
+  --text-primary: var(--color-neutral-50);
+  --text-secondary: var(--color-neutral-400);
+  --text-tertiary: var(--color-neutral-500);
+  --text-disabled: var(--color-neutral-700);
+
+  --accent: var(--color-accent-500);
+  --accent-hover: var(--color-accent-400);
+  --accent-muted: rgba(255, 77, 0, 0.14);
+  --accent-text: var(--color-neutral-0);
+
+  --indent-guide: rgba(255, 255, 255, 0.07);
+
+  --status-error: #f87171;
+  --status-warning: #fbbf24;
+  --status-success: #4ade80;
+
+  color-scheme: dark;
+}
+
+/* ── Reset ── */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── CodeMirror ── */
+.cm-editor {
+  height: 100% !important;
+  font-family: var(--font-mono) !important;
+  font-size: 15px !important;
+  line-height: 1.6 !important;
+  font-variant-ligatures: contextual;
+}
+
+.cm-editor .cm-scroller {
+  font-family: var(--font-mono) !important;
+  padding-top: 4px;
+}
+
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+
+.cm-editor .cm-gutters {
+  font-size: 12px;
+  padding: 0 6px 0 4px;
+  min-width: 48px;
+  background: var(--bg-surface) !important;
+  border: none !important;
+}
+
+.cm-editor .cm-content {
+  padding-left: 4px;
+}
+
+/* ── Resizable panel separator (react-resizable-panels v4) ── */
+[data-separator] {
+  width: 1px !important;
+  min-width: 1px !important;
+  max-width: 1px !important;
+  background: var(--border-default);
+  transition: background 150ms ease, width 150ms ease;
+  flex-shrink: 0;
+  cursor: col-resize;
+  position: relative;
+}
+
+/* Wider invisible hit target for easier grabbing */
+[data-separator]::after {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+  z-index: 1;
+}
+
+[data-separator]:hover,
+[data-separator]:active {
+  background: var(--accent);
+  width: 2px !important;
+  min-width: 2px !important;
+  max-width: 2px !important;
+}
+
+/* ── Toolbar buttons ── */
+.toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+}
+
+.toolbar-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.toolbar-button:active:not(:disabled) {
+  background: var(--bg-active);
+  border-color: var(--border-strong);
+}
+
+.toolbar-button:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.toolbar-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* ── Rail buttons ── */
+.rail-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 100ms ease, color 100ms ease, border-color 100ms ease;
+  font-family: var(--font-mono);
+}
+
+.rail-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+
+.rail-button:active:not(:disabled) {
+  background: var(--bg-active);
+  border-color: var(--border-strong);
+}
+
+.rail-button:disabled {
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+/* Active state for rail buttons */
+.rail-button[data-active="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ── Preview page SVG ── */
+.preview-page svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* ── macOS-style scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
