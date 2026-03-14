@@ -611,7 +611,7 @@ function FileItem({
 
   const handleDuplicate = async () => {
     const file = currentProject?.files.find((entry) => entry.path === path)
-    if (!file) return
+    if (!file || !currentProject) return
 
     const duplicatePath = buildDuplicatePath(
       currentProject.files.map((entry) => entry.path),

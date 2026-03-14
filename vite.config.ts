@@ -63,6 +63,7 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    dedupe: ['@codemirror/state', '@codemirror/view', '@codemirror/language', '@lezer/common'],
   },
   worker: {
     format: 'es',
@@ -86,9 +87,12 @@ export default defineConfig({
           if (!id.includes('node_modules')) return undefined
           if (id.includes('unified-latex') || id.includes('pegjs')) return 'latex-converter'
           if (id.includes('@replit/codemirror-vim')) return 'editor-vim'
-          if (id.includes('codemirror-lang-typst')) return 'editor-typst'
-          if (id.includes('@codemirror/lang-') || id.includes('@lezer')) return 'editor-language'
-          if (id.includes('@codemirror') || id.includes('/codemirror/')) return 'editor-core'
+          // Keep all CodeMirror + Lezer packages in one chunk to avoid
+          // circular-dependency TDZ errors across chunk boundaries.
+          if (
+            id.includes('@codemirror') || id.includes('/codemirror/')
+            || id.includes('@lezer') || id.includes('codemirror-lang-typst')
+          ) return 'editor-core'
           if (id.includes('react') || id.includes('scheduler')) return 'react-core'
           return 'vendor'
         },

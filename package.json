@@ -51,6 +51,10 @@
     "vite-plugin-wasm": "^3.5.0",
     "zustand": "^5.0.11"
   },
+  "overrides": {
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.40.0"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@testing-library/jest-dom": "^6.9.1",
