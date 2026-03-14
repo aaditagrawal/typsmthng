@@ -13,6 +13,7 @@ export interface Diagnostic {
 
 interface CompileState {
   status: CompileStatus
+  compilerReady: boolean
   diagnostics: Diagnostic[]
   svg: string | null
   vectorData: Uint8Array | null
@@ -23,6 +24,7 @@ interface CompileState {
   compileTime: number
   autoCompile: boolean
   setStatus: (status: CompileStatus) => void
+  setCompilerReady: (ready: boolean) => void
   setDiagnostics: (diagnostics: Diagnostic[]) => void
   setSvgResult: (svg: string, vectorData: Uint8Array, pageDimensions: PageDimension[]) => void
   setCompileTime: (ms: number) => void
@@ -31,6 +33,7 @@ interface CompileState {
 
 export const useCompileStore = create<CompileState>((set) => ({
   status: 'idle',
+  compilerReady: false,
   diagnostics: [],
   svg: null,
   vectorData: null,
@@ -41,6 +44,7 @@ export const useCompileStore = create<CompileState>((set) => ({
   compileTime: 0,
   autoCompile: true,
   setStatus: (status) => set({ status }),
+  setCompilerReady: (compilerReady) => set({ compilerReady }),
   setDiagnostics: (diagnostics) => set({
     diagnostics,
     errorCount: diagnostics.reduce((count, diag) => count + (diag.severity === 'error' ? 1 : 0), 0),

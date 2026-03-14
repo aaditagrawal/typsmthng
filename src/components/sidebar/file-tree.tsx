@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Trash2,
   Pencil,
+  Copy,
   Plus,
   Search,
   Folder,
@@ -22,6 +23,7 @@ import {
   FolderUp,
   Check,
 } from 'lucide-react'
+import { useEditorStore } from '@/stores/editor-store'
 
 // ── Indent guides ──
 
@@ -541,6 +543,28 @@ function FolderItem({
 
 const isImageFile = (name: string) => /\.(png|jpe?g|jfif|gif|svg|webp|avif|heif|heic|bmp|tiff?|ico)$/i.test(name)
 
+function buildDuplicatePath(existingPaths: Iterable<string>, path: string): string {
+  const taken = new Set(existingPaths)
+  const slashIndex = path.lastIndexOf('/')
+  const directory = slashIndex >= 0 ? path.slice(0, slashIndex) : ''
+  const fileName = slashIndex >= 0 ? path.slice(slashIndex + 1) : path
+  const dotIndex = fileName.lastIndexOf('.')
+  const hasExtension = dotIndex > 0
+  const baseName = hasExtension ? fileName.slice(0, dotIndex) : fileName
+  const extension = hasExtension ? fileName.slice(dotIndex) : ''
+
+  let attempt = 0
+  while (true) {
+    const suffix = attempt === 0 ? ' copy' : ` copy ${attempt + 1}`
+    const candidateName = `${baseName}${suffix}${extension}`
+    const candidatePath = directory ? `${directory}/${candidateName}` : `/${candidateName}`
+    if (!taken.has(candidatePath)) {
+      return candidatePath
+    }
+    attempt += 1
+  }
+}
+
 // ── File item ──
 
 function FileItem({
@@ -554,8 +578,17 @@ function FileItem({
   isActive: boolean
   depth: number
 }) {
-  const { selectFile, deleteFile, renameFile } = useProjectStore(
-    useShallow((s) => ({ selectFile: s.selectFile, deleteFile: s.deleteFile, renameFile: s.renameFile }))
+  const editorSource = useEditorStore((s) => s.source)
+  const { selectFile, createFile, addBinaryFile, deleteFile, renameFile, currentProject, currentFilePath } = useProjectStore(
+    useShallow((s) => ({
+      selectFile: s.selectFile,
+      createFile: s.createFile,
+      addBinaryFile: s.addBinaryFile,
+      deleteFile: s.deleteFile,
+      renameFile: s.renameFile,
+      currentProject: s.getCurrentProject(),
+      currentFilePath: s.currentFilePath,
+    }))
   )
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   const [renaming, setRenaming] = useState(false)
@@ -576,6 +609,28 @@ function FileItem({
     setRenaming(false)
   }
 
+  const handleDuplicate = async () => {
+    const file = currentProject?.files.find((entry) => entry.path === path)
+    if (!file) return
+
+    const duplicatePath = buildDuplicatePath(
+      currentProject.files.map((entry) => entry.path),
+      path,
+    )
+
+    if (file.isBinary) {
+      if (!file.binaryData) {
+        window.alert('This file is not available to duplicate right now.')
+        return
+      }
+      await addBinaryFile(duplicatePath, new Uint8Array(file.binaryData))
+      return
+    }
+
+    const content = currentFilePath === path ? editorSource : file.content
+    await createFile(duplicatePath, content)
+  }
+
   if (renaming) {
     return (
       <InlineNameInput
@@ -589,6 +644,13 @@ function FileItem({
   }
 
   const contextActions: ContextMenuAction[] = [
+    {
+      label: 'DUPLICATE',
+      icon: <Copy size={12} />,
+      onClick: () => {
+        void handleDuplicate()
+      },
+    },
     {
       label: 'RENAME',
       icon: <Pencil size={12} />,

@@ -151,14 +151,22 @@ function effectiveCompileDelay(baseDelay: number): number {
 }
 
 export async function ensureCompilerReady(): Promise<void> {
-  if (isCompilerReady()) return
+  const store = useCompileStore.getState()
+  if (isCompilerReady()) {
+    store.setCompilerReady(true)
+    return
+  }
   if (initPromise) return initPromise
 
+  store.setCompilerReady(false)
   initPromise = initCompiler().catch((err) => {
+    store.setCompilerReady(false)
     initPromise = null
     throw err
   })
-  return initPromise
+  return initPromise.then(() => {
+    useCompileStore.getState().setCompilerReady(true)
+  })
 }
 
 function scheduleDeferredCompile(request: CompileRequest): void {

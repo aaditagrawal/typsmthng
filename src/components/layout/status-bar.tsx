@@ -13,11 +13,14 @@ const separatorStyle = {
 export function StatusBar() {
   const cursorLine = useUIStore((s) => s.cursorLine)
   const cursorCol = useUIStore((s) => s.cursorCol)
+  const compileStatus = useCompileStore((s) => s.status)
+  const compilerReady = useCompileStore((s) => s.compilerReady)
   const compileTime = useCompileStore((s) => s.compileTime)
   const errors = useCompileStore((s) => s.errorCount)
   const warnings = useCompileStore((s) => s.warningCount)
   const saveStatus = useEditorStore((s) => s.saveStatus)
   const vimMode = useSettingsStore((s) => s.vimMode)
+  const compilerLabel = compileStatus === 'compiling' || !compilerReady ? 'Compiling' : 'Compiler Ready'
 
   return (
     <footer
@@ -36,17 +39,7 @@ export function StatusBar() {
       }}
     >
       <div className="flex items-center gap-3">
-        <span className="flex items-center gap-1.5">
-          <svg width="8" height="8" viewBox="0 0 8 8">
-            <circle
-              cx="4"
-              cy="4"
-              r="4"
-              fill="var(--status-success)"
-            />
-          </svg>
-          Connected
-        </span>
+        <span>{compilerLabel}</span>
         {saveStatus === 'unsaved' && (
           <span style={{ color: 'var(--accent)', fontWeight: 700 }}>Unsaved</span>
         )}
