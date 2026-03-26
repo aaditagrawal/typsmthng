@@ -1,5 +1,5 @@
 import { Fragment, useState } from 'react'
-import { ChevronLeft, Copy, Check } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Copy, Check } from 'lucide-react'
 
 type Platform = 'mac' | 'win' | 'linux'
 type ProjectStart = 'blank' | 'template' | 'latex'
@@ -162,6 +162,285 @@ function ChoiceRow<T extends string>({
   )
 }
 
+/* ── Hierarchy diagram data ────────────────────────────────────────── */
+
+type HierarchyLevel = 'file' | 'project' | 'workspace'
+
+const hierarchyData: Record<HierarchyLevel, { label: string; description: string; detail: string }> = {
+  file: {
+    label: 'FILE',
+    description: 'A single document, image, or asset stored in the browser.',
+    detail: 'Files live inside IndexedDB in your browser. Supported types include .typ sources, images (.png, .jpg, .svg), bibliography files (.bib), and any other asset Typst can reference. You can upload files by clicking the upload button in the sidebar or by dragging them directly onto the file tree.',
+  },
+  project: {
+    label: 'PROJECT',
+    description: 'A collection of files that make up one document.',
+    detail: 'A project groups all the files for a single Typst document. When you create a new project, it starts with a main.typ file. You can add more files — additional .typ sources, images, bibliographies — and they all live together. Each project is independent and self-contained within your browser\'s storage.',
+  },
+  workspace: {
+    label: 'WORKSPACE',
+    description: 'An optional tag for grouping projects on the home screen.',
+    detail: 'Workspaces let you organize projects into groups on the home screen (e.g. "Thesis", "Course Notes", "Papers"). They are purely organizational — a project can belong to one workspace or none. Workspaces do not affect how files are stored.',
+  },
+}
+
+function HierarchyDiagram() {
+  const [active, setActive] = useState<HierarchyLevel | null>(null)
+
+  return (
+    <div>
+      {/* Interactive nested boxes */}
+      <div
+        style={{
+          border: `1px solid ${active === 'workspace' ? 'var(--accent)' : 'var(--border-default)'}`,
+          borderRadius: '2px',
+          padding: '10px',
+          cursor: 'pointer',
+          transition: 'border-color 150ms ease',
+          background: active === 'workspace' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
+        }}
+        onClick={(e) => { e.stopPropagation(); setActive(active === 'workspace' ? null : 'workspace') }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+          <ChevronRight size={10} style={{ color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'workspace' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
+          <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)' }}>WORKSPACE</span>
+          <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>optional grouping</span>
+        </div>
+
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {/* Project 1 */}
+          <div
+            style={{
+              flex: 1,
+              border: `1px solid ${active === 'project' ? 'var(--accent)' : 'var(--border-default)'}`,
+              borderRadius: '2px',
+              padding: '10px',
+              cursor: 'pointer',
+              transition: 'border-color 150ms ease',
+              background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
+            }}
+            onClick={(e) => { e.stopPropagation(); setActive(active === 'project' ? null : 'project') }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+              <ChevronRight size={10} style={{ color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'project' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
+              <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
+              <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>My Thesis</span>
+            </div>
+
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {['main.typ', 'chapter1.typ', 'refs.bib'].map((name) => (
+                <div
+                  key={name}
+                  style={{
+                    padding: '4px 8px',
+                    border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    borderRadius: '2px',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono)',
+                    color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'border-color 150ms ease, color 150ms ease',
+                    background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
+                  }}
+                  onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+                >
+                  {name}
+                </div>
+              ))}
+              <div
+                style={{
+                  padding: '4px 8px',
+                  border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                  borderRadius: '2px',
+                  fontSize: '11px',
+                  fontFamily: 'var(--font-mono)',
+                  color: active === 'file' ? 'var(--accent)' : 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  transition: 'border-color 150ms ease, color 150ms ease',
+                  background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
+                }}
+                onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+              >
+                images/fig.png
+              </div>
+            </div>
+          </div>
+
+          {/* Project 2 (smaller) */}
+          <div
+            style={{
+              flex: 0,
+              minWidth: '120px',
+              border: `1px solid ${active === 'project' ? 'var(--accent)' : 'var(--border-default)'}`,
+              borderRadius: '2px',
+              padding: '10px',
+              cursor: 'pointer',
+              transition: 'border-color 150ms ease',
+              background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
+            }}
+            onClick={(e) => { e.stopPropagation(); setActive(active === 'project' ? null : 'project') }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+              <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
+            </div>
+            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+              {['main.typ', 'cover.png'].map((name) => (
+                <div
+                  key={name}
+                  style={{
+                    padding: '4px 8px',
+                    border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
+                    borderRadius: '2px',
+                    fontSize: '11px',
+                    fontFamily: 'var(--font-mono)',
+                    color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    transition: 'border-color 150ms ease, color 150ms ease',
+                    background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
+                  }}
+                  onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+                >
+                  {name}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Instruction hint */}
+      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: '8px', textAlign: 'center' }}>
+        Click any level to learn more
+      </div>
+
+      {/* Detail panel */}
+      {active && (
+        <div
+          style={{
+            marginTop: '12px',
+            padding: '14px 16px',
+            background: 'var(--bg-inset)',
+            border: '1px solid var(--accent)',
+            borderLeft: '3px solid var(--accent)',
+            borderRadius: '2px',
+          }}
+        >
+          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>
+            {hierarchyData[active].label}
+          </div>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+            {hierarchyData[active].description}
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            {hierarchyData[active].detail}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Workflow diagram ──────────────────────────────────────────────── */
+
+type WorkflowStep = 'home' | 'open' | 'edit' | 'preview' | 'export'
+
+const workflowSteps: { id: WorkflowStep; label: string; description: string }[] = [
+  {
+    id: 'home',
+    label: 'HOME',
+    description: 'The home screen lists all your projects stored in the browser. Create a new project, import from a template, or convert a LaTeX document. Projects can be organized into workspaces for easier navigation.',
+  },
+  {
+    id: 'open',
+    label: 'OPEN',
+    description: 'Opening a project loads its files from IndexedDB. The sidebar populates with the project\'s file tree and the main file opens in the editor automatically.',
+  },
+  {
+    id: 'edit',
+    label: 'EDIT',
+    description: 'The editor is a full CodeMirror instance with Typst syntax highlighting. Edits are saved to IndexedDB automatically after a short pause, or immediately with Cmd/Ctrl+S. Multiple files can be open; click the sidebar to switch between them.',
+  },
+  {
+    id: 'preview',
+    label: 'PREVIEW',
+    description: 'The right panel shows a live-compiled preview of your document. The Typst compiler runs in a web worker and recompiles after each edit. Errors appear in the status bar with line numbers. The preview and editor panels are resizable via a drag handle.',
+  },
+  {
+    id: 'export',
+    label: 'EXPORT',
+    description: 'Download a compiled PDF via the download icon in the toolbar, or export all project files as a .zip via the folder-out icon. The zip can be re-imported later or shared with collaborators.',
+  },
+]
+
+function WorkflowDiagram() {
+  const [active, setActive] = useState<WorkflowStep | null>(null)
+
+  return (
+    <div>
+      {/* Horizontal flow */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0', justifyContent: 'center', flexWrap: 'wrap' }}>
+        {workflowSteps.map((step, i) => (
+          <Fragment key={step.id}>
+            <button
+              onClick={() => setActive(active === step.id ? null : step.id)}
+              style={{
+                padding: '8px 16px',
+                border: `1px solid ${active === step.id ? 'var(--accent)' : 'var(--border-default)'}`,
+                borderRadius: '2px',
+                background: active === step.id ? 'var(--accent-muted)' : 'var(--bg-surface)',
+                color: active === step.id ? 'var(--accent)' : 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px',
+                fontWeight: active === step.id ? 700 : 400,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {step.label}
+            </button>
+            {i < workflowSteps.length - 1 && (
+              <div style={{ padding: '0 4px', color: 'var(--text-tertiary)', fontSize: '12px', flexShrink: 0 }}>
+                <ChevronRight size={14} />
+              </div>
+            )}
+          </Fragment>
+        ))}
+      </div>
+
+      {/* Hint */}
+      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: '8px', textAlign: 'center' }}>
+        Click a step to see details
+      </div>
+
+      {/* Detail panel */}
+      {active && (
+        <div
+          style={{
+            marginTop: '12px',
+            padding: '14px 16px',
+            background: 'var(--bg-inset)',
+            border: '1px solid var(--accent)',
+            borderLeft: '3px solid var(--accent)',
+            borderRadius: '2px',
+          }}
+        >
+          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '8px' }}>
+            {workflowSteps.find((s) => s.id === active)!.label}
+          </div>
+          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+            {workflowSteps.find((s) => s.id === active)!.description}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ── Main guide page ───────────────────────────────────────────────── */
+
 export function GuidePage({ onBack }: { onBack: () => void }) {
   const [platform, setPlatform] = useState<Platform>(detectPlatform)
   const [projectStart, setProjectStart] = useState<ProjectStart>('blank')
@@ -264,6 +543,24 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
             )
           })}
         </div>
+
+        <div style={divider} />
+
+        {/* ── HOW IT ALL FITS TOGETHER ── */}
+        <div style={sectionLabel}>HOW IT ALL FITS TOGETHER</div>
+        <p style={{ ...paragraph, marginBottom: '16px' }}>
+          typsmthng organizes your work into three levels. Click each layer in the diagram to learn what it is and how it works.
+        </p>
+        <HierarchyDiagram />
+
+        <div style={divider} />
+
+        {/* ── YOUR WORKFLOW ── */}
+        <div style={sectionLabel}>YOUR WORKFLOW</div>
+        <p style={{ ...paragraph, marginBottom: '16px' }}>
+          The typical editing flow from start to finish. Click any step to see what happens.
+        </p>
+        <WorkflowDiagram />
 
         <div style={divider} />
 

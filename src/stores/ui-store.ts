@@ -55,8 +55,9 @@ export const useUIStore = create<UIState>((set) => {
     cursorCol: 1,
     commandSearchOpen: false,
     imagePreviewPath: null,
-    setTheme: (theme) => set(() => {
+    setTheme: (theme) => set((state) => {
       const resolved = resolveTheme(theme)
+      if (state.theme === theme && state.resolvedTheme === resolved) return state
       applyTheme(resolved)
       return { theme, resolvedTheme: resolved }
     }),

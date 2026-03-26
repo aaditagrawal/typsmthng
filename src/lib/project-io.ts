@@ -201,9 +201,15 @@ export async function importProject(file: File): Promise<void> {
       let filePath = fullPath
 
       if (isLatexPath(path)) {
-        const result = await convertLatexToTypst(content)
-        content = result.typst
-        filePath = fullPath.replace(/\.tex$/i, '.typ')
+        try {
+          const result = await convertLatexToTypst(content)
+          content = result.typst
+          filePath = fullPath.replace(/\.tex$/i, '.typ')
+        } catch (err) {
+          console.warn(`LaTeX conversion failed for "${path}":`, err)
+          filePath = fullPath.replace(/\.tex$/i, '.typ')
+          content = `// LaTeX conversion failed for this file.\n// Original .tex content preserved below:\n\n/* ${content.replace(/\*\//g, '* /')} */\n`
+        }
       }
 
       projectFiles.push({
@@ -261,16 +267,30 @@ export async function importLatexProject(
 
     if (isLatexPath(file.name)) {
       const source = await file.text()
-      const result = await convertLatexToTypst(source)
       const typPath = path.replace(/\.tex$/i, '.typ')
-      projectFiles.push({
-        path: typPath,
-        content: result.typst,
-        isBinary: false,
-        lastModified: Date.now(),
-      })
-      allWarnings.push(...result.warnings)
-      if (result.metadata.title || result.metadata.author) lastMeta = result.metadata
+      try {
+        const result = await convertLatexToTypst(source)
+        projectFiles.push({
+          path: typPath,
+          content: result.typst,
+          isBinary: false,
+          lastModified: Date.now(),
+        })
+        allWarnings.push(...result.warnings)
+        if (result.metadata.title || result.metadata.author) lastMeta = result.metadata
+      } catch (err) {
+        console.warn(`LaTeX conversion failed for "${file.name}":`, err)
+        allWarnings.push({
+          message: `Conversion failed for ${file.name}: ${err instanceof Error ? err.message : 'unknown error'}`,
+          construct: file.name,
+        })
+        projectFiles.push({
+          path: typPath,
+          content: `// LaTeX conversion failed for this file.\n// Original .tex content preserved below:\n\n/* ${source.replace(/\*\//g, '* /')} */\n`,
+          isBinary: false,
+          lastModified: Date.now(),
+        })
+      }
       texCount++
     } else if (shouldTreatUploadAsText(file)) {
       const content = await file.text()
@@ -355,12 +375,23 @@ export async function importLatexZip(file: File): Promise<LatexImportResult> {
       let filePath = fullPath
 
       if (isLatexPath(path)) {
-        const result = await convertLatexToTypst(content)
-        content = result.typst
-        filePath = fullPath.replace(/\.tex$/i, '.typ')
-        allWarnings.push(...result.warnings)
-        if (result.metadata.title || result.metadata.author) lastMeta = result.metadata
-        texCount++
+        try {
+          const result = await convertLatexToTypst(content)
+          content = result.typst
+          filePath = fullPath.replace(/\.tex$/i, '.typ')
+          allWarnings.push(...result.warnings)
+          if (result.metadata.title || result.metadata.author) lastMeta = result.metadata
+          texCount++
+        } catch (err) {
+          console.warn(`LaTeX conversion failed for "${path}":`, err)
+          allWarnings.push({
+            message: `Conversion failed for ${path}: ${err instanceof Error ? err.message : 'unknown error'}`,
+            construct: path,
+          })
+          filePath = fullPath.replace(/\.tex$/i, '.typ')
+          content = `// LaTeX conversion failed for this file.\n// Original .tex content preserved below:\n\n/* ${content.replace(/\*\//g, '* /')} */\n`
+          texCount++
+        }
       }
 
       projectFiles.push({ path: filePath, content, isBinary: false, lastModified: Date.now() })

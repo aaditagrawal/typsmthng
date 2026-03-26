@@ -240,6 +240,19 @@ body {
   outline-offset: -2px;
 }
 
+.preview-brutalist-btn:hover:not(:disabled) {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary) !important;
+}
+
+.preview-zoom-menu-item:hover {
+  background: var(--bg-hover) !important;
+}
+
+.preview-compile-button:hover {
+  background: color-mix(in srgb, var(--accent) 85%, white) !important;
+}
+
 /* ── Rail buttons ── */
 .rail-button {
   display: inline-flex;

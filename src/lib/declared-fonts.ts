@@ -44,6 +44,14 @@ const GENERIC_FONT_FAMILIES = new Set([
   'ui-rounded',
 ])
 
+const INVALID_FONT_NAME_REGEX = /\.\w{2,5}$/
+const CSS_KEYWORDS = new Set([
+  'bold', 'bolder', 'lighter', 'normal', 'italic', 'oblique',
+  'inherit', 'initial', 'unset', 'revert', 'none', 'auto',
+  'small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps',
+  'unicase', 'titling-caps',
+])
+
 let localFontsIndexPromise: Promise<Map<string, LocalFontDescriptor[]>> | null = null
 const localFontFamilyCache = new Map<string, Promise<Uint8Array[]>>()
 const googleFontFamilyCache = new Map<string, Promise<Uint8Array[]>>()
@@ -53,7 +61,12 @@ export function normalizeFontFamily(value: string): string {
 }
 
 function shouldIgnoreFontFamily(family: string): boolean {
-  return GENERIC_FONT_FAMILIES.has(normalizeFontFamily(family))
+  const normalized = normalizeFontFamily(family)
+  if (GENERIC_FONT_FAMILIES.has(normalized)) return true
+  if (CSS_KEYWORDS.has(normalized)) return true
+  if (INVALID_FONT_NAME_REGEX.test(family)) return true
+  if (family.length < 2 || family.length > 80) return true
+  return false
 }
 
 export function extractTypstFontFamilies(

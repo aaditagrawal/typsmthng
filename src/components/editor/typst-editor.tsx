@@ -30,6 +30,7 @@ export function TypstEditor() {
   const viewRef = useRef<EditorView | null>(null)
   const projectSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingProjectSyncRef = useRef<{ path: string; source: string } | null>(null)
+  const themeReconfigureFrameRef = useRef<number | null>(null)
   const suppressDocChangeEffectsRef = useRef(false)
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
   const setCursorPosition = useUIStore((s) => s.setCursorPosition)
@@ -158,6 +159,10 @@ export function TypstEditor() {
     forceCompile(src, filePath)
 
     return () => {
+      if (themeReconfigureFrameRef.current !== null) {
+        cancelAnimationFrame(themeReconfigureFrameRef.current)
+        themeReconfigureFrameRef.current = null
+      }
       flushPendingProjectSync()
       viewRef.current?.destroy()
       viewRef.current = null
@@ -170,9 +175,24 @@ export function TypstEditor() {
     const view = viewRef.current
     if (!view) return
 
-    view.dispatch({
-      effects: themeCompartment.reconfigure(createEditorTheme(resolvedTheme)),
+    if (themeReconfigureFrameRef.current !== null) {
+      cancelAnimationFrame(themeReconfigureFrameRef.current)
+    }
+
+    themeReconfigureFrameRef.current = requestAnimationFrame(() => {
+      themeReconfigureFrameRef.current = null
+      if (viewRef.current !== view) return
+      view.dispatch({
+        effects: themeCompartment.reconfigure(createEditorTheme(resolvedTheme)),
+      })
     })
+
+    return () => {
+      if (themeReconfigureFrameRef.current !== null) {
+        cancelAnimationFrame(themeReconfigureFrameRef.current)
+        themeReconfigureFrameRef.current = null
+      }
+    }
   }, [resolvedTheme])
 
   // React to vim mode changes — reconfigure CodeMirror

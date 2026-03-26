@@ -131,9 +131,8 @@ const darkHighlighting = HighlightStyle.define([
   { tag: tags.invalid, color: '#F44747', textDecoration: 'underline wavy' },
 ])
 
-export function createEditorTheme(theme: 'light' | 'dark'): Extension {
+function buildEditorTheme(theme: 'light' | 'dark'): Extension {
   const isDark = theme === 'dark'
-
   const baseTheme = EditorView.theme({
     '&': {
       color: isDark ? '#FAFAFA' : '#0A0A0A',
@@ -195,4 +194,13 @@ export function createEditorTheme(theme: 'light' | 'dark'): Extension {
     // Prec.highest overrides codemirror-lang-typst's built-in style which hardcodes heading to "black"
     Prec.highest(syntaxHighlighting(isDark ? darkHighlighting : lightHighlighting)),
   ]
+}
+
+const editorThemes: Record<'light' | 'dark', Extension> = {
+  light: buildEditorTheme('light'),
+  dark: buildEditorTheme('dark'),
+}
+
+export function createEditorTheme(theme: 'light' | 'dark'): Extension {
+  return editorThemes[theme]
 }

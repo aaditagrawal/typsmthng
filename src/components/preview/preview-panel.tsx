@@ -53,17 +53,14 @@ function BrutalistBtn({
   style,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
-  const [hovered, setHovered] = useState(false)
   return (
     <button
       {...props}
+      className={`preview-brutalist-btn${props.className ? ` ${props.className}` : ''}`}
       style={{
         ...brutalistBtnBase,
-        ...(hovered && !props.disabled ? { background: 'var(--bg-hover)', color: 'var(--text-primary)' } : {}),
         ...style,
       }}
-      onMouseEnter={(e) => { setHovered(true); props.onMouseEnter?.(e) }}
-      onMouseLeave={(e) => { setHovered(false); props.onMouseLeave?.(e) }}
     >
       {children}
     </button>
@@ -243,17 +240,15 @@ function ZoomDropdown() {
 }
 
 function ZoomMenuItem({ label, isActive, onClick }: { label: string; isActive: boolean; onClick: () => void }) {
-  const [hovered, setHovered] = useState(false)
   return (
     <button
+      className="preview-zoom-menu-item"
       onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
         display: 'block',
         width: '100%',
         padding: '6px 12px',
-        background: hovered ? 'var(--bg-hover)' : 'transparent',
+        background: 'transparent',
         color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
         border: 'none',
         cursor: 'pointer',
@@ -381,7 +376,6 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
       setCurrentPage: s.setCurrentPage,
     }))
   )
-  const [compileBtnHovered, setCompileBtnHovered] = useState(false)
   const compileToast = useCompileToast()
 
   const errors = errorCount
@@ -410,16 +404,12 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
       <div className="flex items-center" style={{ gap: '8px', paddingLeft: '8px' }}>
         <button
           onClick={handleCompile}
-          onMouseEnter={() => setCompileBtnHovered(true)}
-          onMouseLeave={() => setCompileBtnHovered(false)}
-          className="flex items-center gap-1.5"
+          className="preview-compile-button flex items-center gap-1.5"
           style={{
             height: '28px',
             padding: '0 12px',
             borderRadius: '2px',
-            background: compileBtnHovered
-              ? 'color-mix(in srgb, var(--accent) 85%, white)'
-              : 'var(--accent)',
+            background: 'var(--accent)',
             color: '#fff',
             border: '1px solid var(--accent)',
             cursor: 'pointer',
