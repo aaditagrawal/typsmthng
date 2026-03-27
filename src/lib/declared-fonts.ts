@@ -13,9 +13,7 @@ interface DeclaredFontDataResult {
   data: Uint8Array[]
 }
 
-const FONT_CONFIG_SCAN_WINDOW = 240
 const FONT_CONFIG_REGEX = /font\s*:\s*/g
-const STRING_LITERAL_REGEX = /"([^"\\]*(?:\\.[^"\\]*)*)"|'([^'\\]*(?:\\.[^'\\]*)*)'/g
 const GOOGLE_FONT_URL_REGEX = /url\(([^)]+)\)/g
 const GOOGLE_FONT_VARIANTS = [
   '100', '100italic',
@@ -60,6 +58,30 @@ export function normalizeFontFamily(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
+function decodeQuotedString(source: string, quote: '"' | "'", start: number): { value: string; end: number } {
+  let value = ''
+  let index = start + 1
+
+  while (index < source.length) {
+    const char = source[index]
+    if (char === '\\') {
+      const next = source[index + 1]
+      if (next !== undefined) {
+        value += next
+        index += 2
+        continue
+      }
+    }
+    if (char === quote) {
+      return { value, end: index + 1 }
+    }
+    value += char
+    index += 1
+  }
+
+  return { value, end: source.length }
+}
+
 function shouldIgnoreFontFamily(family: string): boolean {
   const normalized = normalizeFontFamily(family)
   if (GENERIC_FONT_FAMILIES.has(normalized)) return true
@@ -67,6 +89,82 @@ function shouldIgnoreFontFamily(family: string): boolean {
   if (INVALID_FONT_NAME_REGEX.test(family)) return true
   if (family.length < 2 || family.length > 80) return true
   return false
+}
+
+function extractFontFamiliesFromExpression(source: string, start: number): string[] {
+  const families: string[] = []
+  let index = start
+  let parenDepth = 0
+  let bracketDepth = 0
+  let braceDepth = 0
+
+  while (index < source.length) {
+    const char = source[index]
+    const atTopLevel = parenDepth === 0 && bracketDepth === 0 && braceDepth === 0
+
+    if (char === '"' || char === '\'') {
+      const { value, end } = decodeQuotedString(source, char, index)
+      if (!shouldIgnoreFontFamily(value)) {
+        families.push(value.trim())
+      }
+      index = end
+      continue
+    }
+
+    if (char === '/' && source[index + 1] === '/') {
+      while (index < source.length && source[index] !== '\n') index += 1
+      continue
+    }
+
+    if (char === '/' && source[index + 1] === '*') {
+      index += 2
+      while (index < source.length && !(source[index] === '*' && source[index + 1] === '/')) index += 1
+      index = Math.min(source.length, index + 2)
+      continue
+    }
+
+    if (char === '(') {
+      parenDepth += 1
+      index += 1
+      continue
+    }
+    if (char === '[') {
+      bracketDepth += 1
+      index += 1
+      continue
+    }
+    if (char === '{') {
+      braceDepth += 1
+      index += 1
+      continue
+    }
+    if (char === ')') {
+      if (parenDepth === 0 && atTopLevel) break
+      parenDepth = Math.max(0, parenDepth - 1)
+      index += 1
+      continue
+    }
+    if (char === ']') {
+      if (bracketDepth === 0 && atTopLevel) break
+      bracketDepth = Math.max(0, bracketDepth - 1)
+      index += 1
+      continue
+    }
+    if (char === '}') {
+      if (braceDepth === 0 && atTopLevel) break
+      braceDepth = Math.max(0, braceDepth - 1)
+      index += 1
+      continue
+    }
+
+    if (atTopLevel && (char === ',' || char === '\n' || char === '\r' || char === ';')) {
+      break
+    }
+
+    index += 1
+  }
+
+  return families
 }
 
 export function extractTypstFontFamilies(
@@ -81,14 +179,7 @@ export function extractTypstFontFamilies(
     let fontConfigMatch: RegExpExecArray | null = null
     while ((fontConfigMatch = FONT_CONFIG_REGEX.exec(content)) !== null) {
       const start = fontConfigMatch.index + fontConfigMatch[0].length
-      const snippet = content.slice(start, start + FONT_CONFIG_SCAN_WINDOW)
-
-      STRING_LITERAL_REGEX.lastIndex = 0
-      let stringMatch: RegExpExecArray | null = null
-      while ((stringMatch = STRING_LITERAL_REGEX.exec(snippet)) !== null) {
-        const family = (stringMatch[1] ?? stringMatch[2] ?? '').trim()
-        if (!family || shouldIgnoreFontFamily(family)) continue
-
+      for (const family of extractFontFamiliesFromExpression(content, start)) {
         const normalized = normalizeFontFamily(family)
         if (!families.has(normalized)) {
           families.set(normalized, family)

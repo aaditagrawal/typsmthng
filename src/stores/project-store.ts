@@ -108,14 +108,39 @@ interface ProjectState {
   getCurrentProject: () => Project | undefined
 }
 
-async function persistHomeMeta(state: ProjectState) {
+function isMissingObjectStoreError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return err.name === 'NotFoundError'
+  }
+  if (err instanceof Error) {
+    return err.name === 'NotFoundError' || err.message.includes('object stores was not found')
+  }
+  return false
+}
+
+async function loadHomeMeta(): Promise<HomeMeta | undefined> {
   try {
-    await idbSet(HOME_META_KEY, {
-      workspaces: state.homeWorkspaces,
-      projectWorkspaceAssignments: state.projectWorkspaceAssignments,
-      selectedHomeWorkspaceId: state.selectedHomeWorkspaceId,
-    } satisfies HomeMeta, homeStore)
+    return await idbGet<HomeMeta>(HOME_META_KEY, homeStore) ?? undefined
   } catch (err) {
+    if (!isMissingObjectStoreError(err)) throw err
+    return await idbGet<HomeMeta>(HOME_META_KEY, projectsStore) ?? undefined
+  }
+}
+
+async function persistHomeMeta(state: ProjectState) {
+  const homeMeta = {
+    workspaces: state.homeWorkspaces,
+    projectWorkspaceAssignments: state.projectWorkspaceAssignments,
+    selectedHomeWorkspaceId: state.selectedHomeWorkspaceId,
+  } satisfies HomeMeta
+
+  try {
+    await idbSet(HOME_META_KEY, homeMeta, homeStore)
+  } catch (err) {
+    if (isMissingObjectStoreError(err)) {
+      await idbSet(HOME_META_KEY, homeMeta, projectsStore)
+      return
+    }
     console.warn('Failed to persist home metadata to IDB:', err)
   }
 }
@@ -165,7 +190,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
 
     try {
-      homeMeta = await idbGet<HomeMeta>(HOME_META_KEY, homeStore) ?? undefined
+      homeMeta = await loadHomeMeta()
     } catch (err) {
       console.warn('Failed to load home metadata from IDB:', err)
     }

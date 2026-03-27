@@ -19,6 +19,18 @@ interface MockProject {
 }
 
 const mocked = vi.hoisted(() => {
+  interface MockScaffoldFile {
+    path: string
+    content: string
+    isBinary: boolean
+    binaryData?: Uint8Array
+  }
+
+  interface MockScaffold {
+    files: MockScaffoldFile[]
+    mainFile: string
+  }
+
   const state: {
     projects: MockProject[]
     currentProjectId: string | null
@@ -29,13 +41,19 @@ const mocked = vi.hoisted(() => {
     currentFilePath: null,
   }
 
-  const createProject = vi.fn(async (name: string) => {
+  const createProject = vi.fn(async (name: string, scaffold?: MockScaffold) => {
     const id = `project-${state.projects.length + 1}`
     state.projects.push({
       id,
       name,
-      files: [{ path: '/main.typ', content: '', isBinary: false, lastModified: Date.now() }],
-      mainFile: '/main.typ',
+      files: (scaffold?.files ?? [{ path: '/main.typ', content: '', isBinary: false }]).map((file) => ({
+        path: file.path,
+        content: file.content,
+        isBinary: file.isBinary,
+        binaryData: file.binaryData,
+        lastModified: Date.now(),
+      })),
+      mainFile: scaffold?.mainFile ?? '/main.typ',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
@@ -99,7 +117,12 @@ describe('project-io import classification', () => {
     const file = makeZipFileLike('Research.zip', zipped)
     await importProject(file)
     expect(window.alert).not.toHaveBeenCalled()
-    expect(mocked.createProject).toHaveBeenCalledWith('Research')
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'Research',
+      expect.objectContaining({
+        mainFile: '/main.typ',
+      }),
+    )
 
     const project = mocked.state.projects.find((p) => p.name === 'Research')
     expect(project).toBeDefined()
@@ -123,7 +146,12 @@ describe('project-io import classification', () => {
     const file = makeZipFileLike('BinaryImport.zip', zipped)
     await importProject(file)
     expect(window.alert).not.toHaveBeenCalled()
-    expect(mocked.createProject).toHaveBeenCalledWith('BinaryImport')
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'BinaryImport',
+      expect.objectContaining({
+        mainFile: '/main.typ',
+      }),
+    )
 
     const project = mocked.state.projects.find((p) => p.name === 'BinaryImport')
     const binary = project?.files.find((f) => f.path === '/assets/raw.custombin')
