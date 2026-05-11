@@ -161,4 +161,56 @@ describe('project-io import classification', () => {
     expect(binary?.content).toBe('')
     expect(binary?.binaryData).toEqual(imageBytes)
   })
+
+  it('unwraps a zipped typsmthng project folder', async () => {
+    const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+    const zipped = zipSync({
+      'Folder Name/main.typ': asciiBytes('= Wrapped'),
+      'Folder Name/chapters/intro.typ': asciiBytes('== Intro'),
+      'Folder Name/.typsmthng/template.json': asciiBytes('{"source":"built-in"}'),
+      'Folder Name/assets/raw.custombin': imageBytes,
+    })
+
+    const file = makeZipFileLike('Archive.zip', zipped)
+    await importProject(file)
+
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'Folder Name',
+      expect.objectContaining({
+        mainFile: '/main.typ',
+      }),
+    )
+
+    const project = mocked.state.projects.find((p) => p.name === 'Folder Name')
+    expect(project?.files.map((projectFile) => projectFile.path).sort()).toEqual([
+      '/.typsmthng/template.json',
+      '/assets/raw.custombin',
+      '/chapters/intro.typ',
+      '/main.typ',
+    ])
+    expect(project?.files.find((projectFile) => projectFile.path === '/assets/raw.custombin')?.binaryData).toEqual(imageBytes)
+  })
+
+  it('keeps the zip filename for unwrapped project imports', async () => {
+    const zipped = zipSync({
+      'main.typ': asciiBytes('= Root'),
+      'chapters/intro.typ': asciiBytes('== Intro'),
+    })
+
+    const file = makeZipFileLike('RootProject.zip', zipped)
+    await importProject(file)
+
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'RootProject',
+      expect.objectContaining({
+        mainFile: '/main.typ',
+      }),
+    )
+
+    const project = mocked.state.projects.find((p) => p.name === 'RootProject')
+    expect(project?.files.map((projectFile) => projectFile.path).sort()).toEqual([
+      '/chapters/intro.typ',
+      '/main.typ',
+    ])
+  })
 })
