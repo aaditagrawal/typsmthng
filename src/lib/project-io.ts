@@ -11,11 +11,69 @@ export interface LatexImportResult {
   metadata: ConversionResult['metadata']
 }
 
+interface ZipImportEntry {
+  path: string
+  data: Uint8Array
+}
+
 function resolveImportedMainFile(projectFiles: ProjectFile[]): string {
   return projectFiles.find((f) => f.path === '/main.typ')?.path
     || projectFiles.find((f) => f.path.endsWith('.typ'))?.path
     || projectFiles[0]?.path
     || '/main.typ'
+}
+
+function shouldSkipZipPath(path: string): boolean {
+  return path.endsWith('/') || path.includes('__MACOSX') || path.includes('.DS_Store')
+}
+
+function normalizeZipPath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/^\/+/, '')
+}
+
+function looksLikeTypsmthngProject(paths: string[]): boolean {
+  return paths.some((path) => {
+    const normalizedPath = path.toLowerCase()
+    return normalizedPath === 'main.typ'
+      || normalizedPath.endsWith('.typ')
+      || normalizedPath === '.typsmthng/template.json'
+  })
+}
+
+function normalizeSingleProjectZipEntries(
+  unzipped: ReturnType<typeof unzipSync>,
+  fallbackProjectName: string,
+): { projectName: string; entries: ZipImportEntry[] } {
+  const entries = Object.entries(unzipped)
+    .filter(([path]) => !shouldSkipZipPath(path))
+    .map(([path, data]) => ({ path: normalizeZipPath(path), data }))
+    .filter((entry) => entry.path.length > 0)
+
+  const rootFolder = entries.reduce<string | null | undefined>((root, entry) => {
+    const slashIndex = entry.path.indexOf('/')
+    if (slashIndex < 0) return null
+
+    const candidate = entry.path.slice(0, slashIndex)
+    if (root === undefined) return candidate
+    return root === candidate ? root : null
+  }, undefined)
+
+  if (!rootFolder) {
+    return { projectName: fallbackProjectName, entries }
+  }
+
+  const strippedEntries = entries
+    .map((entry) => ({ path: entry.path.slice(rootFolder.length + 1), data: entry.data }))
+    .filter((entry) => entry.path.length > 0)
+
+  if (!looksLikeTypsmthngProject(strippedEntries.map((entry) => entry.path))) {
+    return { projectName: fallbackProjectName, entries }
+  }
+
+  return {
+    projectName: rootFolder,
+    entries: strippedEntries,
+  }
 }
 
 async function createImportedProject(projectName: string, projectFiles: ProjectFile[]): Promise<string> {
@@ -193,15 +251,12 @@ export async function importProject(file: File): Promise<void> {
     return
   }
 
-  // Determine project name from zip filename
-  const projectName = file.name.replace(/\.zip$/i, '')
+  const fallbackProjectName = file.name.replace(/\.zip$/i, '')
+  const { projectName, entries } = normalizeSingleProjectZipEntries(unzipped, fallbackProjectName)
 
   const projectFiles: ProjectFile[] = []
 
-  for (const [path, data] of Object.entries(unzipped)) {
-    // Skip directories (they end with /) and macOS resource forks
-    if (path.endsWith('/') || path.includes('__MACOSX') || path.includes('.DS_Store')) continue
-
+  for (const { path, data } of entries) {
     const fullPath = path.startsWith('/') ? path : `/${path}`
 
     // Detect if file is text or binary

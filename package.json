@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:portless": "portless run",
     "build": "tsc -b && vite build",
     "build:budget": "bun run build && node scripts/check-bundle-budget.mjs",
     "lint": "eslint .",
