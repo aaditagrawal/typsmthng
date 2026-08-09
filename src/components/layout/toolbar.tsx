@@ -3,12 +3,9 @@ import { Sun, Moon, Monitor, Download, FolderInput, FolderOutput, Settings, Pane
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
-import { compileToPdf, ensurePackagesForCompile } from '@/lib/compiler'
 import { useSettingsStore } from '@/stores/settings-store'
 import { exportProject, importProject } from '@/lib/project-io'
-import { applyPagePreamble, ensureCompilerReady } from '@/lib/compile-manager'
-import { findPreviewImportSpecs } from '@/lib/universe-registry'
-import { buildCompileInputs } from '@/lib/compile-inputs'
+import { exportCurrentProjectPdf } from '@/lib/pdf-export'
 
 function ThemeToggle() {
   const theme = useUIStore((s) => s.theme)
@@ -26,50 +23,6 @@ function ThemeToggle() {
       <Icon size={16} />
     </button>
   )
-}
-
-async function handleDownloadPdf() {
-  try {
-    await ensureCompilerReady()
-    const project = useProjectStore.getState().getCurrentProject()
-    const currentFilePath = useProjectStore.getState().currentFilePath
-    const liveSource = useEditorStore.getState().source
-    const compileInputs = buildCompileInputs({
-      project,
-      currentFilePath,
-      liveSource,
-    })
-
-    const packageSpecs = new Set<string>(findPreviewImportSpecs(compileInputs.mainSource))
-    for (const file of compileInputs.extraFiles) {
-      for (const spec of findPreviewImportSpecs(file.content)) {
-        packageSpecs.add(spec)
-      }
-    }
-
-    if (packageSpecs.size > 0) {
-      await ensurePackagesForCompile([...packageSpecs])
-    }
-
-    const pdf = await compileToPdf(
-      applyPagePreamble(compileInputs.mainSource),
-      compileInputs.extraFiles,
-      compileInputs.mainPath,
-      compileInputs.extraBinaryFiles,
-    )
-    if (pdf) {
-      const blob = new Blob([new Uint8Array(pdf)], { type: 'application/pdf' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${project?.name ?? 'document'}.pdf`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(url), 10000)
-    }
-  } catch (err) {
-    console.error('Failed to export PDF:', err)
-    window.alert('Failed to export PDF. Please try again.')
-  }
 }
 
 export function Toolbar() {
@@ -192,7 +145,12 @@ export function Toolbar() {
         <button className="toolbar-button" title="Export project (.zip)" onClick={exportProject}>
           <FolderOutput size={16} />
         </button>
-        <button className="toolbar-button" style={{ marginRight: '8px' }} title="Download PDF" onClick={handleDownloadPdf}>
+        <button
+          className="toolbar-button"
+          style={{ marginRight: '8px' }}
+          title="Download PDF"
+          onClick={() => { void exportCurrentProjectPdf() }}
+        >
           <Download size={16} />
         </button>
       </div>

@@ -156,6 +156,26 @@ A & B & C \\
     expect(result.typst).toContain('columns: 3')
   })
 
+  it('converts tabular nested inside table with caption', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\begin{table}
+\centering
+\begin{tabular}{ll}
+A & B \\
+1 & 2 \\
+\end{tabular}
+\caption{Results}
+\label{tab:results}
+\end{table}
+\end{document}`)
+
+    expect(result.typst).toContain('#figure(')
+    expect(result.typst).toContain('#table(')
+    expect(result.typst).toContain('caption: [Results]')
+    expect(result.typst).toContain('<tab:results>')
+  })
+
   // ── Figures ──
 
   it('converts includegraphics to image', async () => {
@@ -275,6 +295,17 @@ Page two.
 \end{document}`)
 
     expect(result.typst).toContain('#include "chapter1.typ"')
+  })
+
+  it('rewrites .tex and .TEX input paths to .typ', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\input{chapters/intro.tex}
+\include{APPENDIX.TEX}
+\end{document}`)
+
+    expect(result.typst).toContain('#include "chapters/intro.typ"')
+    expect(result.typst).toContain('#include "APPENDIX.typ"')
   })
 
   // ── Graceful degradation ──

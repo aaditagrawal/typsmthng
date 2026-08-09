@@ -17,6 +17,10 @@ export const GENERAL_TEXT_EXTENSIONS: readonly string[] = [
   '.txt',
   '.md',
   '.tex',
+  // LaTeX package/class sources: keep as text so imports can inspect macros
+  // even though the converter does not expand them yet.
+  '.sty',
+  '.cls',
   '.csv',
   '.json',
   '.xml',

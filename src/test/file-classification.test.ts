@@ -34,4 +34,9 @@ describe('file classification', () => {
     const file = new File([new Uint8Array([137, 80, 78, 71])], 'blob.unknownext', { type: 'application/octet-stream' })
     expect(shouldTreatUploadAsText(file)).toBe(false)
   })
+
+  it('treats LaTeX .sty and .cls sources as text', () => {
+    expect(isKnownTextPath('/macros/mypackage.sty')).toBe(true)
+    expect(isKnownTextPath('/macros/MyClass.CLS')).toBe(true)
+  })
 })

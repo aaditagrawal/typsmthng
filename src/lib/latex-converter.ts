@@ -458,9 +458,9 @@ function emitMacro(
 
     case 'input':
     case 'include': {
-      let file = args[0] || ''
-      if (!file.endsWith('.typ')) {
-        file = file.replace(/\.tex$/, '') + '.typ'
+      let file = (args[0] || '').trim()
+      if (!file.toLowerCase().endsWith('.typ')) {
+        file = file.replace(/\.tex$/i, '') + '.typ'
       }
       return `#include "${file}"`
     }
@@ -857,8 +857,13 @@ function emitTableEnv(
       } else {
         tableContent += emitNode(node, warnings, false)
       }
-    } else if (node.type === 'environment' && ['tabular', 'tabular*', 'array'].includes((node as Ast.Environment).env)) {
-      tableContent += emitTable(node as Ast.Environment, warnings)
+    } else if (node.type === 'environment') {
+      const nestedEnv = getEnvName(node as Ast.Environment)
+      if (nestedEnv === 'tabular' || nestedEnv === 'tabular*' || nestedEnv === 'array') {
+        tableContent += emitTable(node as Ast.Environment, warnings)
+      } else {
+        tableContent += emitNode(node, warnings, false)
+      }
     } else if (node.type !== 'whitespace' && node.type !== 'parbreak') {
       tableContent += emitNode(node, warnings, false)
     }
