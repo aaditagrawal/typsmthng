@@ -44,3 +44,4 @@ Timing sample emitted as `preview.click-map` when perf debug mode is enabled.
 - `bun run build:budget` fails if home HTML preloads `editor-*` / Typst chunks or exceeds 500 KB.
 - Keep `@replit/codemirror*` packages in the `editor-core` (or `editor-vim`) manual chunk so `vendor` never imports CodeMirror.
 - Home import/export UI should dynamic-import `@/lib/project-io` so zip/LaTeX code stays off the critical path.
+- Keep global Cmd+S synchronous (no dynamic `import()` before persist).
