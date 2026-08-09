@@ -322,9 +322,24 @@ describe('project-io zip helpers', () => {
     expect(looksLikeImportableProject(['main.typ', 'chapters/a.typ'])).toBe(true)
     expect(looksLikeImportableProject(['main.tex', 'figs/a.png'])).toBe(true)
     expect(looksLikeImportableProject(['paper.tex', 'figs/a.png'])).toBe(true)
+    expect(looksLikeImportableProject(['notes.typ', 'figs/a.png'])).toBe(true)
     expect(looksLikeImportableProject(['readme.md', 'data.csv'])).toBe(false)
-    // Nested ancillary .tex alone should not trigger unwrap.
+    // Nested ancillary sources alone should not trigger unwrap.
     expect(looksLikeImportableProject(['docs/notes.tex', 'photos/a.png'])).toBe(false)
+    expect(looksLikeImportableProject(['docs/notes.typ', 'photos/a.png'])).toBe(false)
+  })
+
+  it('does not unwrap a folder just because a nested .typ exists', () => {
+    const unzipped = unzipSync(zipSync({
+      'Bundle/docs/notes.typ': asciiBytes('= Notes'),
+      'Bundle/photos/a.png': new Uint8Array([1, 2, 3]),
+    }))
+    const normalized = normalizeSingleProjectZipEntries(unzipped, 'fallback')
+    expect(normalized.projectName).toBe('fallback')
+    expect(normalized.entries.map((e) => e.path).sort()).toEqual([
+      'Bundle/docs/notes.typ',
+      'Bundle/photos/a.png',
+    ])
   })
 
   it('normalizes single-folder latex archives', () => {
@@ -396,6 +411,73 @@ describe('project-io export', () => {
     const project = mocked.state.projects[0]
     expect(project.files.map((f) => f.path).sort()).toEqual(['/main-2.typ', '/main.typ'])
     expect(result?.warnings.some((w) => w.message.includes('colliding'))).toBe(true)
+  })
+
+  it('prefers converted .tex for canonical .typ when a native .typ collides first', async () => {
+    const zipped = zipSync({
+      // Native .typ listed first in the archive; converted .tex must still win /shared.typ.
+      'shared.typ': asciiBytes('= Native shared'),
+      'shared.tex': asciiBytes('\\section{Converted shared}'),
+      'main.tex': asciiBytes('\\begin{document}\\input{shared}\\end{document}'),
+    })
+
+    const result = await importProject(makeZipFileLike('PreferTex.zip', zipped))
+    const project = mocked.state.projects[0]
+    const byPath = Object.fromEntries(project.files.map((f) => [f.path, f.content]))
+    expect(Object.keys(byPath).sort()).toEqual(['/main.typ', '/shared-2.typ', '/shared.typ'])
+    expect(byPath['/main.typ']).toContain('#include "shared.typ"')
+    expect(byPath['/shared.typ']).toContain('Converted shared')
+    expect(byPath['/shared-2.typ']).toContain('Native shared')
+    expect(result?.warnings.some((w) => w.message.includes('/shared-2.typ'))).toBe(true)
+  })
+
+  it('warns when export skips binaries with missing data', async () => {
+    mocked.state.projects = [{
+      id: 'p1',
+      name: 'Demo',
+      files: [
+        { path: '/main.typ', content: '= Demo', isBinary: false, lastModified: 1 },
+        { path: '/missing.bin', content: '', isBinary: true, lastModified: 1 },
+        { path: '/empty.bin', content: '', isBinary: true, binaryData: new Uint8Array(0), lastModified: 1 },
+      ],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+    mocked.state.currentProjectId = 'p1'
+
+    await exportProject()
+
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const buffer = new Uint8Array(await blob.arrayBuffer())
+    const unzipped = unzipSync(buffer)
+    expect(Object.keys(unzipped).sort()).toEqual(['empty.bin', 'main.typ'])
+    expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('1 binary file'))
+  })
+
+  it('still strips shared folder when one rejected path is present', async () => {
+    const { importLatexProject } = await import('@/lib/project-io')
+    const files = [
+      {
+        relativePath: 'Thesis/../evil.tex',
+        file: { name: 'evil.tex', text: async () => '\\section{Evil}' } as File,
+      },
+      {
+        relativePath: 'Thesis/main.tex',
+        file: { name: 'main.tex', text: async () => '\\begin{document}\\input{chapters/one}\\end{document}' } as File,
+      },
+      {
+        relativePath: 'Thesis/chapters/one.tex',
+        file: { name: 'one.tex', text: async () => '\\section{One}' } as File,
+      },
+    ]
+
+    await importLatexProject(files)
+    const project = mocked.state.projects[0]
+    expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.typ',
+      '/main.typ',
+    ])
   })
 
   it('strips shared folder prefix for LaTeX folder imports', async () => {
