@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { X, AlertTriangle } from 'lucide-react'
 
 function isSafari(): boolean {
@@ -20,11 +20,12 @@ export function SafariBanner() {
     return !localStorage.getItem('safari-banner-dismissed')
   })
 
-  useEffect(() => {
-    if (show) requestPersistentStorage()
-  }, [show])
-
   if (!show) return null
+
+  const dismiss = () => {
+    setShow(false)
+    localStorage.setItem('safari-banner-dismissed', '1')
+  }
 
   return (
     <div
@@ -40,10 +41,24 @@ export function SafariBanner() {
         Safari may clear stored data after 7 days of inactivity. Download your work regularly to avoid data loss.
       </span>
       <button
+        type="button"
         onClick={() => {
-          setShow(false)
-          localStorage.setItem('safari-banner-dismissed', '1')
+          void requestPersistentStorage().finally(dismiss)
         }}
+        className="shrink-0 px-2 py-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
+        style={{
+          fontFamily: 'var(--font-mono)',
+          fontSize: '10px',
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
+          border: '1px solid #FFD0B5',
+        }}
+      >
+        Allow storage
+      </button>
+      <button
+        type="button"
+        onClick={dismiss}
         className="shrink-0 p-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
         aria-label="Dismiss"
       >

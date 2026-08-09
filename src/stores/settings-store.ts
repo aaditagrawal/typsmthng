@@ -151,7 +151,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     persistSettings(getPersistedFields({ ...get(), googleFontsEnabled }))
   },
 
-  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  setSettingsOpen: (settingsOpen) => {
+    set({ settingsOpen })
+    if (settingsOpen) useUIStore.getState().setCommandSearchOpen(false)
+  },
 
   loadSettings: async () => {
     try {

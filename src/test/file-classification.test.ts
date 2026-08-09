@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   BIBLIOGRAPHY_TEXT_EXTENSIONS,
   isBibliographyPath,
+  isImagePath,
   isKnownTextPath,
   normalizeExtension,
   shouldTreatUploadAsText,
@@ -38,5 +39,11 @@ describe('file classification', () => {
   it('treats LaTeX .sty and .cls sources as text', () => {
     expect(isKnownTextPath('/macros/mypackage.sty')).toBe(true)
     expect(isKnownTextPath('/macros/MyClass.CLS')).toBe(true)
+  })
+
+  it('recognizes image paths for preview routing', () => {
+    expect(isImagePath('/figs/photo.PNG')).toBe(true)
+    expect(isImagePath('diagram.svg')).toBe(true)
+    expect(isImagePath('/main.typ')).toBe(false)
   })
 })

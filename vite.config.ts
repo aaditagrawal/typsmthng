@@ -13,10 +13,11 @@ export default defineConfig({
     wasm(),
     topLevelAwait(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Prompt mode so UpdateToast can call the registerSW updater.
+      // autoUpdate + skipWaiting never fires onNeedRefresh.
+      registerType: 'prompt',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       workbox: {
-        skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm}'],

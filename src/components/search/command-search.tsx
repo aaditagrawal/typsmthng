@@ -3,6 +3,7 @@ import { File } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
 import { getProjectFileIndex } from '@/lib/file-index'
+import { isImagePath } from '@/lib/file-classification'
 
 const ROW_HEIGHT = 34
 const ROW_OVERSCAN = 8
@@ -46,9 +47,11 @@ export function CommandSearch() {
 
   const openFile = useCallback(
     (path: string) => {
-      useProjectStore.getState().selectFile(path)
-      const { sidebarOpen, setSidebarOpen } = useProjectStore.getState()
-      if (!sidebarOpen) setSidebarOpen(true)
+      if (isImagePath(path)) {
+        useUIStore.getState().setImagePreviewPath(path)
+      } else {
+        useProjectStore.getState().selectFile(path)
+      }
       close()
     },
     [close],

@@ -10,11 +10,11 @@ createRoot(document.getElementById('root')!).render(
   </StrictMode>,
 )
 
-registerSW({
+const updateSW = registerSW({
   onNeedRefresh() {
     window.dispatchEvent(
       new CustomEvent('sw-update-available', {
-        detail: navigator.serviceWorker?.controller,
+        detail: { update: () => { void updateSW(true) } },
       }),
     )
   },
