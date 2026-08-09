@@ -166,8 +166,8 @@ export async function initCompilerClient(
       const generation = clientConfigGeneration
       const fontsForInit = currentFontData
 
-      let pending: Promise<void>
-      pending = (async () => {
+      const pendingRef: { current: Promise<void> | null } = { current: null }
+      pendingRef.current = (async () => {
         try {
           await callWithFallback(
             async (api) => {
@@ -186,13 +186,13 @@ export async function initCompilerClient(
           }
           throw err
         } finally {
-          if (clientInitPromise === pending) {
+          if (clientInitPromise === pendingRef.current) {
             clientInitPromise = null
           }
         }
       })()
 
-      clientInitPromise = pending
+      clientInitPromise = pendingRef.current
     }
 
     try {

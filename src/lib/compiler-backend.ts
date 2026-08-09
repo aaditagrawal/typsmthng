@@ -119,8 +119,8 @@ export async function initCompilerBackend(): Promise<void> {
       const generation = initGeneration
       const fontsForInit = additionalFontData
 
-      let pending: Promise<void>
-      pending = (async () => {
+      const pendingRef: { current: Promise<void> | null } = { current: null }
+      pendingRef.current = (async () => {
         try {
           const nextCompiler = createTypstCompiler()
           await nextCompiler.init({
@@ -152,13 +152,13 @@ export async function initCompilerBackend(): Promise<void> {
           }
           throw err
         } finally {
-          if (initPromise === pending) {
+          if (initPromise === pendingRef.current) {
             initPromise = null
           }
         }
       })()
 
-      initPromise = pending
+      initPromise = pendingRef.current
     }
 
     try {

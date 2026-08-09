@@ -211,7 +211,7 @@ describe('Compile Manager', () => {
     await Promise.resolve()
     expect(queuedDone).toBe(false)
 
-    expect(releaseOld).toBeTypeOf('function')
+    if (!releaseOld) throw new Error('expected old compile gate')
     releaseOld()
     await Promise.all([oldCompile, queued])
     expect(queuedDone).toBe(true)
