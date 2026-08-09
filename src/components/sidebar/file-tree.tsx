@@ -911,21 +911,29 @@ async function readEntryRecursive(
   } else if (entry.isDirectory) {
     const dirEntry = entry as FileSystemDirectoryEntry
     const reader = dirEntry.createReader()
+    // Chromium returns directory entries in batches; keep calling until empty.
     return new Promise((resolve) => {
-      reader.readEntries(
-        async (entries) => {
-          const results: FileEntry[] = []
-          for (const child of entries) {
-            const childResults = await readEntryRecursive(child, `${basePath}/${entry.name}`)
-            results.push(...childResults)
-          }
-          resolve(results)
-        },
-        (err) => {
-          console.warn(`Failed to read directory ${entry.name}:`, err)
-          resolve([])
-        },
-      )
+      const results: FileEntry[] = []
+      const readBatch = () => {
+        reader.readEntries(
+          async (entries) => {
+            if (entries.length === 0) {
+              resolve(results)
+              return
+            }
+            for (const child of entries) {
+              const childResults = await readEntryRecursive(child, `${basePath}/${entry.name}`)
+              results.push(...childResults)
+            }
+            readBatch()
+          },
+          (err) => {
+            console.warn(`Failed to read directory ${entry.name}:`, err)
+            resolve(results)
+          },
+        )
+      }
+      readBatch()
     })
   }
   return []

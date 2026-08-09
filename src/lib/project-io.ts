@@ -31,10 +31,18 @@ interface BuiltProjectFiles {
   metadata: ConversionResult['metadata']
 }
 
+const PREFERRED_MAIN_NAME = /\/(main|paper|thesis|article|report)\.typ$/i
+
 function resolveImportedMainFile(projectFiles: ProjectFile[]): string {
-  return projectFiles.find((f) => f.path === '/main.typ')?.path
-    || projectFiles.find((f) => f.path.endsWith('/main.typ'))?.path
-    || projectFiles.find((f) => f.path.endsWith('.typ'))?.path
+  const typFiles = projectFiles.filter((f) => f.path.endsWith('.typ'))
+  const rootTyp = typFiles.filter((f) => !f.path.slice(1).includes('/'))
+
+  return typFiles.find((f) => f.path === '/main.typ')?.path
+    || rootTyp.find((f) => PREFERRED_MAIN_NAME.test(f.path))?.path
+    || rootTyp[0]?.path
+    || typFiles.find((f) => PREFERRED_MAIN_NAME.test(f.path))?.path
+    || typFiles.find((f) => f.path.endsWith('/main.typ'))?.path
+    || [...typFiles].sort((a, b) => a.path.length - b.path.length || a.path.localeCompare(b.path))[0]?.path
     || projectFiles[0]?.path
     || '/main.typ'
 }
@@ -66,10 +74,10 @@ export function looksLikeImportableProject(paths: string[]): boolean {
     const isRootFile = !normalizedPath.includes('/')
     return normalizedPath === 'main.typ'
       || normalizedPath === 'main.tex'
-      || normalizedPath.endsWith('.typ')
       || normalizedPath === '.typsmthng/template.json'
-      // LaTeX: only root-level .tex files count. Nested ancillary .tex alone
-      // must not unwrap an unrelated single top-level folder.
+      // Only root-level sources count. Nested ancillary .typ/.tex alone must
+      // not unwrap an unrelated single top-level folder (e.g. photos + notes).
+      || (isRootFile && normalizedPath.endsWith('.typ'))
       || (isRootFile && normalizedPath.endsWith('.tex'))
   })
 }
@@ -181,6 +189,49 @@ function dedupeProjectPath(path: string, used: Set<string>): string {
   return candidate
 }
 
+/** Rewrite Typst path literals after import path collisions rename files. */
+function rewriteTypstPathRefs(content: string, renames: Map<string, string>): string {
+  if (renames.size === 0) return content
+
+  const resolveRename = (rawPath: string): string | null => {
+    const absolute = rawPath.startsWith('/') ? rawPath : `/${rawPath}`
+    const renamed = renames.get(absolute) ?? renames.get(rawPath)
+    if (!renamed) return null
+    return rawPath.startsWith('/') ? renamed : renamed.replace(/^\//, '')
+  }
+
+  let next = content.replace(
+    /#include\s+"([^"]+)"/g,
+    (match, path: string) => {
+      const renamed = resolveRename(path)
+      return renamed ? `#include "${renamed}"` : match
+    },
+  )
+  next = next.replace(
+    /#image\("([^"]+)"/g,
+    (match, path: string) => {
+      const renamed = resolveRename(path)
+      return renamed ? `#image("${renamed}"` : match
+    },
+  )
+  next = next.replace(
+    /#bibliography\("([^"]+)"\)/g,
+    (match, path: string) => {
+      const renamed = resolveRename(path)
+      return renamed ? `#bibliography("${renamed}")` : match
+    },
+  )
+  return next
+}
+
+function applyPathRenames(projectFiles: ProjectFile[], renames: Map<string, string>): void {
+  if (renames.size === 0) return
+  for (const file of projectFiles) {
+    if (file.isBinary) continue
+    file.content = rewriteTypstPathRefs(file.content, renames)
+  }
+}
+
 async function buildProjectFilesFromZipEntries(
   entries: ZipImportEntry[],
   options: { convertLatex: boolean },
@@ -188,10 +239,18 @@ async function buildProjectFilesFromZipEntries(
   const projectFiles: ProjectFile[] = []
   const warnings: ConversionWarning[] = []
   const usedPaths = new Set<string>()
+  const renames = new Map<string, string>()
   let texFilesConverted = 0
   let metadata: ConversionResult['metadata'] = { packages: [] }
 
-  for (const { path, data } of entries) {
+  // Prefer converted .tex → .typ for the canonical path when both exist.
+  const orderedEntries = [...entries].sort((a, b) => {
+    const aTex = options.convertLatex && isLatexPath(a.path) ? 0 : 1
+    const bTex = options.convertLatex && isLatexPath(b.path) ? 0 : 1
+    return aTex - bTex
+  })
+
+  for (const { path, data } of orderedEntries) {
     if (path.endsWith('.folder')) continue
 
     const fullPath = toProjectPath(path)
@@ -216,6 +275,15 @@ async function buildProjectFilesFromZipEntries(
           message: `Renamed colliding import path ${filePath} → ${uniquePath}`,
           construct: path,
         })
+        // If a native .typ lost to a converted .tex already at filePath, keep
+        // refs on filePath (the winner). Otherwise retarget refs to uniquePath.
+        const displacedByConvertedTex = options.convertLatex
+          && !isLatexPath(path)
+          && filePath.endsWith('.typ')
+          && projectFiles.some((f) => f.path === filePath)
+        if (!displacedByConvertedTex) {
+          renames.set(filePath, uniquePath)
+        }
       }
 
       projectFiles.push({
@@ -226,6 +294,13 @@ async function buildProjectFilesFromZipEntries(
       })
     } else {
       const uniquePath = dedupeProjectPath(fullPath, usedPaths)
+      if (uniquePath !== fullPath) {
+        renames.set(fullPath, uniquePath)
+        warnings.push({
+          message: `Renamed colliding import path ${fullPath} → ${uniquePath}`,
+          construct: path,
+        })
+      }
       projectFiles.push({
         path: uniquePath,
         content: '',
@@ -235,6 +310,8 @@ async function buildProjectFilesFromZipEntries(
       })
     }
   }
+
+  applyPathRenames(projectFiles, renames)
 
   return { projectFiles, texFilesConverted, warnings, metadata }
 }
@@ -312,13 +389,18 @@ export async function exportProject(): Promise<void> {
   if (!project) return
 
   const files: Record<string, Uint8Array> = {}
+  let skippedMissingBinary = 0
 
   for (const file of project.files) {
     const zipPath = file.path.startsWith('/') ? file.path.slice(1) : file.path
     if (zipPath.endsWith('.folder')) continue
 
     if (file.isBinary) {
-      if (!file.binaryData || file.binaryData.length === 0) continue
+      if (!file.binaryData) {
+        skippedMissingBinary++
+        continue
+      }
+      // Preserve empty binaries as zero-byte zip entries for round-trip fidelity.
       files[zipPath] = toZipBytes(file.binaryData)
     } else {
       files[zipPath] = encodeTextForZip(file.content)
@@ -335,6 +417,11 @@ export async function exportProject(): Promise<void> {
   }
   const blob = new Blob([zipped as BlobPart], { type: 'application/zip' })
   triggerDownload(blob, `${project.name}.zip`)
+  if (skippedMissingBinary > 0) {
+    window.alert(
+      `Export completed, but ${skippedMissingBinary} binary file(s) were skipped because their data was missing.`,
+    )
+  }
 }
 
 export async function exportAllProjects(): Promise<void> {
@@ -343,6 +430,7 @@ export async function exportAllProjects(): Promise<void> {
 
   const files: Record<string, Uint8Array> = {}
   const folderNames = uniqueExportFolderNames(projects.map((project) => project.name))
+  let skippedMissingBinary = 0
 
   for (let i = 0; i < projects.length; i++) {
     const project = projects[i]
@@ -352,7 +440,10 @@ export async function exportAllProjects(): Promise<void> {
       if (filePath.endsWith('.folder')) continue
       const zipPath = `${folderName}/${filePath}`
       if (file.isBinary) {
-        if (!file.binaryData || file.binaryData.length === 0) continue
+        if (!file.binaryData) {
+          skippedMissingBinary++
+          continue
+        }
         files[zipPath] = toZipBytes(file.binaryData)
       } else {
         files[zipPath] = encodeTextForZip(file.content)
@@ -370,6 +461,11 @@ export async function exportAllProjects(): Promise<void> {
   }
   const blob = new Blob([zipped as BlobPart], { type: 'application/zip' })
   triggerDownload(blob, 'typsmthng-all-projects.zip')
+  if (skippedMissingBinary > 0) {
+    window.alert(
+      `Export completed, but ${skippedMissingBinary} binary file(s) were skipped because their data was missing.`,
+    )
+  }
 }
 
 export async function importAllProjects(file: File): Promise<number> {
@@ -453,9 +549,11 @@ export async function importProject(file: File): Promise<ProjectImportResult | n
 /** Strip a shared top-level folder from folder-picked LaTeX imports (webkitRelativePath). */
 function stripSharedRootFolder(relativePaths: string[]): string[] {
   const normalized = relativePaths.map((path) => normalizeZipPath(path))
-  if (normalized.some((path) => !path)) return normalized
+  // Rejected paths become ''; detect/strip shared root on the remainder only.
+  const valid = normalized.filter((path) => path.length > 0)
+  if (valid.length === 0) return normalized
 
-  const rootFolder = normalized.reduce<string | null | undefined>((root, path) => {
+  const rootFolder = valid.reduce<string | null | undefined>((root, path) => {
     const slashIndex = path.indexOf('/')
     if (slashIndex < 0) return null
     const candidate = path.slice(0, slashIndex)
@@ -465,12 +563,17 @@ function stripSharedRootFolder(relativePaths: string[]): string[] {
 
   if (!rootFolder) return normalized
 
-  const stripped = normalized.map((path) => path.slice(rootFolder.length + 1))
-  if (stripped.some((path) => !path) || !looksLikeImportableProject(stripped)) {
+  const prefix = `${rootFolder}/`
+  const strippedValid = valid.map((path) => (
+    path.startsWith(prefix) ? path.slice(prefix.length) : path
+  ))
+  if (strippedValid.some((path) => !path) || !looksLikeImportableProject(strippedValid)) {
     return normalized
   }
 
-  return stripped
+  return normalized.map((path) => (
+    path.startsWith(prefix) ? path.slice(prefix.length) : path
+  ))
 }
 
 export async function importLatexProject(
@@ -479,20 +582,39 @@ export async function importLatexProject(
   const allWarnings: ConversionWarning[] = []
   const projectFiles: ProjectFile[] = []
   const usedPaths = new Set<string>()
+  const renames = new Map<string, string>()
   let texCount = 0
   let lastMeta: ConversionResult['metadata'] = { packages: [] }
 
   const relativePaths = stripSharedRootFolder(files.map((entry) => entry.relativePath))
+  const indexed = files.map((entry, index) => ({
+    entry,
+    relativePath: relativePaths[index],
+    index,
+  }))
+  // Prefer converted .tex for canonical .typ paths when both exist.
+  indexed.sort((a, b) => {
+    const aTex = a.relativePath && isLatexPath(a.entry.file.name) ? 0 : 1
+    const bTex = b.relativePath && isLatexPath(b.entry.file.name) ? 0 : 1
+    return aTex - bTex
+  })
 
-  for (let i = 0; i < files.length; i++) {
-    const { file } = files[i]
-    const relativePath = relativePaths[i]
+  for (const { entry, relativePath } of indexed) {
+    const { file } = entry
     if (!relativePath) continue
     const path = toProjectPath(relativePath)
 
     if (isLatexPath(file.name)) {
       const source = await file.text()
-      const typPath = dedupeProjectPath(path.replace(/\.tex$/i, '.typ'), usedPaths)
+      const desiredPath = path.replace(/\.tex$/i, '.typ')
+      const typPath = dedupeProjectPath(desiredPath, usedPaths)
+      if (typPath !== desiredPath) {
+        renames.set(desiredPath, typPath)
+        allWarnings.push({
+          message: `Renamed colliding import path ${desiredPath} → ${typPath}`,
+          construct: file.name,
+        })
+      }
       const converted = await convertLatexSource(source, file.name)
       projectFiles.push({
         path: typPath,
@@ -505,16 +627,36 @@ export async function importLatexProject(
       texCount++
     } else if (shouldTreatUploadAsText(file)) {
       const content = await file.text()
+      const uniquePath = dedupeProjectPath(path, usedPaths)
+      if (uniquePath !== path) {
+        allWarnings.push({
+          message: `Renamed colliding import path ${path} → ${uniquePath}`,
+          construct: file.name,
+        })
+        const displacedByConvertedTex = path.endsWith('.typ')
+          && projectFiles.some((f) => f.path === path)
+        if (!displacedByConvertedTex) {
+          renames.set(path, uniquePath)
+        }
+      }
       projectFiles.push({
-        path: dedupeProjectPath(path, usedPaths),
+        path: uniquePath,
         content,
         isBinary: false,
         lastModified: Date.now(),
       })
     } else {
       const fileBuffer = await file.arrayBuffer()
+      const uniquePath = dedupeProjectPath(path, usedPaths)
+      if (uniquePath !== path) {
+        renames.set(path, uniquePath)
+        allWarnings.push({
+          message: `Renamed colliding import path ${path} → ${uniquePath}`,
+          construct: file.name,
+        })
+      }
       projectFiles.push({
-        path: dedupeProjectPath(path, usedPaths),
+        path: uniquePath,
         content: '',
         isBinary: true,
         binaryData: new Uint8Array(fileBuffer),
@@ -526,6 +668,8 @@ export async function importLatexProject(
   if (projectFiles.length === 0) {
     throw new Error('No files found to import')
   }
+
+  applyPathRenames(projectFiles, renames)
 
   const projectName = lastMeta.title
     || (texCount === 1
@@ -559,6 +703,9 @@ export async function importLatexZip(file: File): Promise<LatexImportResult> {
 
   if (built.projectFiles.length === 0) {
     throw new Error('The zip archive contains no importable files.')
+  }
+  if (built.texFilesConverted === 0) {
+    throw new Error('The zip archive contains no .tex files to convert.')
   }
 
   const projectName = built.metadata.title || folderName

@@ -226,6 +226,13 @@ function escapeTypstBracketContent(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
 }
 
+/** Strip known bib extensions, then ensure a single `.bib` suffix for Typst. */
+function normalizeBibliographyPath(raw: string): string {
+  if (!raw) return ''
+  const withoutKnownExt = raw.replace(/\.(bibtex|bib)$/i, '')
+  return `${withoutKnownExt}.bib`
+}
+
 // ── Emit functions ──
 
 function emitRoot(
@@ -431,18 +438,24 @@ function emitMacro(
     case 'href': {
       const url = args[0] || ''
       const text = args[1] || url
-      return `#link("${url}")[${text}]`
+      return `#link("${escapeTypstString(url)}")[${escapeTypstBracketContent(text)}]`
     }
 
     case 'url':
-      return `#link("${args[0] || ''}")`
+      return `#link("${escapeTypstString(args[0] || '')}")`
 
     case 'includegraphics': {
       const file = args[0] || getOptionalArg(macro) || ''
       // Get the last mandatory arg (the file), since first may be options
       const mandatoryArgs = getMandatoryArgs(macro)
       const imgPath = mandatoryArgs[mandatoryArgs.length - 1] || file
-      return `#image("${imgPath}")`
+      if (imgPath && !/\.[A-Za-z0-9]+$/.test(imgPath)) {
+        warnings.push({
+          message: `\\includegraphics{${imgPath}} has no file extension; Typst requires one (e.g. .png)`,
+          construct: 'includegraphics',
+        })
+      }
+      return `#image("${escapeTypstString(imgPath)}")`
     }
 
     case 'caption':
@@ -460,13 +473,23 @@ function emitMacro(
     case 'cite':
     case 'citep':
     case 'citet':
-    case 'autocite':
-      return `@${args[0] || ''}`
+    case 'autocite': {
+      const keys = (args[0] || '')
+        .split(',')
+        .map((key) => key.trim())
+        .filter((key) => key.length > 0)
+      return keys.map((key) => `@${key}`).join(' ')
+    }
 
     case 'bibliography': {
-      const raw = (args[0] || '').trim()
-      const file = raw.toLowerCase().endsWith('.bib') ? raw : `${raw}.bib`
-      return `#bibliography("${file}")`
+      const files = (args[0] || '')
+        .split(',')
+        .map((part) => normalizeBibliographyPath(part.trim()))
+        .filter((part) => part.length > 0)
+      if (files.length === 0) return '#bibliography("")'
+      if (files.length === 1) return `#bibliography("${escapeTypstString(files[0])}")`
+      const list = files.map((file) => `"${escapeTypstString(file)}"`).join(', ')
+      return `#bibliography((${list}))`
     }
 
     case 'bibliographystyle':
@@ -486,7 +509,7 @@ function emitMacro(
         file = `${file}.typ`
       }
       // Leave .sty/.cls/other extensions untouched (unsupported includes).
-      return `#include "${file}"`
+      return `#include "${escapeTypstString(file)}"`
     }
 
     case 'textcolor': {

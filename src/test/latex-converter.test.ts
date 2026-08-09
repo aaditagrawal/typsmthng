@@ -227,6 +227,16 @@ As shown in \cite{knuth1984}.
     expect(result.typst).toContain('@knuth1984')
   })
 
+  it('splits multi-cite keys into separate Typst citations', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+As shown in \cite{knuth1984,lamport1994}.
+\end{document}`)
+
+    expect(result.typst).toContain('@knuth1984 @lamport1994')
+    expect(result.typst).not.toContain('@knuth1984,lamport1994')
+  })
+
   // ── Comments ──
 
   it('converts LaTeX comments to Typst comments', async () => {
@@ -257,6 +267,17 @@ Text\footnote{A footnote}.
 \end{document}`)
 
     expect(result.typst).toContain('#link("https://example.com")[Example]')
+  })
+
+  it('escapes quotes and brackets in links and images', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\href{https://ex.com/a"b}{te]xt}
+\includegraphics{fig"ure.png}
+\end{document}`)
+
+    expect(result.typst).toContain('#link("https://ex.com/a\\"b")[te\\]xt]')
+    expect(result.typst).toContain('#image("fig\\"ure.png")')
   })
 
   it('converts tableofcontents', async () => {
@@ -320,6 +341,18 @@ Page two.
     expect(result.typst).toContain('#bibliography("refs.bib")')
     expect(result.typst).toContain('#bibliography("other.bib")')
     expect(result.typst).not.toContain('refs.bib.bib')
+  })
+
+  it('normalizes .bibtex and comma-separated bibliography lists', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\bibliography{refs.bibtex}
+\bibliography{refs,extra}
+\end{document}`)
+
+    expect(result.typst).toContain('#bibliography("refs.bib")')
+    expect(result.typst).not.toContain('refs.bibtex.bib')
+    expect(result.typst).toContain('#bibliography(("refs.bib", "extra.bib"))')
   })
 
   it('escapes quotes and brackets in document metadata', async () => {
