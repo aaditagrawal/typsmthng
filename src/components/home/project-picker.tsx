@@ -685,8 +685,9 @@ export function ProjectPicker({
   const handleWorkspaceAssignment = async (workspaceId: string | null) => {
     if (selectedProjectIds.length === 0) return
     setWorkspaceActionError(null)
+    // assignProjectsToHomeWorkspace also selects the target workspace in one
+    // home-meta write when workspaceId is set.
     await assignProjectsToHomeWorkspace(selectedProjectIds, workspaceId)
-    if (workspaceId) setSelectedHomeWorkspace(workspaceId)
     exitSelectionMode()
   }
 

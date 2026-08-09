@@ -29,7 +29,7 @@ export function TypstEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const projectSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const pendingProjectSyncRef = useRef<{ path: string; source: string } | null>(null)
+  const pendingProjectSyncRef = useRef<{ projectId: string; path: string; source: string } | null>(null)
   const themeReconfigureFrameRef = useRef<number | null>(null)
   const suppressDocChangeEffectsRef = useRef(false)
   const resolvedTheme = useUIStore((s) => s.resolvedTheme)
@@ -48,11 +48,17 @@ export function TypstEditor() {
     if (!pending) return
 
     pendingProjectSyncRef.current = null
-    useProjectStore.getState().updateFileContent(pending.path, pending.source)
+    // Target the project id captured at edit time so a later project switch
+    // cannot apply this buffer to the wrong document.
+    useProjectStore.getState().updateProjectFileContent(
+      pending.projectId,
+      pending.path,
+      pending.source,
+    )
   }, [])
 
-  const scheduleProjectSync = useCallback((path: string, source: string) => {
-    pendingProjectSyncRef.current = { path, source }
+  const scheduleProjectSync = useCallback((path: string, source: string, projectId: string) => {
+    pendingProjectSyncRef.current = { projectId, path, source }
     if (projectSyncTimerRef.current) {
       clearTimeout(projectSyncTimerRef.current)
     }
@@ -62,7 +68,11 @@ export function TypstEditor() {
       const pending = pendingProjectSyncRef.current
       if (!pending) return
       pendingProjectSyncRef.current = null
-      useProjectStore.getState().updateFileContent(pending.path, pending.source)
+      useProjectStore.getState().updateProjectFileContent(
+        pending.projectId,
+        pending.path,
+        pending.source,
+      )
     }, PROJECT_SYNC_DELAY_MS)
   }, [])
 
@@ -134,9 +144,9 @@ export function TypstEditor() {
             // Update editor store
             useEditorStore.getState().setSource(source)
             // Sync back to project store
-            const path = useProjectStore.getState().currentFilePath
-            if (path) {
-              scheduleProjectSync(path, source)
+            const { currentFilePath: path, currentProjectId: projectId } = useProjectStore.getState()
+            if (path && projectId) {
+              scheduleProjectSync(path, source, projectId)
             }
             requestCompile(source, path)
           }
