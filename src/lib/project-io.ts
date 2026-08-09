@@ -135,6 +135,23 @@ async function convertLatexSource(
   }
 }
 
+/** Merge conversion metadata across multi-file imports without dropping earlier fields. */
+function mergeConversionMetadata(
+  current: ConversionResult['metadata'],
+  next: ConversionResult['metadata'] | null,
+): ConversionResult['metadata'] {
+  if (!next) return current
+
+  const packages = Array.from(new Set([...(current.packages ?? []), ...(next.packages ?? [])]))
+  return {
+    title: next.title || current.title,
+    author: next.author || current.author,
+    date: next.date || current.date,
+    documentclass: next.documentclass || current.documentclass,
+    packages,
+  }
+}
+
 async function buildProjectFilesFromZipEntries(
   entries: ZipImportEntry[],
   options: { convertLatex: boolean },
@@ -159,9 +176,7 @@ async function buildProjectFilesFromZipEntries(
         content = converted.content
         filePath = fullPath.replace(/\.tex$/i, '.typ')
         warnings.push(...converted.warnings)
-        if (converted.metadata && (converted.metadata.title || converted.metadata.author)) {
-          metadata = converted.metadata
-        }
+        metadata = mergeConversionMetadata(metadata, converted.metadata)
         texFilesConverted++
       }
 
@@ -361,7 +376,9 @@ export async function importProject(file: File): Promise<ProjectImportResult | n
 
   if (built.projectFiles.length === 0) return null
 
-  const projectName = built.metadata.title || folderName
+  // Toolbar/generic zip import keeps the archive/folder name. Dedicated LaTeX
+  // importers may prefer \\title metadata instead.
+  const projectName = folderName
   await createImportedProject(projectName, built.projectFiles)
 
   return {
@@ -397,9 +414,7 @@ export async function importLatexProject(
         lastModified: Date.now(),
       })
       allWarnings.push(...converted.warnings)
-      if (converted.metadata && (converted.metadata.title || converted.metadata.author)) {
-        lastMeta = converted.metadata
-      }
+      lastMeta = mergeConversionMetadata(lastMeta, converted.metadata)
       texCount++
     } else if (shouldTreatUploadAsText(file)) {
       const content = await file.text()

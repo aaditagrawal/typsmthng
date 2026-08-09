@@ -230,7 +230,7 @@ describe('project-io import classification', () => {
 
   it('unwraps a wrapped LaTeX zip via importProject and converts .tex', async () => {
     const zipped = zipSync({
-      'Paper/main.tex': asciiBytes('\\begin{document}\nHello.\n\\end{document}'),
+      'Paper/main.tex': asciiBytes('\\title{Ignored Title}\n\\begin{document}\nHello.\n\\end{document}'),
       'Paper/figs/note.txt': asciiBytes('note'),
     })
 
@@ -238,6 +238,7 @@ describe('project-io import classification', () => {
     const result = await importProject(file)
 
     expect(result?.texFilesConverted).toBe(1)
+    // Generic zip import keeps the folder/archive name, not \\title metadata.
     expect(mocked.createProject).toHaveBeenCalledWith(
       'Paper',
       expect.objectContaining({
