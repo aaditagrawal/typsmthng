@@ -308,6 +308,44 @@ Page two.
     expect(result.typst).toContain('#include "APPENDIX.typ"')
   })
 
+  it('does not append .typ onto .sty includes or double .bib', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\input{foo.sty}
+\bibliography{refs.bib}
+\bibliography{other}
+\end{document}`)
+
+    expect(result.typst).toContain('#include "foo.sty"')
+    expect(result.typst).toContain('#bibliography("refs.bib")')
+    expect(result.typst).toContain('#bibliography("other.bib")')
+    expect(result.typst).not.toContain('refs.bib.bib')
+  })
+
+  it('escapes quotes and brackets in document metadata', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\author{Jane "JD" Doe}
+\title{A] Title}
+\begin{document}
+x
+\end{document}`)
+
+    expect(result.typst).toContain('author: "Jane \\"JD\\" Doe"')
+    expect(result.typst).toContain('title: [A\\] Title]')
+  })
+
+  it('emits a pagebreak before part headings', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{document}
+\part{P}
+\section{S}
+\end{document}`)
+
+    expect(result.typst).toContain('#pagebreak()')
+    expect(result.typst).toMatch(/=\s*P/)
+    expect(result.typst).toMatch(/=\s*S/)
+  })
+
   // ── Graceful degradation ──
 
   it('comments out unknown commands with warnings', async () => {

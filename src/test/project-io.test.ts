@@ -368,6 +368,7 @@ describe('project-io export', () => {
       files: [
         { path: '/main.typ', content: '= Demo', isBinary: false, lastModified: 1 },
         { path: '/img.png', content: '', isBinary: true, binaryData: imageBytes, lastModified: 1 },
+        { path: '/missing.bin', content: '', isBinary: true, lastModified: 1 },
         { path: '/empty/.folder', content: '', isBinary: false, lastModified: 1 },
       ],
       mainFile: '/main.typ',
@@ -383,6 +384,40 @@ describe('project-io export', () => {
     const buffer = new Uint8Array(await blob.arrayBuffer())
     const unzipped = unzipSync(buffer)
     expect(Object.keys(unzipped).sort()).toEqual(['img.png', 'main.typ'])
+  })
+
+  it('dedupes colliding .tex/.typ paths on import', async () => {
+    const zipped = zipSync({
+      'main.tex': asciiBytes('\\begin{document}From tex\\end{document}'),
+      'main.typ': asciiBytes('= From typ'),
+    })
+
+    const result = await importProject(makeZipFileLike('Dup.zip', zipped))
+    const project = mocked.state.projects[0]
+    expect(project.files.map((f) => f.path).sort()).toEqual(['/main-2.typ', '/main.typ'])
+    expect(result?.warnings.some((w) => w.message.includes('colliding'))).toBe(true)
+  })
+
+  it('strips shared folder prefix for LaTeX folder imports', async () => {
+    const { importLatexProject } = await import('@/lib/project-io')
+    const files = [
+      {
+        relativePath: 'Thesis/main.tex',
+        file: { name: 'main.tex', text: async () => '\\begin{document}\\input{chapters/one}\\end{document}' } as File,
+      },
+      {
+        relativePath: 'Thesis/chapters/one.tex',
+        file: { name: 'one.tex', text: async () => '\\section{One}' } as File,
+      },
+    ]
+
+    await importLatexProject(files)
+    const project = mocked.state.projects[0]
+    expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.typ',
+      '/main.typ',
+    ])
+    expect(project.mainFile).toBe('/main.typ')
   })
 
   it('exports all projects under unique folders', async () => {

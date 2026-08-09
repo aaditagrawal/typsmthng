@@ -14,6 +14,10 @@ const compilerWasmUrl = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-we
 let compiler: Awaited<ReturnType<typeof createTypstCompiler>> | null = null
 let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
 let initPromise: Promise<void> | null = null
+/** Bumped on font/config teardown so in-flight WASM inits cannot publish stale instances. */
+let initGeneration = 0
+/** Serializes compile/render ops that mutate shared compiler/renderer session state. */
+let operationChain: Promise<unknown> = Promise.resolve()
 const PROJECT_ROOT = '/'
 const packageAccessModel = new MemoryAccessModel()
 const insertedPackageRoots = new Set<string>()
@@ -27,6 +31,15 @@ function sameFontData(next: Uint8Array[]): boolean {
   return true
 }
 
+function enqueueCompilerOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const run = operationChain.then(operation, operation)
+  operationChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
 export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }): void {
   const nextFontData = options?.fontData ?? []
   if (sameFontData(nextFontData)) return
@@ -34,7 +47,9 @@ export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }):
   additionalFontData = nextFontData
   compiler = null
   renderer = null
-  initPromise = null
+  initGeneration += 1
+  // Leave initPromise set so waiters can observe the in-flight attempt; generation
+  // gating discards stale publishes and callers retry until current config is ready.
 }
 
 function decodeVersion(version: unknown): string {
@@ -93,36 +108,68 @@ function ensurePackageInAccessModel(spec: unknown): string | undefined {
 }
 
 export async function initCompilerBackend(): Promise<void> {
-  if (initPromise) return initPromise
+  while (!isCompilerReadyBackend()) {
+    const generationAtWait = initGeneration
 
-  initPromise = (async () => {
+    if (!initPromise) {
+      const generation = initGeneration
+      const fontsForInit = additionalFontData
+
+      const pending = (async () => {
+        try {
+          const nextCompiler = createTypstCompiler()
+          await nextCompiler.init({
+            getModule: () => compilerWasmUrl,
+            beforeBuild: [
+              loadFonts(fontsForInit, { assets: ['text'] }),
+              initOptions.withAccessModel(packageAccessModel as never),
+              initOptions.withPackageRegistry({
+                resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
+              } as never),
+            ],
+          })
+
+          const nextRenderer = createTypstRenderer()
+          await nextRenderer.init({
+            getModule: () => rendererWasmUrl,
+          })
+
+          // Config changed while WASM was loading — discard this instance.
+          if (generation !== initGeneration) return
+
+          compiler = nextCompiler
+          renderer = nextRenderer
+        } catch (err) {
+          console.error('Failed to initialize compiler:', err)
+          if (generation === initGeneration) {
+            compiler = null
+            renderer = null
+          }
+          throw err
+        } finally {
+          if (initPromise === pending) {
+            initPromise = null
+          }
+        }
+      })()
+
+      initPromise = pending
+    }
+
     try {
-      compiler = createTypstCompiler()
-      await compiler.init({
-        getModule: () => compilerWasmUrl,
-        beforeBuild: [
-          loadFonts(additionalFontData, { assets: ['text'] }),
-          initOptions.withAccessModel(packageAccessModel as never),
-          initOptions.withPackageRegistry({
-            resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
-          } as never),
-        ],
-      })
-
-      renderer = createTypstRenderer()
-      await renderer.init({
-        getModule: () => rendererWasmUrl,
-      })
+      await initPromise
     } catch (err) {
-      console.error('Failed to initialize compiler:', err)
-      compiler = null
-      renderer = null
-      initPromise = null
+      if (isCompilerReadyBackend()) return
+      // A newer configure invalidated this attempt; loop and retry.
+      if (initGeneration !== generationAtWait) continue
       throw err
     }
-  })()
 
-  return initPromise
+    if (!isCompilerReadyBackend()) {
+      // Init finished without publishing (superseded). Retry current config.
+      continue
+    }
+  }
 }
 
 export interface PageDimension {

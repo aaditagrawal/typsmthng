@@ -217,6 +217,15 @@ function getEnvName(env: Ast.Environment): string {
   return ''
 }
 
+function escapeTypstString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function escapeTypstBracketContent(value: string): string {
+  // Content inside [...] must not terminate the bracket early.
+  return value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
+}
+
 // ── Emit functions ──
 
 function emitRoot(
@@ -266,9 +275,9 @@ function emitRoot(
   // Emit metadata as Typst #set / #show rules
   if (metadata.title || metadata.author || metadata.date) {
     const setArgs: string[] = []
-    if (metadata.title) setArgs.push(`  title: [${metadata.title}],`)
-    if (metadata.author) setArgs.push(`  author: "${metadata.author}",`)
-    if (metadata.date) setArgs.push(`  date: "${metadata.date}",`)
+    if (metadata.title) setArgs.push(`  title: [${escapeTypstBracketContent(metadata.title)}],`)
+    if (metadata.author) setArgs.push(`  author: "${escapeTypstString(metadata.author)}",`)
+    if (metadata.date) setArgs.push(`  date: "${escapeTypstString(metadata.date)}",`)
     parts.push(`#set document(\n${setArgs.join('\n')}\n)`)
     parts.push('')
   }
@@ -390,8 +399,12 @@ function emitMacro(
   // Sectioning commands
   if (name in SECTIONING) {
     const depth = SECTIONING[name]
-    const heading = '='.repeat(depth || 1)
+    // depth 0 (part) must not collapse via `0 || 1` into the same level as section.
+    const heading = '='.repeat(depth <= 0 ? 1 : depth)
     const title = args[0] || ''
+    if (name === 'part') {
+      return `\n#pagebreak()\n${heading} ${title}\n`
+    }
     return `\n${heading} ${title}\n`
   }
 
@@ -450,8 +463,11 @@ function emitMacro(
     case 'autocite':
       return `@${args[0] || ''}`
 
-    case 'bibliography':
-      return `#bibliography("${args[0] || ''}.bib")`
+    case 'bibliography': {
+      const raw = (args[0] || '').trim()
+      const file = raw.toLowerCase().endsWith('.bib') ? raw : `${raw}.bib`
+      return `#bibliography("${file}")`
+    }
 
     case 'bibliographystyle':
       return '' // no typst equivalent
@@ -459,9 +475,17 @@ function emitMacro(
     case 'input':
     case 'include': {
       let file = (args[0] || '').trim()
-      if (!file.toLowerCase().endsWith('.typ')) {
-        file = file.replace(/\.tex$/i, '') + '.typ'
+      if (!file) return '#include ""'
+      const lower = file.toLowerCase()
+      if (lower.endsWith('.typ')) {
+        // already typst
+      } else if (lower.endsWith('.tex')) {
+        file = file.replace(/\.tex$/i, '.typ')
+      } else if (!/\.[A-Za-z0-9]+$/.test(file)) {
+        // LaTeX \input{chapter} implies .tex
+        file = `${file}.typ`
       }
+      // Leave .sty/.cls/other extensions untouched (unsupported includes).
       return `#include "${file}"`
     }
 
