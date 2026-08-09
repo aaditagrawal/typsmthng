@@ -3,6 +3,7 @@ import { Loader2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { preloadWorkspaceShell } from '@/components/workspace/preload'
 
 const HomeShell = lazy(() => import('@/components/home/home-shell'))
@@ -47,13 +48,10 @@ export default function App() {
         e.preventDefault()
         const projectStore = useProjectStore.getState()
         const currentPath = projectStore.currentFilePath
+        // Sync path: async import here can lose saves on quick tab close when
+        // focus is outside CodeMirror (this handler is then the only save path).
         if (currentPath) {
-          // Lazy-load editor store so the home shell never pays for it.
-          void import('@/stores/editor-store').then(({ useEditorStore }) => {
-            projectStore.updateFileContent(currentPath, useEditorStore.getState().source)
-            void projectStore.saveCurrentProject()
-          })
-          return
+          projectStore.updateFileContent(currentPath, useEditorStore.getState().source)
         }
         void projectStore.saveCurrentProject()
       }

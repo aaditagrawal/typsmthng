@@ -6,11 +6,12 @@ Updated March 9, 2026 from local production output (`dist/`).
 
 - Initial preloaded JS (from `dist/index.html`): ~379 KB raw (budget 500 KB).
 - Dist assets (`js + css + wasm + fonts`): ~3.4 MB raw (Typst WASM dominates).
-- Home preload composition (must stay editor/Typst-free):
+- Home preload composition (must stay CodeMirror/Typst-free):
   - `react-core-*.js`: ~355 KB raw
   - `project-store-*.js`: ~18 KB raw
   - `index-*.js`: ~7 KB raw
   - `settings-store-*.js` / `ui-store-*.js` / `state-core-*.js`: small
+  - `editor-store` may load with the app for sync Cmd+S but must not pull `editor-core`
 - Deferred until workspace / import actions:
   - `editor-core-*.js`: ~492 KB raw
   - `latex-converter-*.js`: ~358 KB raw
