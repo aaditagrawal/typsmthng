@@ -130,11 +130,30 @@ let lastEnsuredPackagesKey: string | null = null
 let smoothedCompileTimeMs = 0
 let nextCompileRequestId = 0
 let latestRequestedCompileId = 0
+const requestSettleWaiters = new Map<number, Array<() => void>>()
 
 function nextRequestId(): number {
   nextCompileRequestId += 1
   latestRequestedCompileId = nextCompileRequestId
   return nextCompileRequestId
+}
+
+function waitForRequestSettle(requestId: number): Promise<void> {
+  return new Promise((resolve) => {
+    const waiters = requestSettleWaiters.get(requestId)
+    if (waiters) {
+      waiters.push(resolve)
+    } else {
+      requestSettleWaiters.set(requestId, [resolve])
+    }
+  })
+}
+
+function settleRequest(requestId: number): void {
+  const waiters = requestSettleWaiters.get(requestId)
+  if (!waiters) return
+  requestSettleWaiters.delete(requestId)
+  for (const resolve of waiters) resolve()
 }
 
 function applyPackageCompatIfNeeded(source: string): string {
@@ -151,22 +170,30 @@ function effectiveCompileDelay(baseDelay: number): number {
 }
 
 export async function ensureCompilerReady(): Promise<void> {
-  const store = useCompileStore.getState()
-  if (isCompilerReady()) {
-    store.setCompilerReady(true)
-    return
-  }
-  if (initPromise) return initPromise
+  while (!isCompilerReady()) {
+    if (!initPromise) {
+      useCompileStore.getState().setCompilerReady(false)
+      initPromise = initCompiler().catch((err) => {
+        useCompileStore.getState().setCompilerReady(false)
+        initPromise = null
+        throw err
+      })
+    }
 
-  store.setCompilerReady(false)
-  initPromise = initCompiler().catch((err) => {
-    store.setCompilerReady(false)
-    initPromise = null
-    throw err
-  })
-  return initPromise.then(() => {
-    useCompileStore.getState().setCompilerReady(true)
-  })
+    try {
+      await initPromise
+    } catch (err) {
+      if (isCompilerReady()) break
+      throw err
+    }
+
+    if (!isCompilerReady()) {
+      // Init fulfilled, then fonts/config tore the compiler down. Re-init.
+      initPromise = null
+    }
+  }
+
+  useCompileStore.getState().setCompilerReady(true)
 }
 
 function scheduleDeferredCompile(request: CompileRequest): void {
@@ -216,7 +243,12 @@ async function waitForEditorIdle(requestId: number): Promise<number> {
 
 async function doCompile(request: CompileRequest): Promise<void> {
   if (compiling) {
+    if (pendingRequest && pendingRequest.requestId !== request.requestId) {
+      // Replaced before it could run — release any awaiters.
+      settleRequest(pendingRequest.requestId)
+    }
     pendingRequest = request
+    await waitForRequestSettle(request.requestId)
     return
   }
 
@@ -360,9 +392,11 @@ async function doCompile(request: CompileRequest): Promise<void> {
   } finally {
     compiling = false
 
-    if (pendingRequest !== null) {
-      const next = pendingRequest
-      pendingRequest = null
+    const next = pendingRequest
+    pendingRequest = null
+    settleRequest(request.requestId)
+
+    if (next !== null) {
       scheduleDeferredCompile(next)
     }
   }

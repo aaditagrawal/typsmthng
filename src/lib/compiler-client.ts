@@ -43,8 +43,11 @@ let workerApi: Remote<CompilerWorkerApi> | null = null
 let workerAvailable = typeof Worker !== 'undefined'
 let compilerReady = false
 let backendInitPromise: Promise<void> | null = null
+let clientInitPromise: Promise<void> | null = null
 let currentCompilerConfigKey = ''
 let currentFontData: Uint8Array[] = []
+/** Bumped whenever font config is swapped so in-flight client inits can detect staleness. */
+let clientConfigGeneration = 0
 
 function resetWorkerTransport(): void {
   if (worker) {
@@ -71,6 +74,7 @@ async function ensureCompilerConfig(
   currentCompilerConfigKey = key
   currentFontData = data
   compilerReady = false
+  clientConfigGeneration += 1
   backendInitPromise = null
   configureCompilerBackend({ fontData: currentFontData })
   resetWorkerTransport()
@@ -154,16 +158,53 @@ export async function initCompilerClient(
   if (source) {
     await ensureCompilerConfig(source, extraFiles)
   }
-  await callWithFallback(
-    async (api) => {
-      await api.initCompiler({ fontData: currentFontData })
-      compilerReady = true
-    },
-    async () => {
-      await ensureBackendInitialized()
-      compilerReady = true
-    },
-  )
+
+  while (!compilerReady) {
+    const generationAtWait = clientConfigGeneration
+
+    if (!clientInitPromise) {
+      const generation = clientConfigGeneration
+      const fontsForInit = currentFontData
+
+      let pending: Promise<void>
+      pending = (async () => {
+        try {
+          await callWithFallback(
+            async (api) => {
+              await api.initCompiler({ fontData: fontsForInit })
+            },
+            async () => {
+              await ensureBackendInitialized()
+            },
+          )
+          if (generation === clientConfigGeneration) {
+            compilerReady = true
+          }
+        } catch (err) {
+          if (generation === clientConfigGeneration) {
+            compilerReady = false
+          }
+          throw err
+        } finally {
+          if (clientInitPromise === pending) {
+            clientInitPromise = null
+          }
+        }
+      })()
+
+      clientInitPromise = pending
+    }
+
+    try {
+      await clientInitPromise
+    } catch (err) {
+      if (compilerReady) return
+      if (clientConfigGeneration !== generationAtWait) continue
+      throw err
+    }
+
+    if (!compilerReady) continue
+  }
 }
 
 export async function compileTypstClient(
