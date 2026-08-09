@@ -1,6 +1,5 @@
 import type { KeyBinding } from '@codemirror/view'
 import { useProjectStore } from '@/stores/project-store'
-import { useEditorStore } from '@/stores/editor-store'
 import { forceCompile } from './compile-manager'
 import { useSettingsStore } from '@/stores/settings-store'
 import { exportCurrentProjectPdf } from './pdf-export'
@@ -11,18 +10,8 @@ export const typstKeymap: KeyBinding[] = [
     key: 'Mod-/',
     run: (view) => toggleTypstLineComment(view),
   },
-  {
-    key: 'Mod-s',
-    run: () => {
-      const projectStore = useProjectStore.getState()
-      const currentPath = projectStore.currentFilePath
-      if (currentPath) {
-        projectStore.updateFileContent(currentPath, useEditorStore.getState().source)
-      }
-      projectStore.saveCurrentProject()
-      return true
-    },
-  },
+  // Mod-s is handled once at the window level in App.tsx so focus outside
+  // CodeMirror still saves, without double-persisting from this keymap.
   {
     key: 'Mod-Enter',
     run: (view) => {

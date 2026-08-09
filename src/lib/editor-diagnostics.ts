@@ -95,9 +95,10 @@ export const diagnosticField = StateField.define<DecorationSet>({
           const to = lineColToPos(doc, parsed.toLine, parsed.toCol)
           if (from === null || to === null) continue
 
-          // Ensure we have a visible range — if from === to, extend to end of line
+          // Zero-width ranges (common at EOL) need at least one character of
+          // coverage. Prefer the next character, including a trailing newline.
           const actualTo = from === to
-            ? Math.min(from + 1, doc.line(parsed.fromLine).from + doc.line(parsed.fromLine).length)
+            ? Math.min(from + 1, doc.length)
             : to
 
           if (from >= actualTo) continue

@@ -64,7 +64,13 @@ describe('bundle budget guardrails', () => {
     expect(viteConfigSource).toContain("return 'editor-core'")
     for (const pattern of BLOCKED_HOME_PRELOAD_PATTERNS) {
       expect(viteConfigSource).toContain(`'${pattern}'`)
-      expect(budgetScriptSource).toContain(`'${pattern}'`)
     }
+    // Budget script walks the static closure and allows editor-store on home for
+    // sync Cmd+S; it still rejects editor-core/vim, typst, latex, workspace, project-io.
+    for (const token of ['editor-core', 'editor-vim', 'typst-engine', 'latex-', 'workspace-', 'project-io']) {
+      expect(budgetScriptSource).toContain(token)
+    }
+    expect(budgetScriptSource).toContain('walkStaticClosure')
+    expect(budgetScriptSource).toContain('createTypstCompiler')
   })
 })

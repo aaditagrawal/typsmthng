@@ -93,6 +93,11 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Keep Vite's shared dynamic-import helper out of typst-engine so the
+          // home graph (project-store → editor-store preload) does not wait on Typst TLA.
+          if (id.includes('preload-helper') || id.includes('vite/modulepreload')) {
+            return 'rolldown-runtime'
+          }
           if (!id.includes('node_modules')) return undefined
           if (id.includes('unified-latex') || id.includes('pegjs')) return 'latex-converter'
           if (id.includes('@replit/codemirror-vim')) return 'editor-vim'
@@ -104,7 +109,19 @@ export default defineConfig({
             || id.includes('@lezer') || id.includes('codemirror-lang-typst')
             || id.includes('@replit/codemirror')
           ) return 'editor-core'
-          if (id.includes('react') || id.includes('scheduler')) return 'react-core'
+          // Typst runtime must not ride the catch-all vendor chunk onto the home
+          // static graph (it brings __tla and blocks React mount).
+          if (
+            id.includes('@myriaddreamin')
+            || id.includes('typst-ts-')
+            || id.includes('/typst.ts')
+          ) return 'typst-engine'
+          // Only real React packages — lucide-react must not inflate react-core.
+          if (
+            id.includes('/node_modules/react/')
+            || id.includes('/node_modules/react-dom/')
+            || id.includes('/node_modules/scheduler/')
+          ) return 'react-core'
           if (id.includes('zustand') || id.includes('idb-keyval')) return 'state-core'
           return 'vendor'
         },

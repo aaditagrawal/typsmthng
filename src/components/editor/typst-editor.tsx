@@ -1,13 +1,12 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { EditorView, lineNumbers, highlightActiveLine, highlightActiveLineGutter, keymap } from '@codemirror/view'
-import { EditorState, Compartment } from '@codemirror/state'
+import { EditorState, Compartment, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput, syntaxHighlighting, defaultHighlightStyle } from '@codemirror/language'
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search'
 import { typst } from 'codemirror-lang-typst'
 import { indentationMarkers } from '@replit/codemirror-indentation-markers'
-import { vim } from '@replit/codemirror-vim'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
@@ -23,7 +22,16 @@ import { useCompileStore } from '@/stores/compile-store'
 // Compartments for live reconfiguration
 const themeCompartment = new Compartment()
 const vimCompartment = new Compartment()
+const lineNumbersCompartment = new Compartment()
+const lineWrappingCompartment = new Compartment()
+const fontSizeCompartment = new Compartment()
 const PROJECT_SYNC_DELAY_MS = 800
+
+function fontSizeExtension(fontSize: number) {
+  return EditorView.theme({
+    '&': { fontSize: `${fontSize}px` },
+  })
+}
 
 export function TypstEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
@@ -37,6 +45,9 @@ export function TypstEditor() {
   const currentFilePath = useProjectStore((s) => s.currentFilePath)
   const currentProjectId = useProjectStore((s) => s.currentProjectId)
   const vimMode = useSettingsStore((s) => s.vimMode)
+  const fontSize = useSettingsStore((s) => s.fontSize)
+  const lineWrapping = useSettingsStore((s) => s.lineWrapping)
+  const showLineNumbers = useSettingsStore((s) => s.lineNumbers)
 
   const flushPendingProjectSync = useCallback(() => {
     if (projectSyncTimerRef.current) {
@@ -87,11 +98,12 @@ export function TypstEditor() {
     const filePath = useProjectStore.getState().currentFilePath
     const file = project?.files.find((f) => f.path === filePath)
     const initialDoc = file?.content || SAMPLE_DOCUMENT
+    const settings = useSettingsStore.getState()
 
     const state = EditorState.create({
       doc: initialDoc,
       extensions: [
-        lineNumbers(),
+        lineNumbersCompartment.of(settings.lineNumbers ? lineNumbers() : []),
         highlightActiveLine(),
         highlightActiveLineGutter(),
         history(),
@@ -100,7 +112,8 @@ export function TypstEditor() {
         indentOnInput(),
         highlightSelectionMatches(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        EditorView.lineWrapping,
+        lineWrappingCompartment.of(settings.lineWrapping ? EditorView.lineWrapping : []),
+        fontSizeCompartment.of(fontSizeExtension(settings.fontSize)),
         typst(),
         indentationMarkers({
           hideFirstIndent: false,
@@ -112,7 +125,8 @@ export function TypstEditor() {
           },
           thickness: 1,
         }),
-        vimCompartment.of(useSettingsStore.getState().vimMode ? vim() : []),
+        // Vim is loaded on demand so workspace boot skips ~193KB when disabled.
+        vimCompartment.of([]),
         themeCompartment.of(createEditorTheme(useUIStore.getState().resolvedTheme)),
         sourceHighlightField,
         diagnosticField,
@@ -168,6 +182,13 @@ export function TypstEditor() {
     useEditorStore.setState({ source: src, isDirty: false, saveStatus: 'saved' })
     forceCompile(src, filePath)
 
+    if (settings.vimMode) {
+      void import('@replit/codemirror-vim').then(({ vim }) => {
+        if (viewRef.current !== view || !useSettingsStore.getState().vimMode) return
+        view.dispatch({ effects: vimCompartment.reconfigure(vim()) })
+      })
+    }
+
     return () => {
       if (themeReconfigureFrameRef.current !== null) {
         cancelAnimationFrame(themeReconfigureFrameRef.current)
@@ -205,15 +226,49 @@ export function TypstEditor() {
     }
   }, [resolvedTheme])
 
-  // React to vim mode changes — reconfigure CodeMirror
+  // React to vim mode changes — load the vim chunk only when enabled.
   useEffect(() => {
     const view = viewRef.current
     if (!view) return
 
-    view.dispatch({
-      effects: vimCompartment.reconfigure(vimMode ? vim() : []),
+    if (!vimMode) {
+      view.dispatch({ effects: vimCompartment.reconfigure([]) })
+      return
+    }
+
+    let cancelled = false
+    void import('@replit/codemirror-vim').then(({ vim }) => {
+      if (cancelled || viewRef.current !== view || !useSettingsStore.getState().vimMode) return
+      view.dispatch({ effects: vimCompartment.reconfigure(vim()) })
     })
+    return () => {
+      cancelled = true
+    }
   }, [vimMode])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: lineNumbersCompartment.reconfigure(showLineNumbers ? lineNumbers() : []),
+    })
+  }, [showLineNumbers])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: lineWrappingCompartment.reconfigure(lineWrapping ? EditorView.lineWrapping : []),
+    })
+  }, [lineWrapping])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    view.dispatch({
+      effects: fontSizeCompartment.reconfigure(fontSizeExtension(fontSize)),
+    })
+  }, [fontSize])
 
   // React to file/project changes — swap document content
   useEffect(() => {
@@ -230,7 +285,7 @@ export function TypstEditor() {
     const currentContent = view.state.doc.toString()
     if (currentContent === file.content) return
 
-    // Replace entire document content
+    // Replace entire document content without polluting undo history.
     suppressDocChangeEffectsRef.current = true
     view.dispatch({
       changes: {
@@ -238,6 +293,7 @@ export function TypstEditor() {
         to: view.state.doc.length,
         insert: file.content,
       },
+      annotations: [Transaction.addToHistory.of(false)],
     })
 
     forceCompile(file.content, currentFilePath)

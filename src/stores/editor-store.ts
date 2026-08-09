@@ -26,6 +26,9 @@ export const useEditorStore = create<EditorState>((set) => ({
     set({ source, isDirty: true, saveStatus: 'unsaved', lastUserEditAt: Date.now() })
   },
 
-  setDirty: (isDirty) => set({ isDirty }),
+  setDirty: (isDirty) => set({
+    isDirty,
+    saveStatus: isDirty ? 'unsaved' : 'saved',
+  }),
   setEditorView: (editorView) => set({ editorView }),
 }))

@@ -48,8 +48,8 @@ export default function App() {
         e.preventDefault()
         const projectStore = useProjectStore.getState()
         const currentPath = projectStore.currentFilePath
-        // Sync path: async import here can lose saves on quick tab close when
-        // focus is outside CodeMirror (this handler is then the only save path).
+        // Single save path (keymap no longer also handles Mod-s). Keep this
+        // synchronous — a dynamic import here can lose saves on quick tab close.
         if (currentPath) {
           projectStore.updateFileContent(currentPath, useEditorStore.getState().source)
         }
