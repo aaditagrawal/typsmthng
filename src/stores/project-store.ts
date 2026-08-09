@@ -893,6 +893,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const epoch = getProjectEpoch(id)
       if (!get().projects.some((p) => p.id === id)) return
 
+      if (get().currentProjectId === id) {
+        useEditorStore.setState({ saveStatus: 'saving' })
+      }
+
       try {
         // Re-check immediately before the write so a delete that landed after we
         // entered this function cannot be overwritten / resurrected.
@@ -928,6 +932,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }
       } catch (err) {
         console.warn('Failed to save project to IDB:', err)
+        if (get().currentProjectId === id) {
+          useEditorStore.setState({ saveStatus: 'unsaved', isDirty: true })
+        }
       }
     })
   },
