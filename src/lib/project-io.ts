@@ -244,14 +244,23 @@ function sanitizeExportFolderName(name: string): string {
   return name.replace(/[/\\:*?"<>|]/g, '_').replace(/^\.+/, '_') || 'project'
 }
 
-/** Unique folder names for multi-project export (avoids A/B vs A_B collisions). */
+/**
+ * Unique folder names for multi-project export.
+ * Reserves every final folder string (not just sanitized bases) so a generated
+ * `A-2` cannot collide with a project whose sanitized name is literally `A-2`.
+ */
 export function uniqueExportFolderNames(projectNames: string[]): string[] {
-  const used = new Map<string, number>()
+  const used = new Set<string>()
   return projectNames.map((name) => {
     const base = sanitizeExportFolderName(name)
-    const count = used.get(base) ?? 0
-    used.set(base, count + 1)
-    return count === 0 ? base : `${base}-${count + 1}`
+    let candidate = base
+    let suffix = 2
+    while (used.has(candidate)) {
+      candidate = `${base}-${suffix}`
+      suffix++
+    }
+    used.add(candidate)
+    return candidate
   })
 }
 

@@ -328,6 +328,11 @@ describe('project-io zip helpers', () => {
   it('dedupes colliding export folder names', () => {
     expect(uniqueExportFolderNames(['A/B', 'A_B', 'A/B'])).toEqual(['A_B', 'A_B-2', 'A_B-3'])
   })
+
+  it('does not let generated suffixes collide with existing project names', () => {
+    expect(uniqueExportFolderNames(['A', 'A', 'A-2'])).toEqual(['A', 'A-2', 'A-2-2'])
+    expect(uniqueExportFolderNames(['A-2', 'A', 'A'])).toEqual(['A-2', 'A', 'A-3'])
+  })
 })
 
 describe('project-io export', () => {
