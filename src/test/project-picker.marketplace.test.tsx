@@ -84,7 +84,7 @@ describe('ProjectPicker marketplace', () => {
       name: 'aero-check',
       latestVersion: '0.1.1',
       latestResolvedSpec: '@preview/aero-check:0.1.1',
-      initCommand: 'typst init @preview/aero-check',
+      initCommand: 'typst init @preview/aero-check:0.1.1',
       isTemplate: true,
       templateEntrypoint: 'main.typ',
     }])
@@ -102,6 +102,30 @@ describe('ProjectPicker marketplace', () => {
     fireEvent.click(await screen.findByTestId('marketplace-prefill-aero-check'))
 
     const commandInput = screen.getByPlaceholderText('typst init @preview/aero-check:0.1.1') as HTMLInputElement
-    expect(commandInput.value).toBe('typst init @preview/aero-check')
+    expect(commandInput.value).toBe('typst init @preview/aero-check:0.1.1')
+  })
+
+  it('surfaces init failures inside the marketplace modal', async () => {
+    const { runInitCommand } = await import('@/lib/template-init')
+    vi.mocked(runInitCommand).mockRejectedValueOnce(new Error('network down'))
+
+    searchUniverseMarketplaceMock.mockResolvedValue([{
+      name: 'aero-check',
+      latestVersion: '0.1.1',
+      latestResolvedSpec: '@preview/aero-check:0.1.1',
+      initCommand: 'typst init @preview/aero-check:0.1.1',
+      isTemplate: true,
+      templateEntrypoint: 'main.typ',
+    }])
+
+    render(<ProjectPicker onShowGuide={() => {}} />)
+
+    fireEvent.click(screen.getByTestId('template-init-reveal-button'))
+    fireEvent.click(screen.getByTestId('marketplace-open-button'))
+    fireEvent.change(screen.getByTestId('marketplace-search-input'), { target: { value: 'ae' } })
+    fireEvent.click(await screen.findByTestId('marketplace-import-aero-check'))
+
+    expect(await screen.findByTestId('marketplace-init-error')).toHaveTextContent('network down')
+    expect(screen.getByTestId('marketplace-modal')).toBeInTheDocument()
   })
 })

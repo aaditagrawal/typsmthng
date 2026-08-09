@@ -1,5 +1,6 @@
 import { gzipSync } from 'fflate'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { unescapeTomlString } from '@/lib/universe-registry'
 
 const encoder = new TextEncoder()
 
@@ -108,7 +109,7 @@ describe('universe registry', () => {
       },
       {
         path: 'template/main.typ',
-        content: '#import "../lib.typ": helper\n#import "@preview/ctheorems:1.1.2": *\n= Main\n#helper\n',
+        content: '#import "@preview/aero-check:0.1.1": helper\n#import "@preview/ctheorems:1.1.2": *\n= Main\n#helper\n',
       },
       { path: 'template/refs.bib', content: '@book{x, title={X}}\n' },
       { path: 'lib.typ', content: '#let helper = [ok]\n' },
@@ -129,16 +130,18 @@ describe('universe registry', () => {
       version: '0.1.1',
     })
 
-    expect(scaffold.mainFile).toBe('/template/main.typ')
-    expect(scaffold.files.some((f) => f.path === '/template/main.typ')).toBe(true)
-    expect(scaffold.files.some((f) => f.path === '/template/refs.bib')).toBe(true)
-    expect(scaffold.files.some((f) => f.path === '/lib.typ')).toBe(true)
+    // typst init content_only: flatten template/ → project root; package lib stays out.
+    expect(scaffold.mainFile).toBe('/main.typ')
+    expect(scaffold.files.some((f) => f.path === '/main.typ')).toBe(true)
+    expect(scaffold.files.some((f) => f.path === '/refs.bib')).toBe(true)
+    expect(scaffold.files.some((f) => f.path === '/lib.typ')).toBe(false)
+    expect(scaffold.files.some((f) => f.path === '/template/main.typ')).toBe(false)
     expect(scaffold.files.some((f) => f.path === '/.typsmthng/template.json')).toBe(true)
-    const mainContent = scaffold.files.find((f) => f.path === '/template/main.typ' && !f.isBinary)?.content ?? ''
+    const mainContent = scaffold.files.find((f) => f.path === '/main.typ' && !f.isBinary)?.content ?? ''
     expect(mainContent).toContain('@preview/ctheorems:1.1.3')
     expect(mainContent).not.toContain('@preview/ctheorems:1.1.2')
     expect(scaffold.templateMeta?.resolvedSpec).toBe('@preview/aero-check:0.1.1')
-    expect(scaffold.templateMeta?.templateEntrypoint).toBe('template/main.typ')
+    expect(scaffold.templateMeta?.templateEntrypoint).toBe('main.typ')
   })
 
   it('prefetches recursive package imports for compile', async () => {
@@ -296,7 +299,8 @@ describe('universe registry', () => {
     expect(templateResult).toMatchObject({
       latestVersion: '0.2.0',
       isTemplate: true,
-      initCommand: 'typst init @preview/aero-check',
+      latestResolvedSpec: '@preview/aero-check:0.2.0',
+      initCommand: 'typst init @preview/aero-check:0.2.0',
     })
 
     const results = await searchUniverseMarketplace('ac')
@@ -316,5 +320,13 @@ describe('universe registry', () => {
 
     expect(results).toEqual([])
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('unescapeTomlString', () => {
+  it('unescapes sequences without corrupting literal backslash-n', () => {
+    expect(unescapeTomlString('line\\nnext')).toBe('line\nnext')
+    expect(unescapeTomlString('keep\\\\n')).toBe('keep\\n')
+    expect(unescapeTomlString('quote\\"here')).toBe('quote"here')
   })
 })

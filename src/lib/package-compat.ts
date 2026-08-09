@@ -27,7 +27,14 @@ export function applyPackageImportCompatRewrites(source: string): string {
   let next = source
   for (const rewrite of PACKAGE_IMPORT_REWRITES) {
     if (!next.includes(rewrite.from)) continue
-    next = next.split(rewrite.from).join(rewrite.to)
+    // Require a version boundary so `@preview/pkg:1.1.2` does not rewrite
+    // `@preview/pkg:1.1.20` → `…:1.1.30`.
+    const pattern = new RegExp(`${escapeRegExp(rewrite.from)}(?![0-9])`, 'g')
+    next = next.replace(pattern, rewrite.to)
   }
   return next
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

@@ -20,4 +20,9 @@ describe('package import compatibility rewrites', () => {
     const source = '#import "@preview/ctheorems:1.1.3": *\n= Document'
     expect(applyPackageImportCompatRewrites(source)).toBe(source)
   })
+
+  it('does not rewrite longer semver prefixes', () => {
+    const source = '#import "@preview/ctheorems:1.1.20": *\n= Document'
+    expect(applyPackageImportCompatRewrites(source)).toBe(source)
+  })
 })

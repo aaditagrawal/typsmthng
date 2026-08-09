@@ -75,6 +75,7 @@ const inMemoryArchives = new Map<string, PackageArchiveCache>()
 const inMemoryPrepared = new Map<string, PreparedPackage>()
 const inMemoryRuntimeDeps = new Map<string, string[]>()
 const inFlightEnsureDeps = new Map<string, Promise<string[]>>()
+const inFlightPreparePackage = new Map<string, Promise<PreparedPackage>>()
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
@@ -121,13 +122,24 @@ function normalizeSimplePath(input: string): string {
   return parts.join('/')
 }
 
-function escapeTomlString(input: string): string {
-  return input
-    .replace(/\\"/g, '"')
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\\\/g, '\\')
+/** Decode a TOML basic-string body (already stripped of surrounding quotes). */
+export function unescapeTomlString(input: string): string {
+  let out = ''
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i]
+    if (ch !== '\\' || i + 1 >= input.length) {
+      out += ch
+      continue
+    }
+    const next = input[i + 1]
+    i += 1
+    if (next === 'n') out += '\n'
+    else if (next === 'r') out += '\r'
+    else if (next === 't') out += '\t'
+    else if (next === '"' || next === '\\') out += next
+    else out += next
+  }
+  return out
 }
 
 function parseManifestToml(content: string): ParsedManifest {
@@ -151,7 +163,7 @@ function parseManifestToml(content: string): ParsedManifest {
     if (!keyValue) continue
 
     const key = keyValue[1]
-    const value = escapeTomlString(keyValue[2])
+    const value = unescapeTomlString(keyValue[2])
 
     if (section === 'package') {
       if (key === 'name') manifest.packageName = value
@@ -475,8 +487,12 @@ function toLatestEntries(entries: UniverseIndexEntry[]): UniverseIndexEntry[] {
       continue
     }
 
-    if (compareSemver(entry.version, current.version) > 0) {
-      latestByName.set(entry.name, entry)
+    try {
+      if (compareSemver(entry.version, current.version) > 0) {
+        latestByName.set(entry.name, entry)
+      }
+    } catch {
+      // Skip malformed versions from the Universe index.
     }
   }
 
@@ -516,7 +532,7 @@ export async function searchUniverseMarketplace(
     name: entry.name,
     latestVersion: entry.version,
     latestResolvedSpec: `@${UNIVERSE_NAMESPACE}/${entry.name}:${entry.version}`,
-    initCommand: `typst init @${UNIVERSE_NAMESPACE}/${entry.name}`,
+    initCommand: `typst init @${UNIVERSE_NAMESPACE}/${entry.name}:${entry.version}`,
     isTemplate: Boolean(entry.template),
     disabledReason: entry.template
       ? undefined
@@ -647,32 +663,44 @@ async function preparePackage(spec: ResolvedSpec): Promise<PreparedPackage> {
     return compatExisting
   }
 
-  const archive = await getPackageArchive(spec)
-  const entries = extractTarEntriesFromGzip(archive)
+  const inFlight = inFlightPreparePackage.get(memoryKey)
+  if (inFlight) return inFlight
 
-  const files: PreparedPackageFile[] = []
-  for (const entry of entries) {
-    if (entry.type !== 'file') continue
+  const task = (async () => {
+    const archive = await getPackageArchive(spec)
+    const entries = extractTarEntriesFromGzip(archive)
 
-    const isText = isTextPath(entry.path)
-    const data = new Uint8Array(entry.data)
-    const decoded = isText ? textDecoder.decode(data) : undefined
-    const textContent = decoded && isTypstFilePath(entry.path)
-      ? applyPackageImportCompatRewrites(decoded)
-      : decoded
+    const files: PreparedPackageFile[] = []
+    for (const entry of entries) {
+      if (entry.type !== 'file') continue
 
-    files.push({
-      path: entry.path,
-      data: textContent && textContent !== decoded ? textEncoder.encode(textContent) : data,
-      isText,
-      textContent,
-      mtime: entry.mtime,
-    })
+      const isText = isTextPath(entry.path)
+      const data = new Uint8Array(entry.data)
+      const decoded = isText ? textDecoder.decode(data) : undefined
+      const textContent = decoded && isTypstFilePath(entry.path)
+        ? applyPackageImportCompatRewrites(decoded)
+        : decoded
+
+      files.push({
+        path: entry.path,
+        data: textContent && textContent !== decoded ? textEncoder.encode(textContent) : data,
+        isText,
+        textContent,
+        mtime: entry.mtime,
+      })
+    }
+
+    const prepared: PreparedPackage = applyCompatToPreparedPackage({ spec, files })
+    inMemoryPrepared.set(memoryKey, prepared)
+    return prepared
+  })()
+
+  inFlightPreparePackage.set(memoryKey, task)
+  try {
+    return await task
+  } finally {
+    inFlightPreparePackage.delete(memoryKey)
   }
-
-  const prepared: PreparedPackage = applyCompatToPreparedPackage({ spec, files })
-  inMemoryPrepared.set(memoryKey, prepared)
-  return prepared
 }
 
 function getFileFromPrepared(pkg: PreparedPackage, path: string): PreparedPackageFile | undefined {
@@ -727,8 +755,25 @@ export async function resolveSpec(inputSpec: string): Promise<ResolvedSpec> {
     throw new Error(`failed to find package @preview/${parsed.name}`)
   }
 
-  matches.sort(compareSemver)
-  const latest = matches[matches.length - 1]
+  const validVersions = matches.filter((version) => {
+    try {
+      compareSemver(version, version)
+      return true
+    } catch {
+      return false
+    }
+  })
+  if (validVersions.length === 0) {
+    throw new Error(`failed to find package @preview/${parsed.name}`)
+  }
+  validVersions.sort((a, b) => {
+    try {
+      return compareSemver(a, b)
+    } catch {
+      return 0
+    }
+  })
+  const latest = validVersions[validVersions.length - 1]
   return normalizeResolvedSpec(parsed, latest)
 }
 
@@ -769,14 +814,21 @@ export async function fetchTemplateScaffold(spec: ResolvedSpec): Promise<Project
     throw new Error('package template entrypoint is empty')
   }
 
-  const templateEntrypointPath = normalizeSimplePath(`${templatePath}/${templateEntry}`)
-
+  // Match `typst init`: copy only the template directory contents (content_only),
+  // stripping the template path prefix so main lands at `/${entrypoint}`.
   const scaffoldFiles: ProjectScaffoldFile[] = []
 
   for (const file of pkg.files) {
     const normalizedPath = normalizeSimplePath(file.path)
     if (!normalizedPath) continue
-    const scaffoldFile = toScaffoldFile(file, `/${normalizedPath}`)
+    if (!isPathWithin(normalizedPath, templatePath)) continue
+
+    const relative = normalizedPath === templatePath
+      ? ''
+      : normalizedPath.slice(templatePath.length + 1)
+    if (!relative) continue
+
+    const scaffoldFile = toScaffoldFile(file, `/${relative}`)
     if (!scaffoldFile.isBinary && scaffoldFile.path.toLowerCase().endsWith('.typ')) {
       const compatContent = applyPackageImportCompatRewrites(scaffoldFile.content)
       scaffoldFiles.push(compatContent === scaffoldFile.content ? scaffoldFile : {
@@ -788,17 +840,17 @@ export async function fetchTemplateScaffold(spec: ResolvedSpec): Promise<Project
     scaffoldFiles.push(scaffoldFile)
   }
 
-  if (!scaffoldFiles.some((file) => isPathWithin(file.path.replace(/^\//, ''), templatePath))) {
+  if (scaffoldFiles.length === 0) {
     throw new Error(`template directory does not contain scaffold files (at ${templatePath})`)
   }
 
-  const mainFile = `/${templateEntrypointPath}`
+  const mainFile = `/${templateEntry}`
   const hasMain = scaffoldFiles.some((file) => file.path === mainFile)
   if (!hasMain) {
     throw new Error(`template entrypoint does not exist in template directory (at ${mainFile})`)
   }
 
-  const templateMeta = buildTemplateMetadata(spec, templateEntrypointPath)
+  const templateMeta = buildTemplateMetadata(spec, templateEntry)
   const metadataFile: ProjectScaffoldFile = {
     path: '/.typsmthng/template.json',
     content: `${JSON.stringify(templateMeta, null, 2)}\n`,
