@@ -91,6 +91,7 @@ import {
   exportAllProjects,
   exportProject,
   importAllProjects,
+  importLatexProject,
   importLatexZip,
   importProject,
   looksLikeImportableProject,
@@ -473,5 +474,137 @@ describe('project-io export', () => {
     expect(project.name).toBe('RoundTrip')
     expect(project.files.map((f) => f.path).sort()).toEqual(['/extra.typ', '/main.typ'])
     expect(project.mainFile).toBe('/main.typ')
+  })
+
+  it('round-trips exportAllProjects through importAllProjects with collisions and binaries', async () => {
+    const imageBytes = new Uint8Array([9, 8, 7])
+    mocked.state.projects = [
+      {
+        id: 'p1',
+        name: 'A/B',
+        files: [
+          { path: '/main.typ', content: '= One', isBinary: false, lastModified: 1 },
+          { path: '/img.png', content: '', isBinary: true, binaryData: imageBytes, lastModified: 1 },
+        ],
+        mainFile: '/main.typ',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'p2',
+        name: 'A_B',
+        files: [{ path: '/main.typ', content: '= Two', isBinary: false, lastModified: 1 }],
+        mainFile: '/main.typ',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'p3',
+        name: 'A-2',
+        files: [{
+          path: '/main.tex',
+          content: '\\begin{document}TeX\\end{document}',
+          isBinary: false,
+          lastModified: 1,
+        }],
+        mainFile: '/main.tex',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]
+
+    await exportAllProjects()
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const zipped = new Uint8Array(await blob.arrayBuffer())
+    const exportedKeys = Object.keys(unzipSync(zipped)).sort()
+    expect(exportedKeys).toEqual([
+      'A-2/main.tex',
+      'A_B-2/main.typ',
+      'A_B/img.png',
+      'A_B/main.typ',
+    ])
+
+    mocked.state.projects = []
+    mocked.state.currentProjectId = null
+    mocked.state.hasSelectedProject = true
+    mocked.createProject.mockClear()
+
+    const imported = await importAllProjects(makeZipFileLike('all.zip', zipped))
+    expect(imported).toBe(3)
+    expect(mocked.state.hasSelectedProject).toBe(false)
+    expect(mocked.state.currentProjectId).toBeNull()
+
+    const byName = Object.fromEntries(mocked.state.projects.map((p) => [p.name, p]))
+    expect(Object.keys(byName).sort()).toEqual(['A-2', 'A_B', 'A_B-2'])
+    expect(byName['A_B'].files.find((f) => f.path === '/img.png')?.binaryData).toEqual(imageBytes)
+    expect(byName['A-2'].files.map((f) => f.path)).toEqual(['/main.typ'])
+    expect(byName['A-2'].mainFile).toBe('/main.typ')
+  })
+
+  it('merges LaTeX metadata across files and keeps zip name for importProject', async () => {
+    const zipped = zipSync({
+      'Paper/main.tex': asciiBytes('\\title{Keep Me}\\usepackage{amsmath}\\begin{document}A\\end{document}'),
+      'Paper/meta.tex': asciiBytes('\\author{Only Author}\\usepackage{graphicx}\\begin{document}B\\end{document}'),
+    })
+
+    const latex = await importLatexZip(makeZipFileLike('Paper.zip', zipped))
+    expect(latex.metadata.title).toBe('Keep Me')
+    expect(latex.metadata.author).toBe('Only Author')
+    expect(latex.metadata.packages).toEqual(expect.arrayContaining(['amsmath', 'graphicx']))
+    expect(latex.projectName).toBe('Keep Me')
+
+    mocked.state.projects = []
+    mocked.createProject.mockClear()
+    await importProject(makeZipFileLike('PaperArchive.zip', zipped))
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'Paper',
+      expect.objectContaining({ mainFile: '/main.typ' }),
+    )
+  })
+
+  it('names importLatexProject from title, filename, or multi-file fallback', async () => {
+    const titled = await importLatexProject([{
+      relativePath: 'doc.tex',
+      file: { name: 'doc.tex', text: async () => '\\title{Named}\\begin{document}x\\end{document}' } as File,
+    }])
+    expect(titled.projectName).toBe('Named')
+
+    mocked.state.projects = []
+    const untitled = await importLatexProject([{
+      relativePath: 'paper.tex',
+      file: { name: 'paper.tex', text: async () => '\\begin{document}x\\end{document}' } as File,
+    }])
+    expect(untitled.projectName).toBe('paper')
+
+    mocked.state.projects = []
+    const multi = await importLatexProject([
+      {
+        relativePath: 'a.tex',
+        file: { name: 'a.tex', text: async () => '\\begin{document}a\\end{document}' } as File,
+      },
+      {
+        relativePath: 'b.tex',
+        file: { name: 'b.tex', text: async () => '\\begin{document}b\\end{document}' } as File,
+      },
+    ])
+    expect(multi.projectName).toBe('LaTeX Import (2 files)')
+
+    await expect(importLatexProject([])).rejects.toThrow('No files found to import')
+  })
+
+  it('skips __MACOSX junk and rejects invalid zip archives', async () => {
+    const zipped = zipSync({
+      'main.typ': asciiBytes('= Ok'),
+      '__MACOSX/._main.typ': asciiBytes('junk'),
+      '.DS_Store': asciiBytes('junk'),
+    })
+    await importProject(makeZipFileLike('Clean.zip', zipped))
+    expect(mocked.state.projects[0].files.map((f) => f.path)).toEqual(['/main.typ'])
+
+    await importProject(makeZipFileLike('bad.zip', new Uint8Array([1, 2, 3, 4])))
+    expect(window.alert).toHaveBeenCalled()
+    await expect(importAllProjects(makeZipFileLike('bad.zip', new Uint8Array([1, 2, 3])))).rejects.toThrow(
+      'valid zip archive',
+    )
   })
 })

@@ -264,6 +264,14 @@ describe('Project Store', () => {
     })
 
     await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().loading).toBe(false)
+
+    // Migration must hit IDB before first paint completes (loading cleared).
+    const persisted = mockIdb.__store.get('default') as {
+      files: Array<{ path: string; content: string }>
+    }
+    expect(persisted.files.find((f) => f.path === '/main.typ')?.content).toBe(SAMPLE_DOCUMENT)
+
     useProjectStore.getState().selectProject('default')
     const project = useProjectStore.getState().getCurrentProject()
     const mainFile = project?.files.find((f) => f.path === '/main.typ')

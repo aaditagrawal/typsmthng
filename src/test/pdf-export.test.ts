@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocked = vi.hoisted(() => ({
   ensureCompilerReady: vi.fn(async () => {}),
   ensurePackagesForCompile: vi.fn(async () => {}),
-  compileToPdf: vi.fn(async () => new Uint8Array([37, 80, 68, 70])),
+  compileToPdf: vi.fn(async (): Promise<Uint8Array | null> => new Uint8Array([37, 80, 68, 70])),
   findPreviewImportSpecs: vi.fn(() => [] as string[]),
   buildCompileInputs: vi.fn(() => ({
     mainSource: '= Doc',
@@ -102,5 +102,39 @@ describe('exportCurrentProjectPdf', () => {
     expect(mocked.buildCompileInputs).toHaveBeenCalledWith(
       expect.objectContaining({ liveSource: '= Live' }),
     )
+  })
+
+  it('treats null PDF output as empty and can mute alerts', async () => {
+    mocked.compileToPdf.mockResolvedValue(null)
+    const silent = await exportCurrentProjectPdf({ alertOnFailure: false })
+    expect(silent).toEqual({
+      ok: false,
+      reason: 'empty',
+      message: 'PDF export produced no output. Check the preview for compile errors.',
+    })
+    expect(window.alert).not.toHaveBeenCalled()
+
+    mocked.compileToPdf.mockRejectedValue(new Error('offline'))
+    const mutedError = await exportCurrentProjectPdf({ alertOnFailure: false })
+    expect(mutedError.ok).toBe(false)
+    expect(window.alert).not.toHaveBeenCalled()
+  })
+
+  it('ensures packages discovered in main and extras', async () => {
+    mocked.buildCompileInputs.mockReturnValueOnce({
+      mainSource: '#import "@preview/foo:0.1.0"',
+      mainPath: '/main.typ',
+      extraFiles: [{ path: '/extra.typ', content: '#import "@preview/bar:0.2.0"' }],
+      extraBinaryFiles: [],
+    })
+    mocked.findPreviewImportSpecs
+      .mockReturnValueOnce(['@preview/foo:0.1.0'])
+      .mockReturnValueOnce(['@preview/bar:0.2.0'])
+
+    await exportCurrentProjectPdf()
+    expect(mocked.ensurePackagesForCompile).toHaveBeenCalledWith([
+      '@preview/foo:0.1.0',
+      '@preview/bar:0.2.0',
+    ])
   })
 })
