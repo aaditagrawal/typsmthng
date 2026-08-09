@@ -411,6 +411,9 @@ export async function importAllProjects(file: File): Promise<number> {
     }
   }
 
+  // Stay on the home picker after bulk import; do not leave a prior selection.
+  useProjectStore.setState({ hasSelectedProject: false, currentProjectId: null, currentFilePath: null })
+
   return imported
 }
 
