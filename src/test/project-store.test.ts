@@ -247,7 +247,7 @@ describe('Project Store', () => {
     expect(project?.name).toBe('My Document')
   })
 
-  it('should migrate old projects with empty content to SAMPLE_DOCUMENT', async () => {
+  it('should migrate old default projects with empty content to SAMPLE_DOCUMENT', async () => {
     // Simulate an old project saved to IDB with empty content
     mockIdb.__store.set('default', {
       id: 'default',
@@ -278,6 +278,26 @@ describe('Project Store', () => {
 
     // Content should have been migrated to SAMPLE_DOCUMENT
     expect(mainFile?.content).toBe(SAMPLE_DOCUMENT)
+  })
+
+  it('does not migrate intentional empty mains on non-default projects', async () => {
+    mockIdb.__store.set('project-user', {
+      id: 'project-user',
+      name: 'Blank',
+      files: [{
+        path: '/main.typ',
+        content: '',
+        isBinary: false,
+        lastModified: 1000,
+      }],
+      mainFile: '/main.typ',
+      createdAt: 1000,
+      updatedAt: 1000,
+    })
+
+    await useProjectStore.getState().loadProjects()
+    const project = useProjectStore.getState().projects.find((p) => p.id === 'project-user')
+    expect(project?.files.find((f) => f.path === '/main.typ')?.content).toBe('')
   })
 
   it('should NOT overwrite existing non-empty content during migration', async () => {
@@ -440,5 +460,85 @@ describe('Project Store', () => {
     await Promise.resolve()
 
     expect(mockIdb.__store.has(id)).toBe(false)
+  })
+
+  it('creates unique project ids under rapid create calls', async () => {
+    await useProjectStore.getState().loadProjects()
+    const ids = await Promise.all([
+      useProjectStore.getState().createProject('A', undefined, { select: false }),
+      useProjectStore.getState().createProject('B', undefined, { select: false }),
+      useProjectStore.getState().createProject('C', undefined, { select: false }),
+    ])
+    expect(new Set(ids).size).toBe(3)
+    expect(ids.every((id) => mockIdb.__store.has(id))).toBe(true)
+    expect(useProjectStore.getState().hasSelectedProject).toBe(false)
+  })
+
+  it('assigns new projects to the selected home workspace', async () => {
+    await useProjectStore.getState().loadProjects()
+    const workspaceId = await useProjectStore.getState().createHomeWorkspace('Active')
+    await useProjectStore.getState().setSelectedHomeWorkspace(workspaceId)
+
+    const projectId = await useProjectStore.getState().createProject('In Workspace')
+    expect(useProjectStore.getState().projectWorkspaceAssignments[projectId]).toBe(workspaceId)
+
+    const homeMeta = mockIdb.__store.get('home-meta') as {
+      projectWorkspaceAssignments: Record<string, string>
+    }
+    expect(homeMeta.projectWorkspaceAssignments[projectId]).toBe(workspaceId)
+  })
+
+  it('persists editor buffer for the previous project on selectProject', async () => {
+    const { useEditorStore } = await import('@/stores/editor-store')
+    await useProjectStore.getState().loadProjects()
+    const projectA = await useProjectStore.getState().createProject('A')
+    const projectB = await useProjectStore.getState().createProject('B')
+
+    useProjectStore.getState().selectProject(projectA)
+    useEditorStore.setState({ source: '= live A buffer', isDirty: true, saveStatus: 'unsaved' })
+
+    useProjectStore.getState().selectProject(projectB)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const savedA = mockIdb.__store.get(projectA) as { files: Array<{ content: string }> }
+    expect(savedA.files.some((f) => f.content === '= live A buffer')).toBe(true)
+  })
+
+  it('retargets currentFilePath when the main file is deleted', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFile('/other.typ', '= other')
+    useProjectStore.getState().selectFile('/main.typ')
+
+    await useProjectStore.getState().deleteFile('/main.typ')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.mainFile).toBe('/other.typ')
+    expect(useProjectStore.getState().currentFilePath).toBe('/other.typ')
+  })
+
+  it('keeps newer content when concurrent saves overlap', async () => {
+    await useProjectStore.getState().loadProjects()
+    const id = await useProjectStore.getState().createProject('Race')
+    useProjectStore.getState().selectProject(id)
+
+    mockIdb.__delayKeys(id)
+    useProjectStore.getState().updateFileContent('/main.typ', '= first')
+    const firstSave = useProjectStore.getState().saveProject(id)
+
+    for (let i = 0; i < 20 && mockIdb.__pendingSets.length === 0; i++) {
+      await Promise.resolve()
+    }
+
+    useProjectStore.getState().updateFileContent('/main.typ', '= second')
+    const secondSave = useProjectStore.getState().saveProject(id)
+
+    mockIdb.__flushPendingSets()
+    mockIdb.__clearDelayKeys()
+    await Promise.all([firstSave, secondSave])
+
+    const saved = mockIdb.__store.get(id) as { files: Array<{ path: string; content: string }> }
+    expect(saved.files.find((f) => f.path === '/main.typ')?.content).toBe('= second')
   })
 })

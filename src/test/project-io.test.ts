@@ -43,7 +43,11 @@ const mocked = vi.hoisted(() => {
     hasSelectedProject: false,
   }
 
-  const createProject = vi.fn(async (name: string, scaffold?: MockScaffold) => {
+  const createProject = vi.fn(async (
+    name: string,
+    scaffold?: MockScaffold,
+    options?: { select?: boolean },
+  ) => {
     const id = `project-${state.projects.length + 1}`
     state.projects.push({
       id,
@@ -59,9 +63,11 @@ const mocked = vi.hoisted(() => {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     })
-    state.currentProjectId = id
-    state.currentFilePath = scaffold?.mainFile ?? '/main.typ'
-    state.hasSelectedProject = true
+    if (options?.select !== false) {
+      state.currentProjectId = id
+      state.currentFilePath = scaffold?.mainFile ?? '/main.typ'
+      state.hasSelectedProject = true
+    }
     return id
   })
 
@@ -282,6 +288,13 @@ describe('project-io import classification', () => {
 
     const imported = await importAllProjects(makeZipFileLike('bundle.zip', zipped))
     expect(imported).toBe(2)
+    expect(mocked.state.hasSelectedProject).toBe(false)
+    expect(mocked.state.currentProjectId).toBeNull()
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'Alpha',
+      expect.objectContaining({ mainFile: '/main.typ' }),
+      { select: false },
+    )
 
     const alpha = mocked.state.projects.find((p) => p.name === 'Alpha')
     const beta = mocked.state.projects.find((p) => p.name === 'Beta')

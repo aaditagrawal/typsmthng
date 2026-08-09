@@ -239,7 +239,11 @@ async function buildProjectFilesFromZipEntries(
   return { projectFiles, texFilesConverted, warnings, metadata }
 }
 
-async function createImportedProject(projectName: string, projectFiles: ProjectFile[]): Promise<string> {
+async function createImportedProject(
+  projectName: string,
+  projectFiles: ProjectFile[],
+  options?: { select?: boolean },
+): Promise<string> {
   const scaffold: ProjectScaffold = {
     files: projectFiles.map((file) => ({
       path: file.path,
@@ -250,6 +254,9 @@ async function createImportedProject(projectName: string, projectFiles: ProjectF
     mainFile: resolveImportedMainFile(projectFiles),
   }
 
+  if (options) {
+    return useProjectStore.getState().createProject(projectName, scaffold, options)
+  }
   return useProjectStore.getState().createProject(projectName, scaffold)
 }
 
@@ -398,12 +405,13 @@ export async function importAllProjects(file: File): Promise<number> {
     const { projectFiles } = await buildProjectFilesFromZipEntries(entries, { convertLatex: true })
     if (projectFiles.length === 0) continue
 
-    const id = await createImportedProject(folderName, projectFiles)
+    const id = await createImportedProject(folderName, projectFiles, { select: false })
     if (id) {
       imported++
     }
   }
 
+  // Stay on the home picker after bulk import; do not leave a prior selection.
   useProjectStore.setState({ hasSelectedProject: false, currentProjectId: null, currentFilePath: null })
 
   return imported

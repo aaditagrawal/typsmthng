@@ -2,9 +2,13 @@ import { create } from 'zustand'
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { useCompileStore } from './compile-store'
+import { useEditorStore } from './editor-store'
 
 const projectsStore = createStore('typsmthng-projects', 'projects')
-const homeStore = createStore('typsmthng-projects', 'home')
+// Legacy second store name — older builds tried to open a `home` object store on
+// the same DB, but idb-keyval never upgrades, so it never exists. Keep reading
+// from it as a fallback; all new home-meta writes go to `projectsStore`.
+const legacyHomeStore = createStore('typsmthng-projects', 'home')
 const HOME_META_KEY = 'home-meta'
 
 // Debounced auto-save for file content changes.
@@ -16,6 +20,12 @@ const AUTO_SAVE_MS = 2000
 
 /** Bumped on delete so in-flight idbSet cannot resurrect a removed project. */
 const projectPersistEpoch = new Map<string, number>()
+
+/** Serialize IDB writes per project so an older in-flight save cannot clobber a newer one. */
+const projectSaveChains = new Map<string, Promise<void>>()
+
+/** Serialize home-meta writes; always re-read live state at write time. */
+let homeMetaWriteChain: Promise<void> = Promise.resolve()
 
 function getProjectEpoch(projectId: string): number {
   return projectPersistEpoch.get(projectId) ?? 0
@@ -67,11 +77,25 @@ function cancelScheduledAutoSave(projectId?: string) {
   autoSaveProjectId = null
 }
 
+function enqueueProjectSave(projectId: string, work: () => Promise<void>): Promise<void> {
+  const previous = projectSaveChains.get(projectId) ?? Promise.resolve()
+  const next = previous.catch(() => {}).then(work)
+  projectSaveChains.set(projectId, next)
+  return next
+}
+
 /** Test-only: clear debounce timers and persist epochs between cases. */
 export function resetProjectPersistStateForTests(): void {
   clearAutoSaveTimer()
   autoSaveProjectId = null
   projectPersistEpoch.clear()
+  projectSaveChains.clear()
+  homeMetaWriteChain = Promise.resolve()
+}
+
+export interface CreateProjectOptions {
+  /** When false, create without selecting / mounting the workspace (bulk import). Default true. */
+  select?: boolean
 }
 
 export interface ProjectFile {
@@ -138,7 +162,7 @@ interface ProjectState {
   loading: boolean
   hasSelectedProject: boolean
   loadProjects: () => Promise<void>
-  createProject: (name: string, scaffold?: ProjectScaffold) => Promise<string>
+  createProject: (name: string, scaffold?: ProjectScaffold, options?: CreateProjectOptions) => Promise<string>
   deleteProject: (id: string) => Promise<void>
   renameProject: (id: string, name: string) => Promise<void>
   createHomeWorkspace: (name: string, projectIds?: string[]) => Promise<string>
@@ -154,6 +178,7 @@ interface ProjectState {
   deleteFile: (path: string) => Promise<void>
   renameFile: (oldPath: string, newPath: string) => Promise<void>
   updateFileContent: (path: string, content: string) => void
+  updateProjectFileContent: (projectId: string, path: string, content: string) => void
   addBinaryFile: (path: string, data: Uint8Array) => Promise<void>
   addBinaryFilesBatch: (entries: Array<{ path: string; data: Uint8Array }>) => Promise<void>
   createFolder: (path: string) => Promise<void>
@@ -177,30 +202,35 @@ function isMissingObjectStoreError(err: unknown): boolean {
 }
 
 async function loadHomeMeta(): Promise<HomeMeta | undefined> {
+  const fromProjects = await idbGet<HomeMeta>(HOME_META_KEY, projectsStore)
+  if (fromProjects) return fromProjects
+
   try {
-    return await idbGet<HomeMeta>(HOME_META_KEY, homeStore) ?? undefined
+    return await idbGet<HomeMeta>(HOME_META_KEY, legacyHomeStore) ?? undefined
   } catch (err) {
     if (!isMissingObjectStoreError(err)) throw err
-    return await idbGet<HomeMeta>(HOME_META_KEY, projectsStore) ?? undefined
+    return undefined
   }
 }
 
-async function persistHomeMeta(state: ProjectState) {
-  const homeMeta = {
-    workspaces: state.homeWorkspaces,
-    projectWorkspaceAssignments: state.projectWorkspaceAssignments,
-    selectedHomeWorkspaceId: state.selectedHomeWorkspaceId,
-  } satisfies HomeMeta
+function persistHomeMeta(getState: () => ProjectState): Promise<void> {
+  // Queue writes and snapshot state at write time so assign+select cannot
+  // finish out of order and restore a stale selectedHomeWorkspaceId.
+  homeMetaWriteChain = homeMetaWriteChain.catch(() => {}).then(async () => {
+    const state = getState()
+    const homeMeta = {
+      workspaces: state.homeWorkspaces,
+      projectWorkspaceAssignments: state.projectWorkspaceAssignments,
+      selectedHomeWorkspaceId: state.selectedHomeWorkspaceId,
+    } satisfies HomeMeta
 
-  try {
-    await idbSet(HOME_META_KEY, homeMeta, homeStore)
-  } catch (err) {
-    if (isMissingObjectStoreError(err)) {
+    try {
       await idbSet(HOME_META_KEY, homeMeta, projectsStore)
-      return
+    } catch (err) {
+      console.warn('Failed to persist home metadata to IDB:', err)
     }
-    console.warn('Failed to persist home metadata to IDB:', err)
-  }
+  })
+  return homeMetaWriteChain
 }
 
 function createDefaultProject(): Project {
@@ -265,19 +295,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects.push(defaultProject)
     }
 
-    // Migrate old default projects that have empty main file content and
-    // persist before first paint so a quick tab close cannot leave blanks.
+    // Migrate the legacy seeded `default` project when its main file was stored
+    // empty. Do not rewrite intentional empty mains on user projects.
     for (const project of projects) {
+      if (project.id !== 'default') continue
       const mainFile = project.files.find((f) => f.path === project.mainFile)
-      if (mainFile && !mainFile.content) {
-        mainFile.content = SAMPLE_DOCUMENT
-        mainFile.lastModified = Date.now()
-        project.updatedAt = Date.now()
-        try {
-          await idbSet(project.id, project, projectsStore)
-        } catch (err) {
-          console.warn('Failed to save migrated project to IDB:', err)
-        }
+      if (!mainFile || mainFile.isBinary || mainFile.content !== '') continue
+      mainFile.content = SAMPLE_DOCUMENT
+      mainFile.lastModified = Date.now()
+      project.updatedAt = Date.now()
+      try {
+        await idbSet(project.id, project, projectsStore)
+      } catch (err) {
+        console.warn('Failed to save migrated project to IDB:', err)
       }
     }
 
@@ -305,12 +335,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     })
   },
 
-  createProject: async (name, scaffold) => {
+  createProject: async (name, scaffold, options) => {
+    const select = options?.select !== false
     // Flush pending edits on the previous project before switching selection.
-    await flushScheduledAutoSave((projectId) => get().saveProject(projectId))
+    if (select) {
+      await flushScheduledAutoSave((projectId) => get().saveProject(projectId))
+    }
 
     const now = Date.now()
-    const id = `project-${Date.now()}`
+    const id = `project-${crypto.randomUUID()}`
     const scaffoldFiles = (scaffold?.files ?? []).map((file) => ({
       path: file.path,
       content: file.content,
@@ -346,13 +379,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } catch (err) {
       console.warn('Failed to save new project to IDB:', err)
     }
+
+    const selectedWorkspaceId = get().selectedHomeWorkspaceId
     set((s) => ({
       projects: [...s.projects, project],
-      currentProjectId: id,
-      currentFilePath: mainFile,
-      hasSelectedProject: true,
+      ...(select
+        ? {
+            currentProjectId: id,
+            currentFilePath: mainFile,
+            hasSelectedProject: true,
+          }
+        : {}),
+      ...(selectedWorkspaceId
+        ? {
+            projectWorkspaceAssignments: {
+              ...s.projectWorkspaceAssignments,
+              [id]: selectedWorkspaceId,
+            },
+          }
+        : {}),
     }))
     useCompileStore.getState().clearPreview()
+    if (selectedWorkspaceId) {
+      await persistHomeMeta(get)
+    }
     return id
   },
 
@@ -387,7 +437,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return nextState
     })
     if (nextState) {
-      await persistHomeMeta(nextState)
+      await persistHomeMeta(get)
     }
   },
 
@@ -408,7 +458,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
 
     const now = Date.now()
-    const workspaceId = `workspace-${now}`
+    const workspaceId = `workspace-${crypto.randomUUID()}`
     set((s) => ({
       homeWorkspaces: [...s.homeWorkspaces, {
         id: workspaceId,
@@ -422,7 +472,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       },
       selectedHomeWorkspaceId: workspaceId,
     }))
-    await persistHomeMeta(get())
+    await persistHomeMeta(get)
     return workspaceId
   },
 
@@ -437,7 +487,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : workspace,
       ),
     }))
-    await persistHomeMeta(get())
+    await persistHomeMeta(get)
   },
 
   deleteHomeWorkspace: async (id) => {
@@ -448,7 +498,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ),
       selectedHomeWorkspaceId: s.selectedHomeWorkspaceId === id ? null : s.selectedHomeWorkspaceId,
     }))
-    await persistHomeMeta(get())
+    await persistHomeMeta(get)
   },
 
   assignProjectsToHomeWorkspace: async (projectIds, workspaceId) => {
@@ -464,6 +514,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       return {
         projectWorkspaceAssignments: nextAssignments,
+        // Selecting a workspace while assigning is one atomic home-meta write.
+        ...(workspaceId ? { selectedHomeWorkspaceId: workspaceId } : {}),
         homeWorkspaces: workspaceId
           ? s.homeWorkspaces.map((workspace) =>
               workspace.id === workspaceId
@@ -473,20 +525,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           : s.homeWorkspaces,
       }
     })
-    await persistHomeMeta(get())
+    await persistHomeMeta(get)
   },
 
   setSelectedHomeWorkspace: async (selectedHomeWorkspaceId) => {
     set({ selectedHomeWorkspaceId })
-    await persistHomeMeta(get())
+    await persistHomeMeta(get)
   },
 
   selectProject: (id) => {
     const previousId = get().currentProjectId
+    const previousPath = get().currentFilePath
     if (previousId && previousId !== id) {
-      // Flush pending autosave for the project we are leaving so a later timer
-      // cannot write the newly selected project instead.
-      void flushScheduledAutoSave((projectId) => get().saveProject(projectId))
+      // Apply a dirty editor buffer to the project we are leaving *before*
+      // changing currentProjectId — otherwise a deferred editor sync can land
+      // on the newly selected project. Skip when the editor is clean so
+      // in-memory project edits (autosave path) are not overwritten.
+      const editor = useEditorStore.getState()
+      if (previousPath && editor.isDirty) {
+        get().updateProjectFileContent(previousId, previousPath, editor.source)
+      }
+      cancelScheduledAutoSave(previousId)
+      void get().saveProject(previousId)
     }
     const project = get().projects.find((p) => p.id === id)
     set({
@@ -500,6 +560,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   goHome: () => {
+    const previousId = get().currentProjectId
+    const previousPath = get().currentFilePath
+    const editor = useEditorStore.getState()
+    if (previousId && previousPath && editor.isDirty) {
+      get().updateProjectFileContent(previousId, previousPath, editor.source)
+    }
     void flushScheduledAutoSave((projectId) => get().saveProject(projectId))
     void get().saveCurrentProject()
     set({ hasSelectedProject: false })
@@ -579,13 +645,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set((s) => {
       const project = s.projects.find((p) => p.id === s.currentProjectId)
       if (!project) return s
+
+      const nextFiles = project.files.filter((f) => f.path !== path)
+      let nextMainFile = project.mainFile
+      if (nextMainFile === path) {
+        nextMainFile = nextFiles.find((f) => !f.isBinary)?.path
+          ?? nextFiles[0]?.path
+          ?? '/main.typ'
+      }
+
+      let nextCurrentPath = s.currentFilePath
+      if (nextCurrentPath === path) {
+        nextCurrentPath = nextFiles.some((f) => f.path === nextMainFile)
+          ? nextMainFile
+          : (nextFiles[0]?.path ?? null)
+      }
+
       return {
         projects: s.projects.map((p) =>
           p.id === s.currentProjectId
-            ? { ...p, files: p.files.filter((f) => f.path !== path), updatedAt: Date.now() }
+            ? { ...p, files: nextFiles, mainFile: nextMainFile, updatedAt: Date.now() }
             : p
         ),
-        currentFilePath: s.currentFilePath === path ? project.mainFile : s.currentFilePath,
+        currentFilePath: nextCurrentPath,
       }
     })
     await get().saveCurrentProject()
@@ -610,10 +692,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await get().saveCurrentProject()
   },
 
-  updateFileContent: (path, content) => {
+  updateProjectFileContent: (projectId, path, content) => {
     let changed = false
     set((s) => {
-      const projectIndex = s.projects.findIndex((p) => p.id === s.currentProjectId)
+      const projectIndex = s.projects.findIndex((p) => p.id === projectId)
       if (projectIndex < 0) return s
 
       const project = s.projects[projectIndex]
@@ -642,8 +724,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return { projects: nextProjects }
     })
     if (!changed) return
+    scheduleAutoSave(projectId, (id) => get().saveProject(id))
+  },
+
+  updateFileContent: (path, content) => {
     const projectId = get().currentProjectId
-    if (projectId) scheduleAutoSave(projectId, (id) => get().saveProject(id))
+    if (!projectId) return
+    get().updateProjectFileContent(projectId, path, content)
   },
 
   addBinaryFile: async (path, data) => {
@@ -802,50 +889,47 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
 
   saveProject: async (id) => {
-    const epoch = getProjectEpoch(id)
-    if (!get().projects.some((p) => p.id === id)) return
+    await enqueueProjectSave(id, async () => {
+      const epoch = getProjectEpoch(id)
+      if (!get().projects.some((p) => p.id === id)) return
 
-    try {
-      // Re-check immediately before the write so a delete that landed after we
-      // entered this function cannot be overwritten / resurrected.
-      if (getProjectEpoch(id) !== epoch) return
-      const latest = get().projects.find((p) => p.id === id)
-      if (!latest) return
+      try {
+        // Re-check immediately before the write so a delete that landed after we
+        // entered this function cannot be overwritten / resurrected.
+        if (getProjectEpoch(id) !== epoch) return
+        const latest = get().projects.find((p) => p.id === id)
+        if (!latest) return
 
-      await idbSet(id, latest, projectsStore)
+        await idbSet(id, latest, projectsStore)
 
-      // Reconcile races that landed during idbSet:
-      // - deleted and still gone → remove any resurrected IDB row
-      // - deleted then recreated (same id) → write the live snapshot
-      if (getProjectEpoch(id) !== epoch) {
-        const live = get().projects.find((p) => p.id === id)
-        if (!live) {
-          try {
-            await idbDel(id, projectsStore)
-          } catch (err) {
-            console.warn('Failed to roll back resurrected project in IDB:', err)
+        // Reconcile races that landed during idbSet:
+        // - deleted and still gone → remove any resurrected IDB row
+        // - deleted then recreated (same id) → write the live snapshot
+        if (getProjectEpoch(id) !== epoch) {
+          const live = get().projects.find((p) => p.id === id)
+          if (!live) {
+            try {
+              await idbDel(id, projectsStore)
+            } catch (err) {
+              console.warn('Failed to roll back resurrected project in IDB:', err)
+            }
+          } else {
+            try {
+              await idbSet(id, live, projectsStore)
+            } catch (err) {
+              console.warn('Failed to re-save live project after stale write:', err)
+            }
           }
-        } else {
-          try {
-            await idbSet(id, live, projectsStore)
-          } catch (err) {
-            console.warn('Failed to re-save live project after stale write:', err)
-          }
+          return
         }
-        return
-      }
 
-      if (get().currentProjectId === id) {
-        const { useEditorStore } = await import('./editor-store')
-        // Ignore editor dirty-clear if selection moved or project was deleted
-        // during the dynamic import.
         if (get().currentProjectId === id && get().projects.some((p) => p.id === id)) {
           useEditorStore.setState({ isDirty: false, saveStatus: 'saved' })
         }
+      } catch (err) {
+        console.warn('Failed to save project to IDB:', err)
       }
-    } catch (err) {
-      console.warn('Failed to save project to IDB:', err)
-    }
+    })
   },
 
   saveCurrentProject: async () => {
