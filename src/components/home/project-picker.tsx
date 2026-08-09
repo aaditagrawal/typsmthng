@@ -1727,6 +1727,14 @@ export function ProjectPicker({
                   outline: 'none',
                 }}
               />
+              {initError && (
+                <div
+                  data-testid="marketplace-init-error"
+                  style={{ color: 'var(--status-error)', fontSize: '11px', lineHeight: 1.4 }}
+                >
+                  {initError}
+                </div>
+              )}
             </div>
 
             <div style={{ overflowY: 'auto', padding: '12px 14px', display: 'grid', gap: '14px' }}>
@@ -1847,6 +1855,7 @@ export function ProjectPicker({
                         {item.isTemplate ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <button
+                              data-testid={`marketplace-import-${item.name}`}
                               type="button"
                               onClick={() => { void handleMarketplaceImport(item) }}
                               disabled={initBusy}

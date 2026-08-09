@@ -102,4 +102,17 @@ describe('tar extraction', () => {
     const entries = extractTarEntriesFromGzip(gz)
     expect(entries.map((entry) => entry.path)).toContain('template/main.typ')
   })
+
+  it('returns copied entry bytes that callers can mutate safely', () => {
+    const tar = createTar([
+      { path: 'a.typ', content: 'AAAA' },
+      { path: 'b.typ', content: 'BBBB' },
+    ])
+    const entries = extractTarEntriesFromGzip(gzipSync(tar))
+    const a = entries.find((entry) => entry.path === 'a.typ')
+    const b = entries.find((entry) => entry.path === 'b.typ')
+    expect(a && b).toBeTruthy()
+    a!.data[0] = 90
+    expect(new TextDecoder().decode(b!.data)).toBe('BBBB')
+  })
 })

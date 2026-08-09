@@ -7,7 +7,9 @@ export interface TarEntry {
   mtime: number
 }
 
-const SUPPORTED_TAR_ENTRY_TYPES = new Set(['', '0', '5'])
+const FILE_OR_DIR_TYPES = new Set(['', '0', '5'])
+/** GNU long-name / long-link and pax extended headers — consume, don't emit. */
+const METADATA_TYPES = new Set(['x', 'g', 'L', 'K'])
 
 function readString(buf: Uint8Array, start: number, len: number): string {
   const slice = buf.subarray(start, start + len)
@@ -67,11 +69,23 @@ function normalizeTarPath(path: string): string {
   return parts.join('/')
 }
 
+function readPaxPath(body: Uint8Array): string | null {
+  const text = new TextDecoder().decode(body)
+  for (const line of text.split('\n')) {
+    const match = line.match(/^\d+\s+path=(.*)$/)
+    if (match) return match[1]
+  }
+  return null
+}
+
 export function extractTarEntriesFromGzip(archive: Uint8Array): TarEntry[] {
   const tar = gunzipSync(archive)
   const entries: TarEntry[] = []
 
   let offset = 0
+  let pendingLongName: string | null = null
+  let pendingPaxPath: string | null = null
+
   while (offset + 512 <= tar.length) {
     const header = tar.subarray(offset, offset + 512)
     if (isZeroBlock(header)) {
@@ -93,13 +107,39 @@ export function extractTarEntriesFromGzip(archive: Uint8Array): TarEntry[] {
 
     const paddedSize = Math.ceil(size / 512) * 512
     const nextOffset = bodyStart + paddedSize
+    // Copy bytes so callers cannot corrupt sibling entries via shared views.
+    const body = tar.slice(bodyStart, bodyEnd)
 
-    if (!SUPPORTED_TAR_ENTRY_TYPES.has(typeFlag)) {
+    if (typeFlag === 'L') {
+      pendingLongName = new TextDecoder().decode(body).replace(/\0+$/, '')
       offset = nextOffset
       continue
     }
 
-    const rawPath = fullName || name
+    if (typeFlag === 'K') {
+      // Long link name — unused for package scaffolds; skip.
+      offset = nextOffset
+      continue
+    }
+
+    if (typeFlag === 'x' || typeFlag === 'g') {
+      pendingPaxPath = readPaxPath(body) ?? pendingPaxPath
+      offset = nextOffset
+      continue
+    }
+
+    if (!FILE_OR_DIR_TYPES.has(typeFlag)) {
+      if (!METADATA_TYPES.has(typeFlag) && typeFlag !== '1' && typeFlag !== '2') {
+        // Unknown type: skip body, keep going (Universe packages are ustar files).
+      }
+      offset = nextOffset
+      continue
+    }
+
+    const rawPath = pendingPaxPath || pendingLongName || fullName || name
+    pendingLongName = null
+    pendingPaxPath = null
+
     const normalizedPath = normalizeTarPath(rawPath)
     if (!normalizedPath) {
       offset = nextOffset
@@ -109,8 +149,7 @@ export function extractTarEntriesFromGzip(archive: Uint8Array): TarEntry[] {
     if (typeFlag === '5') {
       entries.push({ path: normalizedPath, data: new Uint8Array(0), type: 'directory', mtime })
     } else {
-      const data = tar.subarray(bodyStart, bodyEnd)
-      entries.push({ path: normalizedPath, data, type: 'file', mtime })
+      entries.push({ path: normalizedPath, data: body, type: 'file', mtime })
     }
 
     offset = nextOffset
