@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+// Type-only: erased at compile time, does not pull CodeMirror into the home graph.
 import type { EditorView } from '@codemirror/view'
 
 export type SaveStatus = 'saved' | 'saving' | 'unsaved'

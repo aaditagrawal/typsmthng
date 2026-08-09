@@ -14,8 +14,12 @@ import {
   getBuiltInTemplate,
   listBuiltInTemplates,
 } from '@/lib/builtin-templates'
-import { exportAllProjects, importAllProjects, importLatexProject, importLatexZip, type LatexImportResult } from '@/lib/project-io'
+import type { LatexImportResult } from '@/lib/project-io'
 import { isLatexPath } from '@/lib/file-classification'
+
+async function loadProjectIo() {
+  return import('@/lib/project-io')
+}
 
 function formatDate(ts: number): string {
   const d = new Date(ts)
@@ -621,6 +625,7 @@ export function ProjectPicker({
     setLatexMenuOpen(false)
 
     try {
+      const { importLatexProject, importLatexZip } = await loadProjectIo()
       const firstFile = files[0]
       if (files.length === 1 && /\.zip$/i.test(firstFile.name)) {
         const result = await importLatexZip(firstFile)
@@ -992,7 +997,8 @@ export function ProjectPicker({
             setImportAllBusy(true)
             setImportAllResult(null)
             setImportAllError(null)
-            void importAllProjects(file)
+            void loadProjectIo()
+              .then(({ importAllProjects }) => importAllProjects(file))
               .then((count) => {
                 setImportAllResult(`Imported ${count} project${count === 1 ? '' : 's'}`)
                 void loadProjects()
@@ -1476,7 +1482,7 @@ export function ProjectPicker({
           }}
         >
           {projects.length > 0 && (
-            <LinkBtn onClick={() => { void exportAllProjects() }}>
+            <LinkBtn onClick={() => { void loadProjectIo().then(({ exportAllProjects }) => exportAllProjects()) }}>
               <Download size={12} />
               Export all
             </LinkBtn>

@@ -205,18 +205,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       projects.push(defaultProject)
     }
 
-    // Migrate old default projects that have empty main file content
+    // Migrate old default projects that have empty main file content in memory
+    // first, then persist after paint so home isn't blocked on IDB writes.
+    const migratedProjects: Project[] = []
     for (const project of projects) {
       const mainFile = project.files.find((f) => f.path === project.mainFile)
       if (mainFile && !mainFile.content) {
         mainFile.content = SAMPLE_DOCUMENT
         mainFile.lastModified = Date.now()
         project.updatedAt = Date.now()
-        try {
-          await idbSet(project.id, project, projectsStore)
-        } catch (err) {
-          console.warn('Failed to save migrated project to IDB:', err)
-        }
+        migratedProjects.push(project)
       }
     }
 
@@ -242,6 +240,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       loading: false,
       hasSelectedProject: false,
     })
+
+    if (migratedProjects.length > 0) {
+      void Promise.all(
+        migratedProjects.map(async (project) => {
+          try {
+            await idbSet(project.id, project, projectsStore)
+          } catch (err) {
+            console.warn('Failed to save migrated project to IDB:', err)
+          }
+        }),
+      )
+    }
   },
 
   createProject: async (name, scaffold) => {

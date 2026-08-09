@@ -72,7 +72,15 @@ export default defineConfig({
     modulePreload: {
       resolveDependencies: (_filename, deps, context) => {
         if (context.hostType === 'html' && context.hostId.endsWith('index.html')) {
-          return deps.filter((dep) => !dep.includes('vendor-'))
+          // Home shell must not preload editor/Typst/LaTeX/workspace chunks.
+          return deps.filter((dep) => (
+            !dep.includes('vendor-')
+            && !dep.includes('editor-')
+            && !dep.includes('latex-')
+            && !dep.includes('typst')
+            && !dep.includes('workspace-')
+            && !dep.includes('project-io')
+          ))
         }
         return deps
       },
@@ -87,13 +95,16 @@ export default defineConfig({
           if (!id.includes('node_modules')) return undefined
           if (id.includes('unified-latex') || id.includes('pegjs')) return 'latex-converter'
           if (id.includes('@replit/codemirror-vim')) return 'editor-vim'
-          // Keep all CodeMirror + Lezer packages in one chunk to avoid
-          // circular-dependency TDZ errors across chunk boundaries.
+          // Keep all CodeMirror + Lezer packages (including @replit helpers that
+          // import @codemirror/*) in one chunk. Leaving indentation-markers in
+          // `vendor` created vendor → editor-core and preloaded ~486KB on home.
           if (
             id.includes('@codemirror') || id.includes('/codemirror/')
             || id.includes('@lezer') || id.includes('codemirror-lang-typst')
+            || id.includes('@replit/codemirror')
           ) return 'editor-core'
           if (id.includes('react') || id.includes('scheduler')) return 'react-core'
+          if (id.includes('zustand') || id.includes('idb-keyval')) return 'state-core'
           return 'vendor'
         },
       },
