@@ -51,7 +51,7 @@ export function buildCompileInputs({
   const extraFiles: CompileTextFile[] = []
   const extraBinaryFiles: CompileBinaryFile[] = []
 
-  let mainSource = transform(mainPath, liveSource)
+  let mainSource: string | null = null
 
   for (const file of project.files) {
     if (!file.isBinary) {
@@ -75,9 +75,17 @@ export function buildCompileInputs({
     }
   }
 
-  if (!textFiles.some((file) => file.path === mainPath)) {
-    const fallback = { path: mainPath, content: mainSource }
-    textFiles.push(fallback)
+  if (mainSource === null) {
+    // Missing main: only use the live buffer when it is actually the main file.
+    // Never compile an arbitrary open buffer as main after a broken rename/import.
+    if (currentFilePath === mainPath) {
+      mainSource = transform(mainPath, liveSource)
+    } else {
+      mainSource = transform(mainPath, '')
+    }
+    if (!textFiles.some((file) => file.path === mainPath)) {
+      textFiles.push({ path: mainPath, content: mainSource })
+    }
   }
 
   return {

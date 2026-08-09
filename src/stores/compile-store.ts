@@ -27,6 +27,7 @@ interface CompileState {
   setCompilerReady: (ready: boolean) => void
   setDiagnostics: (diagnostics: Diagnostic[]) => void
   setSvgResult: (svg: string, vectorData: Uint8Array, pageDimensions: PageDimension[]) => void
+  clearPreview: () => void
   setCompileTime: (ms: number) => void
   setAutoCompile: (auto: boolean) => void
 }
@@ -55,6 +56,17 @@ export const useCompileStore = create<CompileState>((set) => ({
     vectorData,
     pageDimensions,
     totalPages: Math.max(pageDimensions.length, 1),
+  }),
+  clearPreview: () => set({
+    svg: null,
+    vectorData: null,
+    pageDimensions: [],
+    totalPages: 0,
+    diagnostics: [],
+    errorCount: 0,
+    warningCount: 0,
+    compileTime: 0,
+    status: 'idle',
   }),
   setCompileTime: (compileTime) => set({ compileTime }),
   setAutoCompile: (autoCompile) => set({ autoCompile }),

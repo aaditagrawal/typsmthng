@@ -43,8 +43,11 @@ let workerApi: Remote<CompilerWorkerApi> | null = null
 let workerAvailable = typeof Worker !== 'undefined'
 let compilerReady = false
 let backendInitPromise: Promise<void> | null = null
+let clientInitPromise: Promise<void> | null = null
 let currentCompilerConfigKey = ''
 let currentFontData: Uint8Array[] = []
+/** Bumped whenever font config is swapped so in-flight client inits can detect staleness. */
+let clientConfigGeneration = 0
 
 function resetWorkerTransport(): void {
   if (worker) {
@@ -71,6 +74,7 @@ async function ensureCompilerConfig(
   currentCompilerConfigKey = key
   currentFontData = data
   compilerReady = false
+  clientConfigGeneration += 1
   backendInitPromise = null
   configureCompilerBackend({ fontData: currentFontData })
   resetWorkerTransport()
@@ -154,16 +158,70 @@ export async function initCompilerClient(
   if (source) {
     await ensureCompilerConfig(source, extraFiles)
   }
-  await callWithFallback(
-    async (api) => {
-      await api.initCompiler({ fontData: currentFontData })
-      compilerReady = true
-    },
-    async () => {
-      await ensureBackendInitialized()
-      compilerReady = true
-    },
-  )
+
+  while (!compilerReady) {
+    const generationAtWait = clientConfigGeneration
+
+    if (!clientInitPromise) {
+      const generation = clientConfigGeneration
+      const fontsForInit = currentFontData
+
+      const pendingRef: { current: Promise<void> | null } = { current: null }
+      pendingRef.current = (async () => {
+        try {
+          await callWithFallback(
+            async (api) => {
+              await api.initCompiler({ fontData: fontsForInit })
+            },
+            async () => {
+              await ensureBackendInitialized()
+            },
+          )
+          if (generation === clientConfigGeneration) {
+            compilerReady = true
+          }
+        } catch (err) {
+          if (generation === clientConfigGeneration) {
+            compilerReady = false
+          }
+          throw err
+        } finally {
+          if (clientInitPromise === pendingRef.current) {
+            clientInitPromise = null
+          }
+        }
+      })()
+
+      clientInitPromise = pendingRef.current
+    }
+
+    try {
+      await clientInitPromise
+    } catch (err) {
+      if (compilerReady) return
+      if (clientConfigGeneration !== generationAtWait) continue
+      throw err
+    }
+
+    if (!compilerReady) continue
+  }
+}
+
+async function ensurePackagesOnMainForFallback(
+  source: string,
+  extraFiles?: Array<{ path: string; content: string }>,
+): Promise<void> {
+  // Worker ensure only fills the worker's in-memory prepared map. On fallback,
+  // re-prepare on the main-thread registry before compiling.
+  const { findPreviewImportSpecs } = await import('./universe-registry')
+  const specs = new Set<string>(findPreviewImportSpecs(source))
+  for (const file of extraFiles ?? []) {
+    for (const spec of findPreviewImportSpecs(file.content)) {
+      specs.add(spec)
+    }
+  }
+  if (specs.size === 0) return
+  await ensurePackagesForCompileBackend([...specs])
 }
 
 export async function compileTypstClient(
@@ -179,7 +237,10 @@ export async function compileTypstClient(
 
   return callWithCompilerFallback(
     (api) => api.compileTypst(source, extraFiles, mainFilePath, extraBinaryFiles),
-    () => compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles),
+    async () => {
+      await ensurePackagesOnMainForFallback(source, extraFiles)
+      return compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
+    },
   )
 }
 
@@ -216,7 +277,10 @@ export async function compileToPdfClient(
 
   return callWithCompilerFallback(
     (api) => api.compileToPdf(source, extraFiles, mainFilePath, extraBinaryFiles),
-    () => compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles),
+    async () => {
+      await ensurePackagesOnMainForFallback(source, extraFiles)
+      return compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
+    },
   )
 }
 

@@ -14,6 +14,10 @@ const compilerWasmUrl = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-we
 let compiler: Awaited<ReturnType<typeof createTypstCompiler>> | null = null
 let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
 let initPromise: Promise<void> | null = null
+/** Bumped on font/config teardown so in-flight WASM inits cannot publish stale instances. */
+let initGeneration = 0
+/** Serializes compile/render ops that mutate shared compiler/renderer session state. */
+let operationChain: Promise<unknown> = Promise.resolve()
 const PROJECT_ROOT = '/'
 const packageAccessModel = new MemoryAccessModel()
 const insertedPackageRoots = new Set<string>()
@@ -27,6 +31,15 @@ function sameFontData(next: Uint8Array[]): boolean {
   return true
 }
 
+function enqueueCompilerOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const run = operationChain.then(operation, operation)
+  operationChain = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
 export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }): void {
   const nextFontData = options?.fontData ?? []
   if (sameFontData(nextFontData)) return
@@ -34,7 +47,9 @@ export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }):
   additionalFontData = nextFontData
   compiler = null
   renderer = null
-  initPromise = null
+  initGeneration += 1
+  // Leave initPromise set so waiters observe the in-flight attempt; generation
+  // gating discards stale publishes and callers retry until current config is ready.
 }
 
 function decodeVersion(version: unknown): string {
@@ -92,37 +107,74 @@ function ensurePackageInAccessModel(spec: unknown): string | undefined {
   return root
 }
 
+export function isCompilerReadyBackend(): boolean {
+  return compiler !== null && renderer !== null
+}
+
 export async function initCompilerBackend(): Promise<void> {
-  if (initPromise) return initPromise
+  while (!isCompilerReadyBackend()) {
+    const generationAtWait = initGeneration
 
-  initPromise = (async () => {
+    if (!initPromise) {
+      const generation = initGeneration
+      const fontsForInit = additionalFontData
+
+      const pendingRef: { current: Promise<void> | null } = { current: null }
+      pendingRef.current = (async () => {
+        try {
+          const nextCompiler = createTypstCompiler()
+          await nextCompiler.init({
+            getModule: () => compilerWasmUrl,
+            beforeBuild: [
+              loadFonts(fontsForInit, { assets: ['text'] }),
+              initOptions.withAccessModel(packageAccessModel as never),
+              initOptions.withPackageRegistry({
+                resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
+              } as never),
+            ],
+          })
+
+          const nextRenderer = createTypstRenderer()
+          await nextRenderer.init({
+            getModule: () => rendererWasmUrl,
+          })
+
+          // Config changed while WASM was loading — discard this instance.
+          if (generation !== initGeneration) return
+
+          compiler = nextCompiler
+          renderer = nextRenderer
+        } catch (err) {
+          console.error('Failed to initialize compiler:', err)
+          if (generation === initGeneration) {
+            compiler = null
+            renderer = null
+          }
+          throw err
+        } finally {
+          if (initPromise === pendingRef.current) {
+            initPromise = null
+          }
+        }
+      })()
+
+      initPromise = pendingRef.current
+    }
+
     try {
-      compiler = createTypstCompiler()
-      await compiler.init({
-        getModule: () => compilerWasmUrl,
-        beforeBuild: [
-          loadFonts(additionalFontData, { assets: ['text'] }),
-          initOptions.withAccessModel(packageAccessModel as never),
-          initOptions.withPackageRegistry({
-            resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
-          } as never),
-        ],
-      })
-
-      renderer = createTypstRenderer()
-      await renderer.init({
-        getModule: () => rendererWasmUrl,
-      })
+      await initPromise
     } catch (err) {
-      console.error('Failed to initialize compiler:', err)
-      compiler = null
-      renderer = null
-      initPromise = null
+      if (isCompilerReadyBackend()) return
+      // A newer configure invalidated this attempt; loop and retry.
+      if (initGeneration !== generationAtWait) continue
       throw err
     }
-  })()
 
-  return initPromise
+    if (!isCompilerReadyBackend()) {
+      // Init finished without publishing (superseded). Retry current config.
+      continue
+    }
+  }
 }
 
 export interface PageDimension {
@@ -147,6 +199,20 @@ export interface CompileResult {
 }
 
 export async function compileTypstBackend(
+  source: string,
+  extraFiles?: Array<{ path: string; content: string }>,
+  mainFilePath = '/main.typ',
+  extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
+): Promise<CompileResult> {
+  return enqueueCompilerOperation(() => compileTypstBackendUnlocked(
+    source,
+    extraFiles,
+    mainFilePath,
+    extraBinaryFiles,
+  ))
+}
+
+async function compileTypstBackendUnlocked(
   source: string,
   extraFiles?: Array<{ path: string; content: string }>,
   mainFilePath = '/main.typ',
@@ -243,38 +309,42 @@ export async function resolveSourceLocBackend(
   vectorData: Uint8Array,
   path: Uint32Array,
 ): Promise<string | undefined> {
-  if (!renderer) return undefined
+  return enqueueCompilerOperation(async () => {
+    if (!renderer) return undefined
 
-  let loc: string | undefined
-  await renderer.runWithSession(
-    { format: 'vector', artifactContent: vectorData },
-    async (session) => {
-      loc = session.getSourceLoc(path)
-    },
-  )
-  return loc
+    let loc: string | undefined
+    await renderer.runWithSession(
+      { format: 'vector', artifactContent: vectorData },
+      async (session) => {
+        loc = session.getSourceLoc(path)
+      },
+    )
+    return loc
+  })
 }
 
 export async function resolveSourceLocBatchBackend(
   vectorData: Uint8Array,
   paths: Uint32Array[],
 ): Promise<Array<string | undefined>> {
-  if (!renderer || paths.length === 0) return []
+  return enqueueCompilerOperation(async () => {
+    if (!renderer || paths.length === 0) return []
 
-  const locs: Array<string | undefined> = new Array(paths.length).fill(undefined)
-  await renderer.runWithSession(
-    { format: 'vector', artifactContent: vectorData },
-    async (session) => {
-      for (let i = 0; i < paths.length; i++) {
-        try {
-          locs[i] = session.getSourceLoc(paths[i])
-        } catch {
-          locs[i] = undefined
+    const locs: Array<string | undefined> = new Array(paths.length).fill(undefined)
+    await renderer.runWithSession(
+      { format: 'vector', artifactContent: vectorData },
+      async (session) => {
+        for (let i = 0; i < paths.length; i++) {
+          try {
+            locs[i] = session.getSourceLoc(paths[i])
+          } catch {
+            locs[i] = undefined
+          }
         }
-      }
-    },
-  )
-  return locs
+      },
+    )
+    return locs
+  })
 }
 
 export async function compileToPdfBackend(
@@ -283,37 +353,35 @@ export async function compileToPdfBackend(
   mainFilePath = '/main.typ',
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
 ): Promise<Uint8Array | null> {
-  if (!compiler) {
-    throw new Error('Compiler not initialized')
-  }
-
-  compiler.resetShadow()
-  compiler.addSource(mainFilePath, source)
-  if (extraFiles) {
-    for (const file of extraFiles) {
-      compiler.addSource(file.path, file.content)
+  return enqueueCompilerOperation(async () => {
+    if (!compiler) {
+      throw new Error('Compiler not initialized')
     }
-  }
-  if (extraBinaryFiles) {
-    for (const file of extraBinaryFiles) {
-      compiler.mapShadow(file.path, file.data)
-    }
-  }
 
-  const { result } = await compiler.compile({
-    mainFilePath,
-    root: PROJECT_ROOT,
-    format: 1,
-    diagnostics: 'none',
+    compiler.resetShadow()
+    compiler.addSource(mainFilePath, source)
+    if (extraFiles) {
+      for (const file of extraFiles) {
+        compiler.addSource(file.path, file.content)
+      }
+    }
+    if (extraBinaryFiles) {
+      for (const file of extraBinaryFiles) {
+        compiler.mapShadow(file.path, file.data)
+      }
+    }
+
+    const { result } = await compiler.compile({
+      mainFilePath,
+      root: PROJECT_ROOT,
+      format: 1,
+      diagnostics: 'none',
+    })
+
+    return result ?? null
   })
-
-  return result ?? null
 }
 
 export async function ensurePackagesForCompileBackend(specs: string[]): Promise<void> {
   await ensurePackagesForCompileRegistry(specs)
-}
-
-export function isCompilerReadyBackend(): boolean {
-  return compiler !== null && renderer !== null
 }

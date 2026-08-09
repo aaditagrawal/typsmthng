@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
+import { useCompileStore } from './compile-store'
 
 const projectsStore = createStore('typsmthng-projects', 'projects')
 const homeStore = createStore('typsmthng-projects', 'home')
@@ -351,6 +352,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       currentFilePath: mainFile,
       hasSelectedProject: true,
     }))
+    useCompileStore.getState().clearPreview()
     return id
   },
 
@@ -492,12 +494,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       currentFilePath: project?.mainFile ?? null,
       hasSelectedProject: true,
     })
+    if (previousId !== id) {
+      useCompileStore.getState().clearPreview()
+    }
   },
 
   goHome: () => {
     void flushScheduledAutoSave((projectId) => get().saveProject(projectId))
     void get().saveCurrentProject()
     set({ hasSelectedProject: false })
+    useCompileStore.getState().clearPreview()
   },
 
   selectFile: (path) => set({ currentFilePath: path }),

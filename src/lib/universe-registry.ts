@@ -873,12 +873,32 @@ export async function ensurePackagesForCompile(specs: string[]): Promise<void> {
     .filter((spec): spec is ParsedSpec => spec !== null)
 
   const visited = new Set<string>()
+  // Only the initially requested specs must surface resolution failures.
+  // Transitive deps can still soft-fail so one bad optional dep doesn't brick ensure.
+  const requiredKeys = new Set(
+    frontier.map((parsed) => (
+      parsed.version
+        ? formatResolvedSpec(toResolvedSpec(parsed))
+        : `@${parsed.namespace}/${parsed.name}`
+    )),
+  )
+  const requiredFailures: Error[] = []
 
   while (frontier.length > 0) {
     const resolvedEntries = await mapLimit(frontier, ENSURE_PACKAGE_CONCURRENCY, async (parsed) => {
+      const requiredKey = parsed.version
+        ? formatResolvedSpec(toResolvedSpec(parsed))
+        : `@${parsed.namespace}/${parsed.name}`
       try {
         return await resolveMaybeVersionless(parsed)
-      } catch {
+      } catch (err) {
+        if (requiredKeys.has(requiredKey)) {
+          requiredFailures.push(
+            err instanceof Error
+              ? err
+              : new Error(`Failed to resolve package ${requiredKey}`),
+          )
+        }
         return null
       }
     })
@@ -906,6 +926,10 @@ export async function ensurePackagesForCompile(specs: string[]): Promise<void> {
       }
     }
     frontier = nextFrontier
+  }
+
+  if (requiredFailures.length > 0) {
+    throw requiredFailures[0]
   }
 }
 

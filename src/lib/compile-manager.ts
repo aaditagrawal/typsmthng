@@ -109,6 +109,55 @@ export function getInjectedPreambleLineCount(source: string): number {
   return preamble.split('\n').length - 1
 }
 
+/** Preamble offset for the project main file (not whatever buffer is open). */
+export function getInjectedPreambleLineCountForProject(): number {
+  const project = useProjectStore.getState().getCurrentProject()
+  const currentFilePath = useProjectStore.getState().currentFilePath
+  const liveSource = useEditorStore.getState().source
+  const mainPath = project?.mainFile ?? '/main.typ'
+  const mainFile = project?.files.find((file) => file.path === mainPath && !file.isBinary)
+  const mainSource = currentFilePath === mainPath
+    ? liveSource
+    : (mainFile?.content ?? '')
+  return getInjectedPreambleLineCount(mainSource)
+}
+
+function shiftDiagnosticRange(range: string, lineDelta: number): string {
+  if (!range || lineDelta === 0) return range
+  const dashIdx = range.indexOf('-')
+  const shift = (part: string): string => {
+    const colon = part.indexOf(':')
+    if (colon < 0) return part
+    const line = Number.parseInt(part.slice(0, colon), 10)
+    if (!Number.isFinite(line)) return part
+    return `${Math.max(1, line - lineDelta)}${part.slice(colon)}`
+  }
+  if (dashIdx < 0) return shift(range)
+  return `${shift(range.slice(0, dashIdx))}-${shift(range.slice(dashIdx + 1))}`
+}
+
+function normalizeDiagnosticPath(path: string): string {
+  if (!path) return path
+  return path.startsWith('/') ? path : `/${path}`
+}
+
+function shiftDiagnosticsForPreamble(
+  diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; path: string; range: string; message: string; package?: string }>,
+  mainPath: string,
+  preambleLines: number,
+) {
+  if (preambleLines <= 0) return diagnostics
+  const normalizedMain = normalizeDiagnosticPath(mainPath)
+  return diagnostics.map((diag) => {
+    const path = normalizeDiagnosticPath(diag.path)
+    if (path && path !== normalizedMain) return diag
+    return {
+      ...diag,
+      range: shiftDiagnosticRange(diag.range, preambleLines),
+    }
+  })
+}
+
 export function applyPagePreamble(source: string): string {
   const { pageSize } = useSettingsStore.getState()
   const preamble = buildPagePreamble(pageSize, source, currentProjectLayoutLocked())
@@ -130,11 +179,30 @@ let lastEnsuredPackagesKey: string | null = null
 let smoothedCompileTimeMs = 0
 let nextCompileRequestId = 0
 let latestRequestedCompileId = 0
+const requestSettleWaiters = new Map<number, Array<() => void>>()
 
 function nextRequestId(): number {
   nextCompileRequestId += 1
   latestRequestedCompileId = nextCompileRequestId
   return nextCompileRequestId
+}
+
+function waitForRequestSettle(requestId: number): Promise<void> {
+  return new Promise((resolve) => {
+    const waiters = requestSettleWaiters.get(requestId)
+    if (waiters) {
+      waiters.push(resolve)
+    } else {
+      requestSettleWaiters.set(requestId, [resolve])
+    }
+  })
+}
+
+function settleRequest(requestId: number): void {
+  const waiters = requestSettleWaiters.get(requestId)
+  if (!waiters) return
+  requestSettleWaiters.delete(requestId)
+  for (const resolve of waiters) resolve()
 }
 
 function applyPackageCompatIfNeeded(source: string): string {
@@ -151,22 +219,30 @@ function effectiveCompileDelay(baseDelay: number): number {
 }
 
 export async function ensureCompilerReady(): Promise<void> {
-  const store = useCompileStore.getState()
-  if (isCompilerReady()) {
-    store.setCompilerReady(true)
-    return
-  }
-  if (initPromise) return initPromise
+  while (!isCompilerReady()) {
+    if (!initPromise) {
+      useCompileStore.getState().setCompilerReady(false)
+      initPromise = initCompiler().catch((err) => {
+        useCompileStore.getState().setCompilerReady(false)
+        initPromise = null
+        throw err
+      })
+    }
 
-  store.setCompilerReady(false)
-  initPromise = initCompiler().catch((err) => {
-    store.setCompilerReady(false)
-    initPromise = null
-    throw err
-  })
-  return initPromise.then(() => {
-    useCompileStore.getState().setCompilerReady(true)
-  })
+    try {
+      await initPromise
+    } catch (err) {
+      if (isCompilerReady()) break
+      throw err
+    }
+
+    if (!isCompilerReady()) {
+      // Init fulfilled, then fonts/config tore the compiler down. Re-init.
+      initPromise = null
+    }
+  }
+
+  useCompileStore.getState().setCompilerReady(true)
 }
 
 function scheduleDeferredCompile(request: CompileRequest): void {
@@ -216,7 +292,12 @@ async function waitForEditorIdle(requestId: number): Promise<number> {
 
 async function doCompile(request: CompileRequest): Promise<void> {
   if (compiling) {
+    if (pendingRequest && pendingRequest.requestId !== request.requestId) {
+      // Replaced before it could run — release any awaiters.
+      settleRequest(pendingRequest.requestId)
+    }
     pendingRequest = request
+    await waitForRequestSettle(request.requestId)
     return
   }
 
@@ -327,8 +408,11 @@ async function doCompile(request: CompileRequest): Promise<void> {
       return
     }
 
+    const preambleLines = preamble ? preamble.split('\n').length - 1 : 0
     store.setCompileTime(Math.round(totalSample.ms))
-    store.setDiagnostics(result.diagnostics)
+    store.setDiagnostics(
+      shiftDiagnosticsForPreamble(result.diagnostics, compileInputs.mainPath, preambleLines),
+    )
 
     if (result.timings) {
       perfSample('compile.engine.compile', result.timings.compileMs, {
@@ -360,10 +444,18 @@ async function doCompile(request: CompileRequest): Promise<void> {
   } finally {
     compiling = false
 
-    if (pendingRequest !== null) {
-      const next = pendingRequest
-      pendingRequest = null
+    const next = pendingRequest
+    pendingRequest = null
+    settleRequest(request.requestId)
+
+    if (next !== null) {
       scheduleDeferredCompile(next)
+    } else if (
+      useCompileStore.getState().status === 'compiling'
+      && !debounceTimer
+    ) {
+      // Stale abandon with nothing queued — don't leave the UI stuck on Compiling.
+      useCompileStore.getState().setStatus('idle')
     }
   }
 }

@@ -176,9 +176,46 @@ describe('Compile Manager', () => {
     const oldCompile = forceCompile('= Old')
     const newCompile = forceCompile('= New')
     await Promise.all([oldCompile, newCompile])
-    await new Promise((resolve) => setTimeout(resolve, 80))
 
+    // forceCompile must not resolve until the queued request has settled.
     expect(useCompileStore.getState().svg).toContain('NEW')
+  })
+
+  it('awaits a queued forceCompile until its result is applied', async () => {
+    let releaseOld: (() => void) | undefined
+    vi.mocked(compileTypst)
+      .mockImplementationOnce(async () => {
+        await new Promise<void>((resolve) => { releaseOld = resolve })
+        return {
+          svg: '<svg>OLD</svg>',
+          vectorData: new Uint8Array([1]),
+          pageDimensions: [{ width: 1, height: 1 }],
+          diagnostics: [],
+          success: true,
+        }
+      })
+      .mockImplementationOnce(async () => ({
+        svg: '<svg>QUEUED</svg>',
+        vectorData: new Uint8Array([9]),
+        pageDimensions: [{ width: 1, height: 1 }],
+        diagnostics: [],
+        success: true,
+      }))
+
+    const oldCompile = forceCompile('= Old')
+    await Promise.resolve()
+    const queued = forceCompile('= Queued')
+
+    let queuedDone = false
+    void queued.then(() => { queuedDone = true })
+    await Promise.resolve()
+    expect(queuedDone).toBe(false)
+
+    if (!releaseOld) throw new Error('expected old compile gate')
+    releaseOld()
+    await Promise.all([oldCompile, queued])
+    expect(queuedDone).toBe(true)
+    expect(useCompileStore.getState().svg).toContain('QUEUED')
   })
 
   it('defers compile result application while the editor is actively typing', async () => {

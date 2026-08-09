@@ -70,6 +70,24 @@ describe('Compile Store', () => {
     expect(state.totalPages).toBe(2)
   })
 
+  it('should clear preview state', () => {
+    useCompileStore.getState().setSvgResult('<svg>test</svg>', new Uint8Array([1, 2, 3]), [
+      { width: 595, height: 842 },
+    ])
+    useCompileStore.getState().setDiagnostics([
+      { severity: 'error', path: '/main.typ', range: '1:1-1:2', message: 'boom' },
+    ])
+    useCompileStore.getState().setStatus('success')
+
+    useCompileStore.getState().clearPreview()
+    const state = useCompileStore.getState()
+    expect(state.svg).toBeNull()
+    expect(state.vectorData).toBeNull()
+    expect(state.pageDimensions).toEqual([])
+    expect(state.diagnostics).toEqual([])
+    expect(state.status).toBe('idle')
+  })
+
   it('should set compile time', () => {
     useCompileStore.getState().setCompileTime(150)
     expect(useCompileStore.getState().compileTime).toBe(150)
