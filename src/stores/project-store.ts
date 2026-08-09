@@ -242,10 +242,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     })
 
     if (migratedProjects.length > 0) {
+      const migratedIds = migratedProjects.map((project) => project.id)
       void Promise.all(
-        migratedProjects.map(async (project) => {
+        migratedIds.map(async (projectId) => {
+          // Re-read from live store so a delete/edit before this write lands
+          // cannot resurrect a stale migration snapshot.
+          const latest = get().projects.find((project) => project.id === projectId)
+          if (!latest) return
           try {
-            await idbSet(project.id, project, projectsStore)
+            await idbSet(projectId, latest, projectsStore)
           } catch (err) {
             console.warn('Failed to save migrated project to IDB:', err)
           }
