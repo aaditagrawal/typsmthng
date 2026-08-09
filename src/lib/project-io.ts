@@ -59,11 +59,14 @@ function latexFallbackContent(source: string): string {
 export function looksLikeImportableProject(paths: string[]): boolean {
   return paths.some((path) => {
     const normalizedPath = path.toLowerCase()
+    const isRootFile = !normalizedPath.includes('/')
     return normalizedPath === 'main.typ'
       || normalizedPath === 'main.tex'
       || normalizedPath.endsWith('.typ')
-      || normalizedPath.endsWith('.tex')
       || normalizedPath === '.typsmthng/template.json'
+      // LaTeX: only root-level .tex files count. Nested ancillary .tex alone
+      // must not unwrap an unrelated single top-level folder.
+      || (isRootFile && normalizedPath.endsWith('.tex'))
   })
 }
 

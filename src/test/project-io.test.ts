@@ -288,13 +288,31 @@ describe('project-io import classification', () => {
     expect(alpha?.mainFile).toBe('/main.typ')
     expect(beta?.files.map((f) => f.path)).toEqual(['/main.typ'])
   })
+
+  it('does not unwrap a folder that only has nested ancillary .tex', async () => {
+    const zipped = zipSync({
+      'Bundle/docs/notes.tex': asciiBytes('\\begin{document}\nHi\n\\end{document}'),
+      'Bundle/photos/readme.txt': asciiBytes('photos'),
+    })
+
+    await importProject(makeZipFileLike('Bundle.zip', zipped))
+    const project = mocked.state.projects[0]
+    expect(project.name).toBe('Bundle')
+    expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/Bundle/docs/notes.typ',
+      '/Bundle/photos/readme.txt',
+    ])
+  })
 })
 
 describe('project-io zip helpers', () => {
   it('recognizes Typst and LaTeX roots as importable projects', () => {
     expect(looksLikeImportableProject(['main.typ', 'chapters/a.typ'])).toBe(true)
     expect(looksLikeImportableProject(['main.tex', 'figs/a.png'])).toBe(true)
+    expect(looksLikeImportableProject(['paper.tex', 'figs/a.png'])).toBe(true)
     expect(looksLikeImportableProject(['readme.md', 'data.csv'])).toBe(false)
+    // Nested ancillary .tex alone should not trigger unwrap.
+    expect(looksLikeImportableProject(['docs/notes.tex', 'photos/a.png'])).toBe(false)
   })
 
   it('normalizes single-folder latex archives', () => {
