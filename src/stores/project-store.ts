@@ -66,6 +66,13 @@ function cancelScheduledAutoSave(projectId?: string) {
   autoSaveProjectId = null
 }
 
+/** Test-only: clear debounce timers and persist epochs between cases. */
+export function resetProjectPersistStateForTests(): void {
+  clearAutoSaveTimer()
+  autoSaveProjectId = null
+  projectPersistEpoch.clear()
+}
+
 export interface ProjectFile {
   path: string
   content: string

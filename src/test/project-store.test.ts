@@ -11,14 +11,14 @@ type IdbSetCall = {
 // Mock idb-keyval before importing project store
 vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
-  let setDelayMs = 0
+  const delayedKeys = new Set<string>()
   const pendingSets: IdbSetCall[] = []
 
   return {
     createStore: () => 'mock-store',
     get: vi.fn(async (key: string) => store.get(key)),
     set: vi.fn(async (key: string, val: unknown) => {
-      if (setDelayMs <= 0) {
+      if (!delayedKeys.has(key)) {
         store.set(key, val)
         return
       }
@@ -38,7 +38,11 @@ vi.mock('idb-keyval', () => {
     keys: vi.fn(async () => Array.from(store.keys())),
     __store: store,
     __pendingSets: pendingSets,
-    __setSetDelayMs: (ms: number) => { setDelayMs = ms },
+    __delayKeys: (...keys: string[]) => {
+      delayedKeys.clear()
+      for (const key of keys) delayedKeys.add(key)
+    },
+    __clearDelayKeys: () => { delayedKeys.clear() },
     __flushPendingSets: () => {
       const queued = pendingSets.splice(0, pendingSets.length)
       for (const call of queued) call.resolve()
@@ -52,7 +56,8 @@ import * as idbKeyval from 'idb-keyval'
 type MockIdb = typeof idbKeyval & {
   __store: Map<string, unknown>
   __pendingSets: IdbSetCall[]
-  __setSetDelayMs: (ms: number) => void
+  __delayKeys: (...keys: string[]) => void
+  __clearDelayKeys: () => void
   __flushPendingSets: () => void
 }
 
@@ -62,7 +67,7 @@ describe('Project Store', () => {
   beforeEach(() => {
     vi.useRealTimers()
     resetProjectPersistStateForTests()
-    mockIdb.__setSetDelayMs(0)
+    mockIdb.__clearDelayKeys()
     mockIdb.__flushPendingSets()
 
     // Clear the mock idb store
@@ -84,7 +89,7 @@ describe('Project Store', () => {
 
   afterEach(() => {
     resetProjectPersistStateForTests()
-    mockIdb.__setSetDelayMs(0)
+    mockIdb.__clearDelayKeys()
     mockIdb.__flushPendingSets()
     vi.useRealTimers()
   })
@@ -390,25 +395,25 @@ describe('Project Store', () => {
     const id = await useProjectStore.getState().createProject('Doomed')
     useProjectStore.getState().selectProject(id)
 
-    mockIdb.__setSetDelayMs(50)
+    mockIdb.__delayKeys(id)
     const savePromise = useProjectStore.getState().saveProject(id)
-    // Let saveProject reach the delayed idbSet and queue it.
-    await Promise.resolve()
-    await Promise.resolve()
+
+    // Poll until the delayed idbSet is queued (microtask timing varies).
+    for (let i = 0; i < 20 && !mockIdb.__pendingSets.some((call) => call.key === id); i++) {
+      await Promise.resolve()
+    }
     expect(mockIdb.__pendingSets.some((call) => call.key === id)).toBe(true)
 
     await useProjectStore.getState().deleteProject(id)
     expect(mockIdb.__store.has(id)).toBe(false)
 
     mockIdb.__flushPendingSets()
+    mockIdb.__clearDelayKeys()
     await savePromise
-    // Allow rollback idbDel to settle.
-    await Promise.resolve()
-    await Promise.resolve()
 
     expect(mockIdb.__store.has(id)).toBe(false)
     expect(useProjectStore.getState().projects.find((p) => p.id === id)).toBeUndefined()
-  })
+  }, 5_000)
 
   it('autosave after delete does not write the deleted project back', async () => {
     await useProjectStore.getState().loadProjects()
@@ -418,7 +423,7 @@ describe('Project Store', () => {
     vi.useFakeTimers()
     useProjectStore.getState().updateFileContent('/main.typ', '= pending')
 
-    // deleteProject uses real async IDB; briefly restore real timers for the delete.
+    // deleteProject is real-async (IDB); run it with real timers.
     vi.useRealTimers()
     await useProjectStore.getState().deleteProject(id)
 
