@@ -109,6 +109,55 @@ export function getInjectedPreambleLineCount(source: string): number {
   return preamble.split('\n').length - 1
 }
 
+/** Preamble offset for the project main file (not whatever buffer is open). */
+export function getInjectedPreambleLineCountForProject(): number {
+  const project = useProjectStore.getState().getCurrentProject()
+  const currentFilePath = useProjectStore.getState().currentFilePath
+  const liveSource = useEditorStore.getState().source
+  const mainPath = project?.mainFile ?? '/main.typ'
+  const mainFile = project?.files.find((file) => file.path === mainPath && !file.isBinary)
+  const mainSource = currentFilePath === mainPath
+    ? liveSource
+    : (mainFile?.content ?? '')
+  return getInjectedPreambleLineCount(mainSource)
+}
+
+function shiftDiagnosticRange(range: string, lineDelta: number): string {
+  if (!range || lineDelta === 0) return range
+  const dashIdx = range.indexOf('-')
+  const shift = (part: string): string => {
+    const colon = part.indexOf(':')
+    if (colon < 0) return part
+    const line = Number.parseInt(part.slice(0, colon), 10)
+    if (!Number.isFinite(line)) return part
+    return `${Math.max(1, line - lineDelta)}${part.slice(colon)}`
+  }
+  if (dashIdx < 0) return shift(range)
+  return `${shift(range.slice(0, dashIdx))}-${shift(range.slice(dashIdx + 1))}`
+}
+
+function normalizeDiagnosticPath(path: string): string {
+  if (!path) return path
+  return path.startsWith('/') ? path : `/${path}`
+}
+
+function shiftDiagnosticsForPreamble(
+  diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; path: string; range: string; message: string; package?: string }>,
+  mainPath: string,
+  preambleLines: number,
+) {
+  if (preambleLines <= 0) return diagnostics
+  const normalizedMain = normalizeDiagnosticPath(mainPath)
+  return diagnostics.map((diag) => {
+    const path = normalizeDiagnosticPath(diag.path)
+    if (path && path !== normalizedMain) return diag
+    return {
+      ...diag,
+      range: shiftDiagnosticRange(diag.range, preambleLines),
+    }
+  })
+}
+
 export function applyPagePreamble(source: string): string {
   const { pageSize } = useSettingsStore.getState()
   const preamble = buildPagePreamble(pageSize, source, currentProjectLayoutLocked())
@@ -359,8 +408,11 @@ async function doCompile(request: CompileRequest): Promise<void> {
       return
     }
 
+    const preambleLines = preamble ? preamble.split('\n').length - 1 : 0
     store.setCompileTime(Math.round(totalSample.ms))
-    store.setDiagnostics(result.diagnostics)
+    store.setDiagnostics(
+      shiftDiagnosticsForPreamble(result.diagnostics, compileInputs.mainPath, preambleLines),
+    )
 
     if (result.timings) {
       perfSample('compile.engine.compile', result.timings.compileMs, {
@@ -398,6 +450,12 @@ async function doCompile(request: CompileRequest): Promise<void> {
 
     if (next !== null) {
       scheduleDeferredCompile(next)
+    } else if (
+      useCompileStore.getState().status === 'compiling'
+      && !debounceTimer
+    ) {
+      // Stale abandon with nothing queued — don't leave the UI stuck on Compiling.
+      useCompileStore.getState().setStatus('idle')
     }
   }
 }

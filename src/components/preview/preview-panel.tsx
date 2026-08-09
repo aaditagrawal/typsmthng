@@ -6,7 +6,7 @@ import { resolvePreviewRenderMode, usePreviewStore } from '@/stores/preview-stor
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import { resolveSourceLocBatch } from '@/lib/compiler'
-import { forceCompile, getInjectedPreambleLineCount } from '@/lib/compile-manager'
+import { forceCompile, getInjectedPreambleLineCountForProject } from '@/lib/compile-manager'
 import { estimateFallbackLine, findApproxSourceLine, parseSourceSpanToRange } from '@/lib/preview-mapping'
 import { jumpToDiagnostic } from '@/lib/editor-diagnostics'
 import { perfMark, perfMeasure } from '@/lib/perf'
@@ -1022,7 +1022,7 @@ function usePreviewClickHandler(ignoreClickRef?: { current: boolean }) {
       )
       candidateCount = candidates.length
       if (candidates.length > 0) {
-        const injectedPreambleLines = getInjectedPreambleLineCount(source)
+        const injectedPreambleLines = getInjectedPreambleLineCountForProject()
         const spans = await resolveSourceLocBatch(vectorData, candidates.map((c) => c.path))
         let best: { line: number; score: number } | null = null
 

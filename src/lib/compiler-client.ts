@@ -207,6 +207,23 @@ export async function initCompilerClient(
   }
 }
 
+async function ensurePackagesOnMainForFallback(
+  source: string,
+  extraFiles?: Array<{ path: string; content: string }>,
+): Promise<void> {
+  // Worker ensure only fills the worker's in-memory prepared map. On fallback,
+  // re-prepare on the main-thread registry before compiling.
+  const { findPreviewImportSpecs } = await import('./universe-registry')
+  const specs = new Set<string>(findPreviewImportSpecs(source))
+  for (const file of extraFiles ?? []) {
+    for (const spec of findPreviewImportSpecs(file.content)) {
+      specs.add(spec)
+    }
+  }
+  if (specs.size === 0) return
+  await ensurePackagesForCompileBackend([...specs])
+}
+
 export async function compileTypstClient(
   source: string,
   extraFiles?: Array<{ path: string; content: string }>,
@@ -220,7 +237,10 @@ export async function compileTypstClient(
 
   return callWithCompilerFallback(
     (api) => api.compileTypst(source, extraFiles, mainFilePath, extraBinaryFiles),
-    () => compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles),
+    async () => {
+      await ensurePackagesOnMainForFallback(source, extraFiles)
+      return compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
+    },
   )
 }
 
@@ -257,7 +277,10 @@ export async function compileToPdfClient(
 
   return callWithCompilerFallback(
     (api) => api.compileToPdf(source, extraFiles, mainFilePath, extraBinaryFiles),
-    () => compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles),
+    async () => {
+      await ensurePackagesOnMainForFallback(source, extraFiles)
+      return compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
+    },
   )
 }
 

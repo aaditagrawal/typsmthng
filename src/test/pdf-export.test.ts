@@ -137,4 +137,16 @@ describe('exportCurrentProjectPdf', () => {
       '@preview/bar:0.2.0',
     ])
   })
+
+  it('applies package-compat transformText like preview', async () => {
+    await exportCurrentProjectPdf()
+    const calls = mocked.buildCompileInputs.mock.calls as unknown as Array<
+      [{ transformText?: (path: string, content: string) => string }]
+    >
+    const transformText = calls[0]?.[0]?.transformText
+    expect(transformText).toEqual(expect.any(Function))
+    expect(
+      transformText?.('/main.typ', '#import "@preview/ctheorems:1.1.2": *'),
+    ).toContain('@preview/ctheorems:1.1.3')
+  })
 })

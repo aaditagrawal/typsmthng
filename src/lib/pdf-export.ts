@@ -3,6 +3,7 @@ import { useProjectStore } from '@/stores/project-store'
 import { buildCompileInputs } from '@/lib/compile-inputs'
 import { applyPagePreamble, ensureCompilerReady } from '@/lib/compile-manager'
 import { compileToPdf, ensurePackagesForCompile } from '@/lib/compiler'
+import { applyPackageImportCompatRewrites } from '@/lib/package-compat'
 import { findPreviewImportSpecs } from '@/lib/universe-registry'
 
 export type PdfExportResult =
@@ -48,6 +49,12 @@ export async function exportCurrentProjectPdf(options?: {
       project,
       currentFilePath,
       liveSource,
+      // Match preview: package-compat rewrites must apply to PDF too.
+      transformText: (_path, content) => (
+        content.includes('@preview/')
+          ? applyPackageImportCompatRewrites(content)
+          : content
+      ),
     })
 
     const packageSpecs = collectPackageSpecs(compileInputs.mainSource, compileInputs.extraFiles)

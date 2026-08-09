@@ -71,6 +71,7 @@ function CanvasPreviewPage({
         pixelPerPt: getPixelPerPt(zoomBucket),
         widthPt: page.width,
         heightPt: page.height,
+        renderKey,
       },
     ).catch((err) => {
       if (!cancelled) {
