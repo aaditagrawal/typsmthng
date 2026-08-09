@@ -165,7 +165,19 @@ export function Toolbar() {
           onChange={async (e) => {
             const file = e.target.files?.[0]
             if (file) {
-              await importProject(file)
+              const result = await importProject(file)
+              if (result && result.warnings.length > 0) {
+                const preview = result.warnings
+                  .slice(0, 5)
+                  .map((warning) => `• ${warning.message}`)
+                  .join('\n')
+                const extra = result.warnings.length > 5
+                  ? `\n…and ${result.warnings.length - 5} more`
+                  : ''
+                window.alert(
+                  `Imported "${result.projectName}" with ${result.warnings.length} LaTeX conversion warning(s):\n\n${preview}${extra}`,
+                )
+              }
               e.target.value = ''
             }
           }}

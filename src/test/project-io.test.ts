@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { zipSync } from 'fflate'
+import { unzipSync, zipSync } from 'fflate'
 
 interface MockProjectFile {
   path: string
@@ -35,10 +35,12 @@ const mocked = vi.hoisted(() => {
     projects: MockProject[]
     currentProjectId: string | null
     currentFilePath: string | null
+    hasSelectedProject: boolean
   } = {
     projects: [],
     currentProjectId: null,
     currentFilePath: null,
+    hasSelectedProject: false,
   }
 
   const createProject = vi.fn(async (name: string, scaffold?: MockScaffold) => {
@@ -58,7 +60,8 @@ const mocked = vi.hoisted(() => {
       updatedAt: Date.now(),
     })
     state.currentProjectId = id
-    state.currentFilePath = '/main.typ'
+    state.currentFilePath = scaffold?.mainFile ?? '/main.typ'
+    state.hasSelectedProject = true
     return id
   })
 
@@ -73,6 +76,7 @@ vi.mock('@/stores/project-store', () => ({
       createProject: mocked.createProject,
       saveCurrentProject: mocked.saveCurrentProject,
       getCurrentProject: () => mocked.state.projects.find((p) => p.id === mocked.state.currentProjectId),
+      projects: mocked.state.projects,
     }),
     setState: (updater: unknown) => {
       const next = typeof updater === 'function'
@@ -83,7 +87,16 @@ vi.mock('@/stores/project-store', () => ({
   },
 }))
 
-import { importProject } from '@/lib/project-io'
+import {
+  exportAllProjects,
+  exportProject,
+  importAllProjects,
+  importLatexZip,
+  importProject,
+  looksLikeImportableProject,
+  normalizeSingleProjectZipEntries,
+  uniqueExportFolderNames,
+} from '@/lib/project-io'
 
 function makeZipFileLike(name: string, zipped: Uint8Array): File {
   const buffer = Uint8Array.from(zipped).buffer
@@ -102,6 +115,7 @@ describe('project-io import classification', () => {
     mocked.state.projects = []
     mocked.state.currentProjectId = null
     mocked.state.currentFilePath = null
+    mocked.state.hasSelectedProject = false
     mocked.createProject.mockClear()
     mocked.saveCurrentProject.mockClear()
     vi.spyOn(window, 'alert').mockImplementation(() => {})
@@ -212,5 +226,181 @@ describe('project-io import classification', () => {
       '/chapters/intro.typ',
       '/main.typ',
     ])
+  })
+
+  it('unwraps a wrapped LaTeX zip via importProject and converts .tex', async () => {
+    const zipped = zipSync({
+      'Paper/main.tex': asciiBytes('\\begin{document}\nHello.\n\\end{document}'),
+      'Paper/figs/note.txt': asciiBytes('note'),
+    })
+
+    const file = makeZipFileLike('PaperArchive.zip', zipped)
+    const result = await importProject(file)
+
+    expect(result?.texFilesConverted).toBe(1)
+    expect(mocked.createProject).toHaveBeenCalledWith(
+      'Paper',
+      expect.objectContaining({
+        mainFile: '/main.typ',
+      }),
+    )
+
+    const project = mocked.state.projects.find((p) => p.name === 'Paper')
+    expect(project?.files.map((projectFile) => projectFile.path).sort()).toEqual([
+      '/figs/note.txt',
+      '/main.typ',
+    ])
+    expect(project?.files.find((f) => f.path === '/main.typ')?.content).toContain('Hello')
+  })
+
+  it('unwraps wrapped LaTeX zips in importLatexZip', async () => {
+    const zipped = zipSync({
+      'Thesis/main.tex': asciiBytes('\\title{Thesis Title}\n\\begin{document}\nBody.\n\\end{document}'),
+      'Thesis/chapters/one.tex': asciiBytes('\\section{One}\nText.'),
+    })
+
+    const file = makeZipFileLike('Thesis.zip', zipped)
+    const result = await importLatexZip(file)
+
+    expect(result.texFilesConverted).toBe(2)
+    expect(result.projectName).toBe('Thesis Title')
+    const project = mocked.state.projects[0]
+    expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.typ',
+      '/main.typ',
+    ])
+    expect(project.mainFile).toBe('/main.typ')
+  })
+
+  it('converts .tex files inside importAllProjects folders', async () => {
+    const zipped = zipSync({
+      'Alpha/main.tex': asciiBytes('\\begin{document}\nA\n\\end{document}'),
+      'Beta/main.typ': asciiBytes('= Beta'),
+    })
+
+    const imported = await importAllProjects(makeZipFileLike('bundle.zip', zipped))
+    expect(imported).toBe(2)
+
+    const alpha = mocked.state.projects.find((p) => p.name === 'Alpha')
+    const beta = mocked.state.projects.find((p) => p.name === 'Beta')
+    expect(alpha?.files.map((f) => f.path)).toEqual(['/main.typ'])
+    expect(alpha?.mainFile).toBe('/main.typ')
+    expect(beta?.files.map((f) => f.path)).toEqual(['/main.typ'])
+  })
+})
+
+describe('project-io zip helpers', () => {
+  it('recognizes Typst and LaTeX roots as importable projects', () => {
+    expect(looksLikeImportableProject(['main.typ', 'chapters/a.typ'])).toBe(true)
+    expect(looksLikeImportableProject(['main.tex', 'figs/a.png'])).toBe(true)
+    expect(looksLikeImportableProject(['readme.md', 'data.csv'])).toBe(false)
+  })
+
+  it('normalizes single-folder latex archives', () => {
+    const unzipped = unzipSync(zipSync({
+      'Wrapped/main.tex': asciiBytes('x'),
+      'Wrapped/a.txt': asciiBytes('y'),
+    }))
+    const normalized = normalizeSingleProjectZipEntries(unzipped, 'fallback')
+    expect(normalized.projectName).toBe('Wrapped')
+    expect(normalized.entries.map((e) => e.path).sort()).toEqual(['a.txt', 'main.tex'])
+  })
+
+  it('dedupes colliding export folder names', () => {
+    expect(uniqueExportFolderNames(['A/B', 'A_B', 'A/B'])).toEqual(['A_B', 'A_B-2', 'A_B-3'])
+  })
+})
+
+describe('project-io export', () => {
+  beforeEach(() => {
+    mocked.state.projects = []
+    mocked.state.currentProjectId = null
+    mocked.state.currentFilePath = null
+    mocked.createProject.mockClear()
+    vi.restoreAllMocks()
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:export')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  it('exports the current project zip with text and binary files', async () => {
+    const imageBytes = new Uint8Array([1, 2, 3, 4])
+    mocked.state.projects = [{
+      id: 'p1',
+      name: 'Demo',
+      files: [
+        { path: '/main.typ', content: '= Demo', isBinary: false, lastModified: 1 },
+        { path: '/img.png', content: '', isBinary: true, binaryData: imageBytes, lastModified: 1 },
+        { path: '/empty/.folder', content: '', isBinary: false, lastModified: 1 },
+      ],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+    mocked.state.currentProjectId = 'p1'
+
+    await exportProject()
+
+    expect(URL.createObjectURL).toHaveBeenCalled()
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const buffer = new Uint8Array(await blob.arrayBuffer())
+    const unzipped = unzipSync(buffer)
+    expect(Object.keys(unzipped).sort()).toEqual(['img.png', 'main.typ'])
+  })
+
+  it('exports all projects under unique folders', async () => {
+    mocked.state.projects = [
+      {
+        id: 'p1',
+        name: 'A/B',
+        files: [{ path: '/main.typ', content: '= A', isBinary: false, lastModified: 1 }],
+        mainFile: '/main.typ',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: 'p2',
+        name: 'A_B',
+        files: [{ path: '/main.typ', content: '= B', isBinary: false, lastModified: 1 }],
+        mainFile: '/main.typ',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]
+
+    await exportAllProjects()
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const unzipped = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+    expect(Object.keys(unzipped).sort()).toEqual(['A_B-2/main.typ', 'A_B/main.typ'])
+  })
+
+  it('round-trips export then importProject', async () => {
+    mocked.state.projects = [{
+      id: 'p1',
+      name: 'RoundTrip',
+      files: [
+        { path: '/main.typ', content: '= Round', isBinary: false, lastModified: 1 },
+        { path: '/extra.typ', content: '== Extra', isBinary: false, lastModified: 1 },
+      ],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+    mocked.state.currentProjectId = 'p1'
+
+    await exportProject()
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const zipped = new Uint8Array(await blob.arrayBuffer())
+
+    mocked.state.projects = []
+    mocked.state.currentProjectId = null
+    mocked.createProject.mockClear()
+
+    await importProject(makeZipFileLike('RoundTrip.zip', zipped))
+    const project = mocked.state.projects[0]
+    expect(project.name).toBe('RoundTrip')
+    expect(project.files.map((f) => f.path).sort()).toEqual(['/extra.typ', '/main.typ'])
+    expect(project.mainFile).toBe('/main.typ')
   })
 })

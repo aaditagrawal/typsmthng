@@ -4,7 +4,7 @@ import { useProjectStore, type ProjectFile } from '@/stores/project-store'
 import { useUIStore } from '@/stores/ui-store'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
 import { shouldTreatUploadAsText, isLatexPath } from '@/lib/file-classification'
-import { convertLatexToTypst } from '@/lib/latex-converter'
+import { convertUploadedLatexFile } from '@/lib/project-io'
 import { getProjectFileIndex, isHiddenInternalPath } from '@/lib/file-index'
 import {
   File,
@@ -1106,14 +1106,18 @@ export function FileTree() {
   const ingestFiles = useCallback(async (entries: Array<{ path: string; file: File }>) => {
     const textEntries: Array<{ path: string; content: string }> = []
     const binaryEntries: Array<{ path: string; data: Uint8Array }> = []
+    const latexWarnings: string[] = []
 
     for (const entry of entries) {
       if (shouldTreatUploadAsText(entry.file)) {
         const text = await entry.file.text()
         if (isLatexPath(entry.file.name)) {
-          const result = await convertLatexToTypst(text)
+          const result = await convertUploadedLatexFile(text, entry.file.name)
           const typPath = entry.path.replace(/\.tex$/i, '.typ')
-          textEntries.push({ path: typPath, content: result.typst })
+          textEntries.push({ path: typPath, content: result.content })
+          for (const warning of result.warnings) {
+            latexWarnings.push(warning.message)
+          }
         } else {
           textEntries.push({ path: entry.path, content: text })
         }
@@ -1128,6 +1132,9 @@ export function FileTree() {
     }
     if (binaryEntries.length > 0) {
       await addBinaryFilesBatch(binaryEntries)
+    }
+    if (latexWarnings.length > 0) {
+      console.warn('LaTeX conversion warnings during file ingest:', latexWarnings)
     }
   }, [createFilesBatch, addBinaryFilesBatch])
 
