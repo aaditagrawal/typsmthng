@@ -1,27 +1,72 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
+
+type IdbSetCall = {
+  key: string
+  val: unknown
+  resolve: () => void
+  reject: (err: unknown) => void
+}
 
 // Mock idb-keyval before importing project store
 vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
+  let setDelayMs = 0
+  const pendingSets: IdbSetCall[] = []
+
   return {
     createStore: () => 'mock-store',
     get: vi.fn(async (key: string) => store.get(key)),
-    set: vi.fn(async (key: string, val: unknown) => { store.set(key, val) }),
+    set: vi.fn(async (key: string, val: unknown) => {
+      if (setDelayMs <= 0) {
+        store.set(key, val)
+        return
+      }
+      await new Promise<void>((resolve, reject) => {
+        pendingSets.push({
+          key,
+          val,
+          resolve: () => {
+            store.set(key, val)
+            resolve()
+          },
+          reject,
+        })
+      })
+    }),
     del: vi.fn(async (key: string) => { store.delete(key) }),
     keys: vi.fn(async () => Array.from(store.keys())),
     __store: store,
+    __pendingSets: pendingSets,
+    __setSetDelayMs: (ms: number) => { setDelayMs = ms },
+    __flushPendingSets: () => {
+      const queued = pendingSets.splice(0, pendingSets.length)
+      for (const call of queued) call.resolve()
+    },
   }
 })
 
-import { useProjectStore } from '@/stores/project-store'
+import { useProjectStore, resetProjectPersistStateForTests } from '@/stores/project-store'
 import * as idbKeyval from 'idb-keyval'
+
+type MockIdb = typeof idbKeyval & {
+  __store: Map<string, unknown>
+  __pendingSets: IdbSetCall[]
+  __setSetDelayMs: (ms: number) => void
+  __flushPendingSets: () => void
+}
+
+const mockIdb = idbKeyval as MockIdb
 
 describe('Project Store', () => {
   beforeEach(() => {
+    vi.useRealTimers()
+    resetProjectPersistStateForTests()
+    mockIdb.__setSetDelayMs(0)
+    mockIdb.__flushPendingSets()
+
     // Clear the mock idb store
-    const mockStore = (idbKeyval as unknown as { __store: Map<string, unknown> }).__store
-    mockStore.clear()
+    mockIdb.__store.clear()
 
     // Reset zustand store state between tests
     useProjectStore.setState({
@@ -35,6 +80,13 @@ describe('Project Store', () => {
       loading: true,
       hasSelectedProject: false,
     })
+  })
+
+  afterEach(() => {
+    resetProjectPersistStateForTests()
+    mockIdb.__setSetDelayMs(0)
+    mockIdb.__flushPendingSets()
+    vi.useRealTimers()
   })
 
   it('should load projects and create default if empty', async () => {
@@ -192,8 +244,7 @@ describe('Project Store', () => {
 
   it('should migrate old projects with empty content to SAMPLE_DOCUMENT', async () => {
     // Simulate an old project saved to IDB with empty content
-    const mockStore = (idbKeyval as unknown as { __store: Map<string, unknown> }).__store
-    mockStore.set('default', {
+    mockIdb.__store.set('default', {
       id: 'default',
       name: 'My Document',
       files: [{
@@ -217,8 +268,7 @@ describe('Project Store', () => {
   })
 
   it('should NOT overwrite existing non-empty content during migration', async () => {
-    const mockStore = (idbKeyval as unknown as { __store: Map<string, unknown> }).__store
-    mockStore.set('default', {
+    mockIdb.__store.set('default', {
       id: 'default',
       name: 'My Document',
       files: [{
@@ -295,5 +345,87 @@ describe('Project Store', () => {
     ])
     expect(state.projectWorkspaceAssignments[projectId]).toBe(workspaceId)
     expect(state.selectedHomeWorkspaceId).toBe(workspaceId)
+  })
+
+  it('flushes pending autosave for the previous project when switching projects', async () => {
+    await useProjectStore.getState().loadProjects()
+    const projectA = await useProjectStore.getState().createProject('Project A')
+    // Ensure distinct project ids when Date.now() is later frozen by fake timers.
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    const projectB = await useProjectStore.getState().createProject('Project B')
+
+    vi.useFakeTimers()
+    useProjectStore.getState().selectProject(projectA)
+    useProjectStore.getState().updateFileContent('/main.typ', '= edits for A')
+
+    // Switch before the 2s debounce fires — previously this caused saveCurrentProject
+    // to persist B (or nothing useful) and drop A's pending write.
+    useProjectStore.getState().selectProject(projectB)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const savedA = mockIdb.__store.get(projectA) as { files: Array<{ content: string }> } | undefined
+    expect(savedA?.files.find((f) => f.content === '= edits for A')).toBeTruthy()
+
+    // Advancing timers must not overwrite A with B's content.
+    await vi.advanceTimersByTimeAsync(2500)
+    const savedAAfter = mockIdb.__store.get(projectA) as { files: Array<{ content: string }> } | undefined
+    expect(savedAAfter?.files.some((f) => f.content === '= edits for A')).toBe(true)
+  })
+
+  it('persists rename for a non-current project', async () => {
+    await useProjectStore.getState().loadProjects()
+    const otherId = await useProjectStore.getState().createProject('Other')
+    useProjectStore.getState().selectProject('default')
+
+    await useProjectStore.getState().renameProject(otherId, 'Renamed Other')
+
+    const saved = mockIdb.__store.get(otherId) as { name: string } | undefined
+    expect(saved?.name).toBe('Renamed Other')
+    expect(useProjectStore.getState().projects.find((p) => p.id === otherId)?.name).toBe('Renamed Other')
+  })
+
+  it('does not resurrect a project deleted during an in-flight save', async () => {
+    await useProjectStore.getState().loadProjects()
+    const id = await useProjectStore.getState().createProject('Doomed')
+    useProjectStore.getState().selectProject(id)
+
+    mockIdb.__setSetDelayMs(50)
+    const savePromise = useProjectStore.getState().saveProject(id)
+    // Let saveProject reach the delayed idbSet and queue it.
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(mockIdb.__pendingSets.some((call) => call.key === id)).toBe(true)
+
+    await useProjectStore.getState().deleteProject(id)
+    expect(mockIdb.__store.has(id)).toBe(false)
+
+    mockIdb.__flushPendingSets()
+    await savePromise
+    // Allow rollback idbDel to settle.
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(mockIdb.__store.has(id)).toBe(false)
+    expect(useProjectStore.getState().projects.find((p) => p.id === id)).toBeUndefined()
+  })
+
+  it('autosave after delete does not write the deleted project back', async () => {
+    await useProjectStore.getState().loadProjects()
+    const id = await useProjectStore.getState().createProject('Temp')
+    useProjectStore.getState().selectProject(id)
+
+    vi.useFakeTimers()
+    useProjectStore.getState().updateFileContent('/main.typ', '= pending')
+
+    // deleteProject uses real async IDB; briefly restore real timers for the delete.
+    vi.useRealTimers()
+    await useProjectStore.getState().deleteProject(id)
+
+    vi.useFakeTimers()
+    await vi.advanceTimersByTimeAsync(2500)
+    await Promise.resolve()
+
+    expect(mockIdb.__store.has(id)).toBe(false)
   })
 })
