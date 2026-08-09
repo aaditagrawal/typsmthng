@@ -303,6 +303,18 @@ describe('project-io import classification', () => {
       '/Bundle/photos/readme.txt',
     ])
   })
+
+  it('rejects zip-slip traversal paths on import', async () => {
+    const zipped = zipSync({
+      'main.typ': asciiBytes('= Safe'),
+      '../evil.typ': asciiBytes('= Evil'),
+      'nested/../../escape.typ': asciiBytes('= Escape'),
+    })
+
+    await importProject(makeZipFileLike('Safe.zip', zipped))
+    const project = mocked.state.projects[0]
+    expect(project.files.map((f) => f.path)).toEqual(['/main.typ'])
+  })
 })
 
 describe('project-io zip helpers', () => {

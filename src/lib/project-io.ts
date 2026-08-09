@@ -44,7 +44,11 @@ function shouldSkipZipPath(path: string): boolean {
 }
 
 function normalizeZipPath(path: string): string {
-  return path.replace(/\\/g, '/').replace(/^\/+/, '')
+  const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '')
+  const parts = normalized.split('/').filter((part) => part.length > 0 && part !== '.')
+  // Reject zip-slip / traversal entries before they become project paths.
+  if (parts.some((part) => part === '..')) return ''
+  return parts.join('/')
 }
 
 function toProjectPath(path: string): string {
