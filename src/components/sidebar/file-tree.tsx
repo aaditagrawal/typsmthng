@@ -3,7 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useProjectStore, type ProjectFile } from '@/stores/project-store'
 import { useUIStore } from '@/stores/ui-store'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
-import { shouldTreatUploadAsText, isLatexPath } from '@/lib/file-classification'
+import { shouldTreatUploadAsText, isLatexPath, isImagePath } from '@/lib/file-classification'
 import { convertUploadedLatexFile } from '@/lib/project-io'
 import { getProjectFileIndex, isHiddenInternalPath } from '@/lib/file-index'
 import {
@@ -541,7 +541,6 @@ function FolderItem({
   )
 }
 
-const isImageFile = (name: string) => /\.(png|jpe?g|jfif|gif|svg|webp|avif|heif|heic|bmp|tiff?|ico)$/i.test(name)
 
 function buildDuplicatePath(existingPaths: Iterable<string>, path: string): string {
   const taken = new Set(existingPaths)
@@ -687,7 +686,7 @@ function FileItem({
           transition: 'background 80ms ease, color 80ms ease',
         }}
         onClick={() => {
-          if (isImageFile(name)) {
+          if (isImagePath(name)) {
             useUIStore.getState().setImagePreviewPath(path)
           } else {
             selectFile(path)

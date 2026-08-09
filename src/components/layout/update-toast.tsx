@@ -1,16 +1,17 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { X, RefreshCw } from 'lucide-react'
 
-type SW = { waiting: ServiceWorker }
+type UpdateDetail = { update: () => void }
 
 export function UpdateToast() {
   const [show, setShow] = useState(false)
-  const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
+  const updateRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const handler = (e: Event) => {
-      const reg = (e as CustomEvent<SW>).detail
-      setRegistration(reg as unknown as ServiceWorkerRegistration)
+      const detail = (e as CustomEvent<UpdateDetail>).detail
+      if (typeof detail?.update !== 'function') return
+      updateRef.current = detail.update
       setShow(true)
     }
     window.addEventListener('sw-update-available', handler)
@@ -18,12 +19,9 @@ export function UpdateToast() {
   }, [])
 
   const handleUpdate = useCallback(() => {
-    if (registration?.waiting) {
-      registration.waiting.postMessage({ type: 'SKIP_WAITING' })
-      setShow(false)
-      window.location.reload()
-    }
-  }, [registration])
+    updateRef.current?.()
+    setShow(false)
+  }, [])
 
   if (!show) return null
 

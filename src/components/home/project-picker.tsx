@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
 import { BookOpen, Check, Download, FileArchive, FileText, FileUp, FolderOpen, FolderPlus, FolderUp, Loader2, Monitor, Moon, Pencil, Plus, Store, Sun, Terminal, Trash2, Upload, X } from 'lucide-react'
@@ -75,11 +76,10 @@ function LinkBtn({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonEle
 
 function ThemeToggle() {
   const theme = useUIStore((s) => s.theme)
-  const setTheme = useUIStore((s) => s.setTheme)
 
   const cycle = () => {
     const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
-    setTheme(next)
+    useSettingsStore.getState().setTheme(next)
   }
 
   const Icon = theme === 'system' ? Monitor : theme === 'light' ? Sun : Moon

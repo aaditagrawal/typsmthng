@@ -93,9 +93,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => this.setState({ hasError: false, error: null, showDetails: false })}
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
@@ -106,6 +106,25 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 background: 'var(--accent)',
                 color: 'var(--accent-text)',
                 border: 'none',
+                borderRadius: '2px',
+                cursor: 'pointer',
+              }}
+            >
+              TRY AGAIN
+            </button>
+
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase' as const,
+                padding: '8px 16px',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-default)',
                 borderRadius: '2px',
                 cursor: 'pointer',
               }}

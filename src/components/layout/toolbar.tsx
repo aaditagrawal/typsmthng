@@ -119,7 +119,9 @@ export function Toolbar() {
             const file = e.target.files?.[0]
             if (file) {
               const result = await importProject(file)
-              if (result && result.warnings.length > 0) {
+              if (!result) {
+                window.alert('Could not import that zip. Make sure it contains a Typst or LaTeX project.')
+              } else if (result.warnings.length > 0) {
                 const preview = result.warnings
                   .slice(0, 5)
                   .map((warning) => `• ${warning.message}`)

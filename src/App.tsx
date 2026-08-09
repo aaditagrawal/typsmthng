@@ -56,9 +56,14 @@ export default function App() {
         void projectStore.saveCurrentProject()
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        // CommandSearch only mounts in the workspace; toggling on home
+        // would leak an open palette into the next project selection.
+        if (!useProjectStore.getState().hasSelectedProject) return
         e.preventDefault()
         const { commandSearchOpen, setCommandSearchOpen } = useUIStore.getState()
-        setCommandSearchOpen(!commandSearchOpen)
+        const nextOpen = !commandSearchOpen
+        if (nextOpen) useSettingsStore.getState().setSettingsOpen(false)
+        setCommandSearchOpen(nextOpen)
       }
     }
     window.addEventListener('keydown', handleKeyDown)

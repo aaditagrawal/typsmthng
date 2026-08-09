@@ -71,6 +71,28 @@ export function isLatexPath(pathOrName: string): boolean {
   return normalizeExtension(pathOrName) === '.tex'
 }
 
+const IMAGE_EXTENSION_SET = new Set([
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.jfif',
+  '.gif',
+  '.svg',
+  '.webp',
+  '.avif',
+  '.heif',
+  '.heic',
+  '.bmp',
+  '.tif',
+  '.tiff',
+  '.ico',
+])
+
+export function isImagePath(pathOrName: string): boolean {
+  const extension = normalizeExtension(pathOrName)
+  return extension !== '' && IMAGE_EXTENSION_SET.has(extension)
+}
+
 export function shouldTreatUploadAsText(file: File): boolean {
   if (isKnownTextPath(file.name)) return true
   return file.type.startsWith('text/')

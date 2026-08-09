@@ -21,18 +21,19 @@ export default function WorkspaceShell() {
         <SafariBanner />
         <Toolbar />
         <div className="flex flex-1 min-h-0">
-          {sidebarOpen && (
-            <div
-              className="shrink-0 overflow-hidden"
-              style={{
-                width: '240px',
-                borderRight: '1px solid var(--border-default)',
-                background: 'var(--bg-surface)',
-              }}
-            >
-              <FileTree />
-            </div>
-          )}
+          {/* Keep mounted so expand/search/rename state survives hide/show. */}
+          <div
+            className="shrink-0 overflow-hidden"
+            hidden={!sidebarOpen}
+            inert={!sidebarOpen ? true : undefined}
+            style={{
+              width: sidebarOpen ? '240px' : 0,
+              borderRight: sidebarOpen ? '1px solid var(--border-default)' : 'none',
+              background: 'var(--bg-surface)',
+            }}
+          >
+            <FileTree />
+          </div>
           <Group orientation="horizontal" className="flex-1">
             <Panel defaultSize={50} minSize={25}>
               <ErrorBoundary fallbackMessage="Editor crashed.">

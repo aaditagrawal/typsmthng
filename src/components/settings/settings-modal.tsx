@@ -204,6 +204,10 @@ export function SettingsModal() {
     setGoogleFontsEnabled(enabled)
     forceRecompile()
   }, [forceRecompile, setGoogleFontsEnabled])
+  const handlePageSizeChange = useCallback((size: PageSize) => {
+    setPageSize(size)
+    forceRecompile()
+  }, [forceRecompile, setPageSize])
 
   useEffect(() => {
     if (!open) return
@@ -355,7 +359,7 @@ export function SettingsModal() {
           <SettingRow label="Page Size" description="Overridden by #set page() in source">
             <select
               value={pageSize}
-              onChange={(e) => setPageSize(e.target.value as PageSize)}
+              onChange={(e) => handlePageSizeChange(e.target.value as PageSize)}
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
