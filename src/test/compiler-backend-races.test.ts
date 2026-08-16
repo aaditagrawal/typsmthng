@@ -66,8 +66,8 @@ vi.mock('@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url', ()
   default: 'renderer.wasm',
 }))
 
-vi.mock('@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url', () => ({
-  default: 'compiler.wasm',
+vi.mock('@myriaddreamin/typst-ts-web-compiler/package.json', () => ({
+  version: '0.0.0-test',
 }))
 
 vi.mock('@/lib/universe-registry', () => ({

@@ -6,7 +6,7 @@ import {
   MemoryAccessModel,
 } from '@myriaddreamin/typst.ts'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url'
-import compilerWasmUrl from '@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url'
+import { version as compilerPackageVersion } from '@myriaddreamin/typst-ts-web-compiler/package.json'
 import type { Diagnostic } from '@/stores/compile-store'
 import { getPreparedPackageForResolver, ensurePackagesForCompile as ensurePackagesForCompileRegistry } from './universe-registry'
 
@@ -15,6 +15,12 @@ let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
 let initPromise: Promise<void> | null = null
 /** Bumped on font/config teardown so in-flight WASM inits cannot publish stale instances. */
 let initGeneration = 0
+// The compiler WASM (~28MB) intentionally stays on the CDN: bundling it locally
+// exceeds the deploy target's 25MiB per-asset limit and would bloat the service
+// worker precache. Pinning the version to the installed package keeps the JS
+// wrapper and the WASM from drifting apart.
+const compilerWasmUrl = `https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@${compilerPackageVersion}/pkg/typst_ts_web_compiler_bg.wasm`
+
 /** Serializes compile/render ops that mutate shared compiler/renderer session state. */
 let operationChain: Promise<unknown> = Promise.resolve()
 const PROJECT_ROOT = '/'
