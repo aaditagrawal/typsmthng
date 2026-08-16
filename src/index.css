@@ -148,7 +148,6 @@ body {
 .cm-editor {
   height: 100% !important;
   font-family: var(--font-mono) !important;
-  font-size: 15px !important;
   line-height: 1.6 !important;
   font-variant-ligatures: contextual;
 }
@@ -200,6 +199,39 @@ body {
   width: 2px !important;
   min-width: 2px !important;
   max-width: 2px !important;
+}
+
+/* Stack the two work surfaces on phone-sized screens. The sidebar becomes an
+   overlay so opening it cannot squeeze either surface down to a few pixels. */
+@media (max-width: 767px) {
+  .workspace-sidebar:not([hidden]) {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 30;
+    box-shadow: 8px 0 24px rgb(0 0 0 / 20%);
+  }
+
+  .workspace-panels [data-separator] {
+    width: 100% !important;
+    min-width: 100% !important;
+    max-width: 100% !important;
+    height: 1px !important;
+    min-height: 1px !important;
+    cursor: row-resize;
+  }
+
+  .workspace-panels [data-separator]::after {
+    inset: -10px 0;
+  }
+
+  .preview-toolbar {
+    justify-content: flex-start;
+    gap: 16px;
+  }
+
+  .preview-toolbar > * {
+    flex-shrink: 0;
+  }
 }
 
 /* ── Toolbar buttons ── */
