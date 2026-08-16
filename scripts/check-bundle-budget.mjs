@@ -1,25 +1,27 @@
 #!/usr/bin/env node
+// Single source of truth for the home bundle-budget rules.
+// vite.config.ts imports HOME_PRELOAD_FILTER_PATTERNS for its modulePreload
+// filter, and src/test/bundle-budget.test.ts imports the functions below.
 import fs from 'node:fs'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-const distDir = path.resolve(process.cwd(), process.env.HOME_JS_DIST_DIR ?? 'dist')
-const assetsDir = path.join(distDir, 'assets')
-const htmlPath = path.join(distDir, 'index.html')
-const budgetBytes = Number(process.env.HOME_JS_BUDGET_BYTES ?? 500 * 1024)
+/** Chunk-name patterns the home shell must not emit modulepreload hints for. */
+export const HOME_PRELOAD_FILTER_PATTERNS = [
+  'vendor-',
+  'editor-',
+  'latex-',
+  'typst',
+  'workspace-',
+  'project-io',
+]
 
-if (!fs.existsSync(htmlPath)) {
-  console.error('Missing dist/index.html. Run a production build first.')
-  process.exit(1)
-}
-
-const html = fs.readFileSync(htmlPath, 'utf8')
-const srcMatches = [...html.matchAll(/<script[^>]+src="\/assets\/([^"]+\.js)"/g)].map((m) => m[1])
-const preloadMatches = [...html.matchAll(/<link[^>]+rel="modulepreload"[^>]+href="\/assets\/([^"]+\.js)"/g)].map((m) => m[1])
-const entryFiles = [...new Set([...srcMatches, ...preloadMatches])]
-
-function isBlockedHomeChunk(file) {
-  // editor-store is intentionally on the home path for sync Cmd+S.
-  // editor-core / editor-vim must stay deferred with the workspace.
+/**
+ * Chunks that must never appear in the home preload set or its static closure.
+ * editor-store is intentionally on the home path for sync Cmd+S.
+ * editor-core / editor-vim must stay deferred with the workspace.
+ */
+export function isBlockedHomeChunk(file) {
   return (
     file.includes('editor-core')
     || file.includes('editor-vim')
@@ -32,91 +34,143 @@ function isBlockedHomeChunk(file) {
   )
 }
 
-/** Collect static ESM imports (not dynamic import()) from a chunk. */
-function staticImportsOf(file) {
-  const filePath = path.join(assetsDir, file)
-  if (!fs.existsSync(filePath)) return []
-  const source = fs.readFileSync(filePath, 'utf8')
-  const found = new Set()
-  for (const match of source.matchAll(/(?:^|[^\w.])import\s*(?:[^"'`]*from\s*)?["']\.\/([^"']+\.js)["']/g)) {
-    found.add(match[1])
-  }
-  return [...found]
+/** JS files referenced by index.html via <script src> or modulepreload links. */
+export function extractEntryFiles(html) {
+  const srcMatches = [...html.matchAll(/<script[^>]+src="\/assets\/([^"]+\.js)"/g)].map((m) => m[1])
+  const preloadMatches = [...html.matchAll(/<link[^>]+rel="modulepreload"[^>]+href="\/assets\/([^"]+\.js)"/g)].map((m) => m[1])
+  return [...new Set([...srcMatches, ...preloadMatches])]
 }
 
-function walkStaticClosure(roots) {
-  const seen = new Set()
-  const queue = [...roots]
-  while (queue.length > 0) {
-    const file = queue.shift()
-    if (!file || seen.has(file)) continue
-    seen.add(file)
-    for (const dep of staticImportsOf(file)) {
-      if (!seen.has(dep)) queue.push(dep)
+/** Pure evaluation of the preload budget, shared with the unit tests. */
+export function evaluateBundleBudget({ html, assetSizes, budgetBytes }) {
+  const jsFiles = extractEntryFiles(html)
+
+  let totalBytes = 0
+  const missing = []
+  for (const file of jsFiles) {
+    const size = assetSizes[file]
+    if (size === undefined) {
+      missing.push(file)
+      continue
     }
+    totalBytes += size
   }
-  return [...seen]
+
+  const blockedPreloads = jsFiles.filter((file) => isBlockedHomeChunk(file))
+  return {
+    jsFiles,
+    totalBytes,
+    missing,
+    blockedPreloads,
+    overBudgetBy: Math.max(0, totalBytes - budgetBytes),
+    ok: missing.length === 0 && blockedPreloads.length === 0 && totalBytes <= budgetBytes,
+  }
 }
 
-const closureFiles = walkStaticClosure(entryFiles)
+function main() {
+  const distDir = path.resolve(process.cwd(), process.env.HOME_JS_DIST_DIR ?? 'dist')
+  const assetsDir = path.join(distDir, 'assets')
+  const htmlPath = path.join(distDir, 'index.html')
+  const budgetBytes = Number(process.env.HOME_JS_BUDGET_BYTES ?? 500 * 1024)
 
-let preloadBytes = 0
-for (const file of entryFiles) {
-  const filePath = path.join(assetsDir, file)
-  if (!fs.existsSync(filePath)) {
-    console.error(`Referenced JS file is missing: assets/${file}`)
+  if (!fs.existsSync(htmlPath)) {
+    console.error('Missing dist/index.html. Run a production build first.')
     process.exit(1)
   }
-  preloadBytes += fs.statSync(filePath).size
-}
 
-let closureBytes = 0
-for (const file of closureFiles) {
-  const filePath = path.join(assetsDir, file)
-  if (!fs.existsSync(filePath)) {
-    console.error(`Static dependency missing: assets/${file}`)
-    process.exit(1)
+  const html = fs.readFileSync(htmlPath, 'utf8')
+  const entryFiles = extractEntryFiles(html)
+
+  /** Collect static ESM imports (not dynamic import()) from a chunk. */
+  function staticImportsOf(file) {
+    const filePath = path.join(assetsDir, file)
+    if (!fs.existsSync(filePath)) return []
+    const source = fs.readFileSync(filePath, 'utf8')
+    const found = new Set()
+    for (const match of source.matchAll(/(?:^|[^\w.])import\s*(?:[^"'`]*from\s*)?["']\.\/([^"']+\.js)["']/g)) {
+      found.add(match[1])
+    }
+    return [...found]
   }
-  closureBytes += fs.statSync(filePath).size
+
+  function walkStaticClosure(roots) {
+    const seen = new Set()
+    const queue = [...roots]
+    while (queue.length > 0) {
+      const file = queue.shift()
+      if (!file || seen.has(file)) continue
+      seen.add(file)
+      for (const dep of staticImportsOf(file)) {
+        if (!seen.has(dep)) queue.push(dep)
+      }
+    }
+    return [...seen]
+  }
+
+  const closureFiles = walkStaticClosure(entryFiles)
+
+  let preloadBytes = 0
+  for (const file of entryFiles) {
+    const filePath = path.join(assetsDir, file)
+    if (!fs.existsSync(filePath)) {
+      console.error(`Referenced JS file is missing: assets/${file}`)
+      process.exit(1)
+    }
+    preloadBytes += fs.statSync(filePath).size
+  }
+
+  let closureBytes = 0
+  for (const file of closureFiles) {
+    const filePath = path.join(assetsDir, file)
+    if (!fs.existsSync(filePath)) {
+      console.error(`Static dependency missing: assets/${file}`)
+      process.exit(1)
+    }
+    closureBytes += fs.statSync(filePath).size
+  }
+
+  const blockedPreloads = entryFiles.filter(isBlockedHomeChunk)
+  const blockedClosure = closureFiles.filter(isBlockedHomeChunk)
+  const typstInVendor = closureFiles.filter((file) => {
+    if (!file.includes('vendor-')) return false
+    const source = fs.readFileSync(path.join(assetsDir, file), 'utf8')
+    return source.includes('createTypstCompiler') || source.includes('@myriaddreamin')
+  })
+
+  console.log(`Initial JS preload budget: ${Math.round(preloadBytes / 1024)}KB (limit ${Math.round(budgetBytes / 1024)}KB)`)
+  console.log(`Initial JS preload files: ${entryFiles.join(', ')}`)
+  console.log(`Home static closure: ${Math.round(closureBytes / 1024)}KB across ${closureFiles.length} files`)
+
+  let failed = false
+
+  if (blockedPreloads.length > 0) {
+    failed = true
+    console.error('Editor/Typst/workspace chunks are preloaded in the home shell:')
+    for (const file of blockedPreloads) console.error(`- ${file}`)
+  }
+
+  if (blockedClosure.length > 0) {
+    failed = true
+    console.error('Home static import closure includes deferred chunks:')
+    for (const file of blockedClosure) console.error(`- ${file}`)
+  }
+
+  if (typstInVendor.length > 0) {
+    failed = true
+    console.error('Typst runtime leaked into vendor on the home static path:')
+    for (const file of typstInVendor) console.error(`- ${file}`)
+  }
+
+  if (preloadBytes > budgetBytes) {
+    failed = true
+    console.error(`Initial JS preload exceeds budget by ${Math.round((preloadBytes - budgetBytes) / 1024)}KB`)
+  }
+
+  if (failed) process.exit(1)
+
+  console.log('Bundle budget check passed.')
 }
 
-const blockedPreloads = entryFiles.filter(isBlockedHomeChunk)
-const blockedClosure = closureFiles.filter(isBlockedHomeChunk)
-const typstInVendor = closureFiles.filter((file) => {
-  if (!file.includes('vendor-')) return false
-  const source = fs.readFileSync(path.join(assetsDir, file), 'utf8')
-  return source.includes('createTypstCompiler') || source.includes('@myriaddreamin')
-})
-
-console.log(`Initial JS preload budget: ${Math.round(preloadBytes / 1024)}KB (limit ${Math.round(budgetBytes / 1024)}KB)`)
-console.log(`Initial JS preload files: ${entryFiles.join(', ')}`)
-console.log(`Home static closure: ${Math.round(closureBytes / 1024)}KB across ${closureFiles.length} files`)
-
-let failed = false
-
-if (blockedPreloads.length > 0) {
-  failed = true
-  console.error('Editor/Typst/workspace chunks are preloaded in the home shell:')
-  for (const file of blockedPreloads) console.error(`- ${file}`)
-}
-
-if (blockedClosure.length > 0) {
-  failed = true
-  console.error('Home static import closure includes deferred chunks:')
-  for (const file of blockedClosure) console.error(`- ${file}`)
-}
-
-if (typstInVendor.length > 0) {
-  failed = true
-  console.error('Typst runtime leaked into vendor on the home static path:')
-  for (const file of typstInVendor) console.error(`- ${file}`)
-}
-
-if (preloadBytes > budgetBytes) {
-  failed = true
-  console.error(`Initial JS preload exceeds budget by ${Math.round((preloadBytes - budgetBytes) / 1024)}KB`)
-}
-
-if (failed) process.exit(1)
-
-console.log('Bundle budget check passed.')
+const invokedDirectly = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href
+if (invokedDirectly) main()

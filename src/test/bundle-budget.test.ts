@@ -1,22 +1,24 @@
 import { describe, expect, it } from 'vitest'
 import {
-  BLOCKED_HOME_PRELOAD_PATTERNS,
+  HOME_PRELOAD_FILTER_PATTERNS,
   evaluateBundleBudget,
-  isBlockedHomePreload,
-} from '@/lib/home-preload-budget'
+  isBlockedHomeChunk,
+} from '../../scripts/check-bundle-budget.mjs'
 import viteConfigSource from '../../vite.config.ts?raw'
-import budgetScriptSource from '../../scripts/check-bundle-budget.mjs?raw'
 
 describe('bundle budget guardrails', () => {
-  it('blocks home preloads that vite also filters', () => {
-    expect(isBlockedHomePreload('editor-core-abc.js')).toBe(true)
-    expect(isBlockedHomePreload('vendor-xyz.js')).toBe(true)
-    expect(isBlockedHomePreload('latex-converter-1.js')).toBe(true)
-    expect(isBlockedHomePreload('typst-worker-1.js')).toBe(true)
-    expect(isBlockedHomePreload('workspace-shell-1.js')).toBe(true)
-    expect(isBlockedHomePreload('project-io-1.js')).toBe(true)
-    expect(isBlockedHomePreload('react-core-1.js')).toBe(false)
-    expect(isBlockedHomePreload('state-core-1.js')).toBe(false)
+  it('blocks deferred chunks from the home path, allowing editor-store', () => {
+    expect(isBlockedHomeChunk('editor-core-abc.js')).toBe(true)
+    expect(isBlockedHomeChunk('editor-vim-abc.js')).toBe(true)
+    expect(isBlockedHomeChunk('latex-converter-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('typst-worker-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('typst-engine-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('workspace-shell-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('project-io-1.js')).toBe(true)
+    // editor-store is intentionally on the home path for sync Cmd+S.
+    expect(isBlockedHomeChunk('editor-store-1.js')).toBe(false)
+    expect(isBlockedHomeChunk('react-core-1.js')).toBe(false)
+    expect(isBlockedHomeChunk('state-core-1.js')).toBe(false)
   })
 
   it('fails when blocked chunks are modulepreloaded', () => {
@@ -59,18 +61,14 @@ describe('bundle budget guardrails', () => {
     expect(result.blockedPreloads).toEqual([])
   })
 
-  it('keeps vite + budget script filters aligned with @replit/codemirror in editor-core', () => {
+  it('vite modulePreload filter uses the shared pattern list', () => {
+    expect(viteConfigSource).toContain("import { HOME_PRELOAD_FILTER_PATTERNS } from './scripts/check-bundle-budget.mjs'")
+    expect(viteConfigSource).toContain('HOME_PRELOAD_FILTER_PATTERNS.some((pattern) => dep.includes(pattern))')
     expect(viteConfigSource).toContain("id.includes('@replit/codemirror')")
     expect(viteConfigSource).toContain("return 'editor-core'")
-    for (const pattern of BLOCKED_HOME_PRELOAD_PATTERNS) {
-      expect(viteConfigSource).toContain(`'${pattern}'`)
+    // The filter list stays a superset of the enforced closure blocklist prefixes.
+    for (const pattern of ['vendor-', 'editor-', 'latex-', 'typst', 'workspace-', 'project-io']) {
+      expect(HOME_PRELOAD_FILTER_PATTERNS).toContain(pattern)
     }
-    // Budget script walks the static closure and allows editor-store on home for
-    // sync Cmd+S; it still rejects editor-core/vim, typst, latex, workspace, project-io.
-    for (const token of ['editor-core', 'editor-vim', 'typst-engine', 'latex-', 'workspace-', 'project-io']) {
-      expect(budgetScriptSource).toContain(token)
-    }
-    expect(budgetScriptSource).toContain('walkStaticClosure')
-    expect(budgetScriptSource).toContain('createTypstCompiler')
   })
 })

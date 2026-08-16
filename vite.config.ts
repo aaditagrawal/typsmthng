@@ -5,6 +5,7 @@ import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
+import { HOME_PRELOAD_FILTER_PATTERNS } from './scripts/check-bundle-budget.mjs'
 
 export default defineConfig({
   plugins: [
@@ -74,14 +75,7 @@ export default defineConfig({
       resolveDependencies: (_filename, deps, context) => {
         if (context.hostType === 'html' && context.hostId.endsWith('index.html')) {
           // Home shell must not preload editor/Typst/LaTeX/workspace chunks.
-          return deps.filter((dep) => (
-            !dep.includes('vendor-')
-            && !dep.includes('editor-')
-            && !dep.includes('latex-')
-            && !dep.includes('typst')
-            && !dep.includes('workspace-')
-            && !dep.includes('project-io')
-          ))
+          return deps.filter((dep) => !HOME_PRELOAD_FILTER_PATTERNS.some((pattern) => dep.includes(pattern)))
         }
         return deps
       },
