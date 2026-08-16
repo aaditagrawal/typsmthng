@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { EditorView } from '@codemirror/view'
-import { useCompileStore } from '@/stores/compile-store'
+import { useCompileStore, type Diagnostic } from '@/stores/compile-store'
 import { resolvePreviewRenderMode, usePreviewStore } from '@/stores/preview-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
@@ -52,7 +52,7 @@ function BrutalistBtn({
   children,
   style,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+}: React.ComponentProps<'button'>) {
   return (
     <button
       {...props}
@@ -86,40 +86,109 @@ const RENDER_MODE_OPTIONS = [
   { value: 'canvas' as const, label: 'CANVAS' },
 ]
 
+interface ToolbarMenuPosition {
+  top: number
+  right: number
+}
+
+/**
+ * Dropdown state for toolbar menus. The menu is rendered with fixed
+ * positioning computed from the trigger's rect (same approach as ContextMenu)
+ * so the toolbar's overflow does not clip it. Closes on outside mousedown and
+ * Escape (restoring focus to the trigger), and repositions on scroll/resize.
+ */
+function useToolbarDropdown() {
+  const [open, setOpen] = useState(false)
+  const [menuPosition, setMenuPosition] = useState<ToolbarMenuPosition | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  const close = useCallback((restoreFocus = false) => {
+    setOpen(false)
+    if (restoreFocus) triggerRef.current?.focus()
+  }, [])
+
+  const toggle = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect()
+    if (rect) {
+      setMenuPosition({
+        top: rect.bottom + 4,
+        right: Math.max(8, window.innerWidth - rect.right),
+      })
+    }
+    setOpen((value) => !value)
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setMenuPosition({
+        top: rect.bottom + 4,
+        right: Math.max(8, window.innerWidth - rect.right),
+      })
+    }
+
+    const handleMouseDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        triggerRef.current?.focus()
+      }
+    }
+
+    document.addEventListener('mousedown', handleMouseDown)
+    document.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('resize', updatePosition)
+    window.addEventListener('scroll', updatePosition, true)
+    return () => {
+      document.removeEventListener('mousedown', handleMouseDown)
+      document.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('resize', updatePosition)
+      window.removeEventListener('scroll', updatePosition, true)
+    }
+  }, [open])
+
+  return { open, toggle, close, containerRef, triggerRef, menuPosition }
+}
+
+const toolbarMenuBaseStyle: React.CSSProperties = {
+  position: 'fixed',
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--border-strong)',
+  borderRadius: '2px',
+  zIndex: 50,
+  padding: '4px 0',
+}
+
 function ZoomDropdown() {
   const { zoom, fitMode, setFitMode, setZoom } = usePreviewStore(
     useShallow((s) => ({ zoom: s.zoom, fitMode: s.fitMode, setFitMode: s.setFitMode, setZoom: s.setZoom }))
   )
-  const [open, setOpen] = useState(false)
+  const { open, toggle, close, containerRef, triggerRef, menuPosition } = useToolbarDropdown()
   const [customValue, setCustomValue] = useState('')
-  const dropdownRef = useRef<HTMLDivElement>(null)
   const customInputRef = useRef<HTMLInputElement>(null)
 
   const zoomLabel = fitMode === 'width' ? 'FIT-W' : fitMode === 'page' ? 'FIT-P' : `${zoom}%`
 
-  useEffect(() => {
-    if (!open) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
-  const handleCustomZoom = () => {
+  const commitCustomZoom = (closeAfter: boolean) => {
     const val = parseInt(customValue, 10)
-    if (!isNaN(val) && val >= 10 && val <= 500) {
-      setZoom(val)
-      setOpen(false)
-      setCustomValue('')
-    }
+    if (isNaN(val)) return
+    setZoom(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, val)))
+    setCustomValue('')
+    if (closeAfter) close(true)
   }
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', marginRight: '8px' }}>
+    <div ref={containerRef} style={{ position: 'relative', marginRight: '8px' }}>
       <BrutalistBtn
+        ref={triggerRef}
         style={{
           width: 'auto',
           padding: '0 12px 0 8px',
@@ -127,26 +196,22 @@ function ZoomDropdown() {
           fontWeight: 600,
           ...BRUTALIST_FONT,
         }}
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         title="Zoom"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span>{zoomLabel}</span>
         <ChevronDown size={10} />
       </BrutalistBtn>
 
-      {open && (
+      {open && menuPosition && (
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: '4px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: '2px',
-            zIndex: 50,
+            ...toolbarMenuBaseStyle,
+            top: menuPosition.top,
+            right: menuPosition.right,
             minWidth: '140px',
-            padding: '4px 0',
           }}
         >
           {ZOOM_OPTIONS.map((opt, i) => {
@@ -171,7 +236,7 @@ function ZoomDropdown() {
                   isActive={isActive}
                   onClick={() => {
                     setFitMode(opt.mode)
-                    setOpen(false)
+                    close(true)
                   }}
                 />
               )
@@ -185,7 +250,7 @@ function ZoomDropdown() {
                 isActive={isActive}
                 onClick={() => {
                   setZoom(opt.value!)
-                  setOpen(false)
+                  close(true)
                 }}
               />
             )
@@ -210,14 +275,17 @@ function ZoomDropdown() {
             <input
               ref={customInputRef}
               type="number"
-              min={10}
-              max={500}
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
               placeholder="CUSTOM"
+              aria-label="Custom zoom percentage"
               value={customValue}
               onChange={(e) => setCustomValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCustomZoom()
+                if (e.key === 'Enter') commitCustomZoom(true)
+                if (e.key === 'Escape') setCustomValue('')
               }}
+              onBlur={() => commitCustomZoom(false)}
               style={{
                 width: '60px',
                 height: '24px',
@@ -263,34 +331,20 @@ function ZoomMenuItem({ label, isActive, onClick }: { label: string; isActive: b
 }
 
 function RenderModeDropdown() {
-  const totalPages = useCompileStore((s) => s.totalPages)
   const { renderMode, setRenderMode } = usePreviewStore(
     useShallow((s) => ({ renderMode: s.renderMode, setRenderMode: s.setRenderMode }))
   )
-  const [open, setOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const resolvedMode = resolvePreviewRenderMode(renderMode, totalPages)
-
-  useEffect(() => {
-    if (!open) return
-
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
+  const { open, toggle, close, containerRef, triggerRef, menuPosition } = useToolbarDropdown()
+  const resolvedMode = resolvePreviewRenderMode(renderMode)
 
   const label = renderMode === 'auto'
     ? `AUTO:${resolvedMode.toUpperCase()}`
     : renderMode.toUpperCase()
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative', marginRight: '8px' }}>
+    <div ref={containerRef} style={{ position: 'relative', marginRight: '8px' }}>
       <BrutalistBtn
+        ref={triggerRef}
         style={{
           width: 'auto',
           padding: '0 12px 0 8px',
@@ -298,26 +352,22 @@ function RenderModeDropdown() {
           fontWeight: 600,
           ...BRUTALIST_FONT,
         }}
-        onClick={() => setOpen((value) => !value)}
+        onClick={toggle}
         title="Preview render mode"
+        aria-haspopup="menu"
+        aria-expanded={open}
       >
         <span>{label}</span>
         <ChevronDown size={10} />
       </BrutalistBtn>
 
-      {open && (
+      {open && menuPosition && (
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            right: 0,
-            marginTop: '4px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: '2px',
-            zIndex: 50,
+            ...toolbarMenuBaseStyle,
+            top: menuPosition.top,
+            right: menuPosition.right,
             minWidth: '160px',
-            padding: '4px 0',
           }}
         >
           {RENDER_MODE_OPTIONS.map((option) => (
@@ -327,10 +377,29 @@ function RenderModeDropdown() {
               isActive={renderMode === option.value}
               onClick={() => {
                 setRenderMode(option.value)
-                setOpen(false)
+                close(true)
               }}
             />
           ))}
+          <div
+            style={{
+              height: '1px',
+              background: 'var(--border-default)',
+              margin: '4px 0',
+            }}
+          />
+          <div
+            style={{
+              padding: '4px 12px 6px',
+              color: 'var(--text-tertiary)',
+              ...BRUTALIST_FONT,
+              fontSize: '9px',
+              textTransform: 'none',
+              letterSpacing: '0.03em',
+            }}
+          >
+            Canvas: faster, no click-to-source
+          </div>
         </div>
       )}
     </div>
@@ -423,6 +492,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
         </button>
         {compileToast && (
           <span
+            role="status"
             style={{
               padding: '4px 8px',
               borderRadius: '2px',
@@ -570,6 +640,61 @@ function scrollEditorToArea(fromLineNumber: number, toLineNumber = fromLineNumbe
   view.dispatch({
     effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
   })
+}
+
+const DIAGNOSTIC_JUMP_BAILOUT_MS = 2000
+const DIAGNOSTIC_JUMP_POLL_MS = 50
+
+let cancelPendingDiagnosticJump: (() => void) | null = null
+
+/**
+ * Jump the editor to a diagnostic, switching files first when needed. The
+ * cross-file jump waits until the editor document actually reflects the
+ * selected file (instead of racing a fixed timeout), with a ~2s bailout.
+ */
+function jumpToDiagnosticInEditor(d: Diagnostic): void {
+  cancelPendingDiagnosticJump?.()
+
+  const projectState = useProjectStore.getState()
+  if (!d.path || d.path === projectState.currentFilePath) {
+    const view = useEditorStore.getState().editorView
+    if (view) jumpToDiagnostic(view, d)
+    return
+  }
+
+  projectState.selectFile(d.path)
+
+  const tryJump = (): boolean => {
+    const state = useProjectStore.getState()
+    if (state.currentFilePath !== d.path) return false
+    const view = useEditorStore.getState().editorView
+    if (!view) return false
+    const file = state.getCurrentProject()?.files.find((f) => f.path === d.path)
+    // Wait until the editor document reflects the newly selected file.
+    if (file && view.state.doc.toString() !== file.content) return false
+    jumpToDiagnostic(view, d)
+    return true
+  }
+
+  const cleanup = () => {
+    clearInterval(pollTimer)
+    clearTimeout(bailoutTimer)
+    if (cancelPendingDiagnosticJump === cleanup) {
+      cancelPendingDiagnosticJump = null
+    }
+  }
+  const pollTimer = setInterval(() => {
+    if (tryJump()) cleanup()
+  }, DIAGNOSTIC_JUMP_POLL_MS)
+  const bailoutTimer = setTimeout(() => {
+    cleanup()
+    // Best effort: the file is selected but its content never settled.
+    const view = useEditorStore.getState().editorView
+    if (view && useProjectStore.getState().currentFilePath === d.path) {
+      jumpToDiagnostic(view, d)
+    }
+  }, DIAGNOSTIC_JUMP_BAILOUT_MS)
+  cancelPendingDiagnosticJump = cleanup
 }
 
 const MIN_ZOOM = 10
@@ -1202,12 +1327,11 @@ export function PreviewPanel() {
       totalPages: s.totalPages,
     }))
   )
-  const { setCurrentPage, fitMode, renderMode, zoom } = usePreviewStore(
+  const { setCurrentPage, fitMode, renderMode } = usePreviewStore(
     useShallow((s) => ({
       setCurrentPage: s.setCurrentPage,
       fitMode: s.fitMode,
       renderMode: s.renderMode,
-      zoom: s.zoom,
     }))
   )
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -1229,11 +1353,29 @@ export function PreviewPanel() {
   const { clickToast, handleDoubleClick, locatePreviewContent } = usePreviewClickHandler(suppressPreviewClickRef)
 
   const errors = diagnostics.filter((d) => d.severity === 'error')
-  const resolvedRenderMode = resolvePreviewRenderMode(renderMode, totalPages)
+  const resolvedRenderMode = resolvePreviewRenderMode(renderMode)
   const hasSvg = svg !== null
   const hasCanvas = vectorData !== null && pageDimensions.length > 0
   const hasPreview = resolvedRenderMode === 'canvas' ? hasCanvas : hasSvg
   const interactiveSvg = resolvedRenderMode === 'svg' && hasSvg
+
+  // Compiles skip the full-document SVG render unless the resolved mode was
+  // 'svg' at compile time. When the user switches to SVG and the current
+  // result lacks it, trigger one recompile; the compiling state shows while
+  // it runs.
+  const svgCompileRequestedRef = useRef(false)
+  useEffect(() => {
+    if (resolvedRenderMode !== 'svg' || hasSvg) {
+      svgCompileRequestedRef.current = false
+      return
+    }
+    if (svgCompileRequestedRef.current) return
+    if (vectorData === null) return
+    svgCompileRequestedRef.current = true
+    const source = useEditorStore.getState().source
+    const currentPath = useProjectStore.getState().currentFilePath
+    void forceCompile(source, currentPath)
+  }, [resolvedRenderMode, hasSvg, vectorData])
 
   useEffect(() => {
     const currentPage = usePreviewStore.getState().currentPage
@@ -1647,8 +1789,6 @@ export function PreviewPanel() {
                 <CanvasPreviewSurface
                   vectorData={vectorData}
                   pageDimensions={pageDimensions}
-                  zoom={zoom}
-                  fitMode={fitMode}
                 />
               )}
             </div>
@@ -1715,6 +1855,7 @@ export function PreviewPanel() {
         {/* Page click toast */}
         {clickToast && (
           <div
+            role="status"
             style={{
               position: 'absolute',
               top: '12px',
@@ -1764,9 +1905,11 @@ export function PreviewPanel() {
           </div>
           <div className="flex flex-col" style={{ gap: '4px' }}>
             {errors.map((d, i) => (
-              <div
+              <button
                 key={i}
+                type="button"
                 className="flex items-start gap-2"
+                disabled={!d.range}
                 style={{
                   ...BRUTALIST_FONT,
                   padding: '4px 0',
@@ -1774,23 +1917,14 @@ export function PreviewPanel() {
                   letterSpacing: 'normal',
                   cursor: d.range ? 'pointer' : 'default',
                   borderRadius: '3px',
+                  border: 'none',
+                  background: 'transparent',
+                  width: '100%',
+                  textAlign: 'left',
                 }}
                 onClick={() => {
                   if (!d.range) return
-                  const view = useEditorStore.getState().editorView
-                  if (!view) return
-                  // If the error is in a different file, switch to it first
-                  const currentPath = useProjectStore.getState().currentFilePath
-                  if (d.path && d.path !== currentPath) {
-                    useProjectStore.getState().selectFile(d.path)
-                    // Wait for file swap to complete before jumping
-                    setTimeout(() => {
-                      const v = useEditorStore.getState().editorView
-                      if (v) jumpToDiagnostic(v, d)
-                    }, 100)
-                  } else {
-                    jumpToDiagnostic(view, d)
-                  }
+                  jumpToDiagnosticInEditor(d)
                 }}
                 onMouseEnter={(e) => {
                   if (d.range) e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
@@ -1804,7 +1938,7 @@ export function PreviewPanel() {
                   {d.path && <span style={{ color: 'var(--text-tertiary)' }}>{d.path}:{d.range} </span>}
                   {d.message}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         </div>

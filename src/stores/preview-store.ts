@@ -17,8 +17,7 @@ export type PreviewRenderMode = 'auto' | 'svg' | 'canvas'
 
 const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 200, 300]
 const REVERSED_ZOOM_STEPS = [...ZOOM_STEPS].reverse()
-export function resolvePreviewRenderMode(mode: PreviewRenderMode, _totalPages = 0): Exclude<PreviewRenderMode, 'auto'> {
-  void _totalPages
+export function resolvePreviewRenderMode(mode: PreviewRenderMode): Exclude<PreviewRenderMode, 'auto'> {
   if (mode !== 'auto') return mode
   return 'canvas'
 }

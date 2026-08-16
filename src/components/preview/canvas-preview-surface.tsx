@@ -1,79 +1,87 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { PageDimension } from '@/lib/compiler'
-import { renderVectorPageToCanvas } from '@/lib/page-renderer'
+import { computePixelPerPt, renderVectorPageToCanvas } from '@/lib/page-renderer'
 
-function getPixelPerPt(zoomBucket: number): number {
-  if (zoomBucket >= 200) return 4
-  if (zoomBucket >= 150) return 3.25
-  if (zoomBucket >= 125) return 2.75
-  return 2.25
-}
+const RESIZE_DEBOUNCE_MS = 150
+const EAGER_RENDER_PAGE_COUNT = 2
+const VISIBILITY_ROOT_MARGIN = '320px 0px'
 
-function resolveRenderZoomBucket(zoom: number, fitMode: 'width' | 'page' | 'custom'): number {
-  if (fitMode !== 'custom') return 100
-  if (zoom >= 225) return 250
-  if (zoom >= 175) return 200
-  if (zoom >= 140) return 150
-  if (zoom >= 115) return 125
-  return 100
+let artifactRevisionCounter = 0
+const artifactRevisions = new WeakMap<Uint8Array, number>()
+
+/** Monotonically-increasing revision per compile artifact identity. */
+function getArtifactRevision(vectorData: Uint8Array): number {
+  let revision = artifactRevisions.get(vectorData)
+  if (revision === undefined) {
+    revision = ++artifactRevisionCounter
+    artifactRevisions.set(vectorData, revision)
+  }
+  return revision
 }
 
 function CanvasPreviewPage({
   vectorData,
   page,
   pageIndex,
-  zoomBucket,
+  pixelPerPt,
 }: {
   vectorData: Uint8Array
   page: PageDimension
   pageIndex: number
-  zoomBucket: number
+  pixelPerPt: number
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [shouldRender, setShouldRender] = useState(pageIndex < 2)
-  const renderKey = useMemo(
-    () => `${page.pageOffset ?? pageIndex}:${zoomBucket}`,
-    [page.pageOffset, pageIndex, zoomBucket],
-  )
+  const lastRenderedKeyRef = useRef<string | null>(null)
+  // Without IntersectionObserver support, treat every page as visible.
+  const [isVisible, setIsVisible] = useState(() => typeof IntersectionObserver === 'undefined')
+  const pageOffset = page.pageOffset ?? pageIndex
+  const renderKey = `${getArtifactRevision(vectorData)}:${pageOffset}:${pixelPerPt}`
 
+  // Track live visibility so offscreen pages skip repaints on new compiles and
+  // re-render lazily when scrolled back into view.
   useEffect(() => {
     const host = hostRef.current
-    if (!host || shouldRender) return
+    if (!host || typeof IntersectionObserver === 'undefined') return
 
     const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setShouldRender(true)
-          observer.disconnect()
-        }
-      },
-      { rootMargin: '320px 0px' },
+      (entries) => setIsVisible(entries.some((entry) => entry.isIntersecting)),
+      { rootMargin: VISIBILITY_ROOT_MARGIN },
     )
 
     observer.observe(host)
     return () => observer.disconnect()
-  }, [shouldRender])
+  }, [])
 
   useEffect(() => {
-    if (!shouldRender || !canvasRef.current) return
-
-    let cancelled = false
     const canvas = canvasRef.current
+    if (!canvas) return
+
+    // The first pages render eagerly so the initial paint does not wait for
+    // the observer's first callback.
+    const eagerInitial = pageIndex < EAGER_RENDER_PAGE_COUNT && lastRenderedKeyRef.current === null
+    if (!isVisible && !eagerInitial) return
+    if (lastRenderedKeyRef.current === renderKey) return
+
+    lastRenderedKeyRef.current = renderKey
     canvas.dataset.renderKey = renderKey
 
+    let cancelled = false
     void renderVectorPageToCanvas(
       vectorData,
-      page.pageOffset ?? pageIndex,
+      pageOffset,
       canvas,
       {
         backgroundColor: '#ffffff',
-        pixelPerPt: getPixelPerPt(zoomBucket),
+        pixelPerPt,
         widthPt: page.width,
         heightPt: page.height,
         renderKey,
       },
     ).catch((err) => {
+      if (lastRenderedKeyRef.current === renderKey) {
+        lastRenderedKeyRef.current = null
+      }
       if (!cancelled) {
         console.error(`Failed to render canvas preview page ${pageIndex + 1}:`, err)
       }
@@ -82,7 +90,7 @@ function CanvasPreviewPage({
     return () => {
       cancelled = true
     }
-  }, [page.pageOffset, pageIndex, renderKey, shouldRender, vectorData, zoomBucket, page.width, page.height])
+  }, [isVisible, renderKey, vectorData, pageOffset, pixelPerPt, pageIndex, page.width, page.height])
 
   return (
     <div
@@ -111,18 +119,48 @@ function CanvasPreviewPage({
 export function CanvasPreviewSurface({
   vectorData,
   pageDimensions,
-  zoom,
-  fitMode,
 }: {
   vectorData: Uint8Array
   pageDimensions: PageDimension[]
-  zoom: number
-  fitMode: 'width' | 'page' | 'custom'
 }) {
-  const zoomBucket = resolveRenderZoomBucket(zoom, fitMode)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [surfaceWidth, setSurfaceWidth] = useState(0)
+  const [devicePixelRatio, setDevicePixelRatio] = useState(() => window.devicePixelRatio || 1)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const measure = () => {
+      setSurfaceWidth(el.clientWidth)
+      setDevicePixelRatio(window.devicePixelRatio || 1)
+    }
+    measure()
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleMeasure = () => {
+      if (debounceTimer) clearTimeout(debounceTimer)
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null
+        measure()
+      }, RESIZE_DEBOUNCE_MS)
+    }
+
+    const observer = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(scheduleMeasure)
+      : null
+    observer?.observe(el)
+    window.addEventListener('resize', scheduleMeasure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', scheduleMeasure)
+      if (debounceTimer) clearTimeout(debounceTimer)
+    }
+  }, [])
 
   return (
     <div
+      ref={containerRef}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -135,7 +173,7 @@ export function CanvasPreviewSurface({
           vectorData={vectorData}
           page={page}
           pageIndex={pageIndex}
-          zoomBucket={zoomBucket}
+          pixelPerPt={computePixelPerPt(surfaceWidth, page.width, devicePixelRatio)}
         />
       ))}
     </div>
