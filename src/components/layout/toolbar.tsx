@@ -1,11 +1,12 @@
-import { useRef } from 'react'
-import { Sun, Moon, Monitor, Download, FolderInput, FolderOutput, Settings, PanelLeft, PanelLeftClose } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Sun, Moon, Monitor, Download, FolderInput, FolderOutput, Loader2, Settings, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { exportProject, importProject } from '@/lib/project-io'
 import { exportCurrentProjectPdf } from '@/lib/pdf-export'
+import { basename } from '@/lib/paths'
 
 function ThemeToggle() {
   const theme = useUIStore((s) => s.theme)
@@ -29,8 +30,31 @@ export function Toolbar() {
   const sidebarOpen = useProjectStore((s) => s.sidebarOpen)
   const setSidebarOpen = useProjectStore((s) => s.setSidebarOpen)
   const currentFilePath = useProjectStore((s) => s.currentFilePath)
-  const fileName = currentFilePath?.split('/').pop() ?? 'main.typ'
+  const fileName = (currentFilePath && basename(currentFilePath)) || 'main.typ'
   const importInputRef = useRef<HTMLInputElement>(null)
+  const [importBusy, setImportBusy] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [pdfBusy, setPdfBusy] = useState(false)
+
+  const handleExport = async () => {
+    if (exportBusy) return
+    setExportBusy(true)
+    try {
+      await exportProject()
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const handlePdfExport = async () => {
+    if (pdfBusy) return
+    setPdfBusy(true)
+    try {
+      await exportCurrentProjectPdf()
+    } finally {
+      setPdfBusy(false)
+    }
+  }
 
   return (
     <header
@@ -117,7 +141,9 @@ export function Toolbar() {
           className="hidden"
           onChange={async (e) => {
             const file = e.target.files?.[0]
-            if (file) {
+            if (!file || importBusy) return
+            setImportBusy(true)
+            try {
               const result = await importProject(file)
               if (!result) {
                 window.alert('Could not import that zip. Make sure it contains a Typst or LaTeX project.')
@@ -133,27 +159,38 @@ export function Toolbar() {
                   `Imported "${result.projectName}" with ${result.warnings.length} LaTeX conversion warning(s):\n\n${preview}${extra}`,
                 )
               }
-              e.target.value = ''
+            } catch {
+              window.alert('Could not import that zip. Make sure it contains a Typst or LaTeX project.')
+            } finally {
+              setImportBusy(false)
+              if (importInputRef.current) importInputRef.current.value = ''
             }
           }}
         />
         <button
           className="toolbar-button"
           title="Import project (.zip)"
+          disabled={importBusy}
           onClick={() => importInputRef.current?.click()}
         >
-          <FolderInput size={16} />
+          {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderInput size={16} />}
         </button>
-        <button className="toolbar-button" title="Export project (.zip)" onClick={exportProject}>
-          <FolderOutput size={16} />
+        <button
+          className="toolbar-button"
+          title="Export project (.zip)"
+          disabled={exportBusy}
+          onClick={() => { void handleExport() }}
+        >
+          {exportBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOutput size={16} />}
         </button>
         <button
           className="toolbar-button"
           style={{ marginRight: '8px' }}
           title="Download PDF"
-          onClick={() => { void exportCurrentProjectPdf() }}
+          disabled={pdfBusy}
+          onClick={() => { void handlePdfExport() }}
         >
-          <Download size={16} />
+          {pdfBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
         </button>
       </div>
     </header>

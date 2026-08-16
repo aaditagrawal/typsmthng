@@ -19,6 +19,7 @@ export function SafariBanner() {
     if (!isSafari()) return false
     return !localStorage.getItem('safari-banner-dismissed')
   })
+  const [storageStatus, setStorageStatus] = useState<'idle' | 'granted' | 'denied'>('idle')
 
   if (!show) return null
 
@@ -26,6 +27,26 @@ export function SafariBanner() {
     setShow(false)
     localStorage.setItem('safari-banner-dismissed', '1')
   }
+
+  const handleAllowStorage = () => {
+    void requestPersistentStorage()
+      .then((granted) => {
+        if (granted) {
+          setStorageStatus('granted')
+          localStorage.setItem('safari-banner-dismissed', '1')
+          setTimeout(() => setShow(false), 2000)
+        } else {
+          setStorageStatus('denied')
+        }
+      })
+      .catch(() => setStorageStatus('denied'))
+  }
+
+  const message = storageStatus === 'granted'
+    ? 'Storage protected. Safari will keep your data.'
+    : storageStatus === 'denied'
+      ? 'Request denied — download backups regularly to avoid data loss.'
+      : 'Safari may clear stored data after 7 days of inactivity. Download your work regularly to avoid data loss.'
 
   return (
     <div
@@ -37,25 +58,23 @@ export function SafariBanner() {
       }}
     >
       <AlertTriangle size={14} className="shrink-0" />
-      <span className="flex-1">
-        Safari may clear stored data after 7 days of inactivity. Download your work regularly to avoid data loss.
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          void requestPersistentStorage().finally(dismiss)
-        }}
-        className="shrink-0 px-2 py-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '10px',
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          border: '1px solid #FFD0B5',
-        }}
-      >
-        Allow storage
-      </button>
+      <span className="flex-1">{message}</span>
+      {storageStatus === 'idle' && (
+        <button
+          type="button"
+          onClick={handleAllowStorage}
+          className="shrink-0 px-2 py-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '10px',
+            letterSpacing: '0.04em',
+            textTransform: 'uppercase',
+            border: '1px solid #FFD0B5',
+          }}
+        >
+          Allow storage
+        </button>
+      )}
       <button
         type="button"
         onClick={dismiss}

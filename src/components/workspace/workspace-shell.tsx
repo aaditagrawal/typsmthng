@@ -23,12 +23,31 @@ export default function WorkspaceShell() {
     return () => query.removeEventListener('change', update)
   }, [])
 
+  // On the narrow breakpoint the sidebar overlays the editor, so close it
+  // once a file is picked instead of leaving it covering the workspace.
+  useEffect(() => {
+    if (!narrow) return
+    return useProjectStore.subscribe((state, prevState) => {
+      if (state.currentFilePath !== prevState.currentFilePath && state.sidebarOpen) {
+        state.setSidebarOpen(false)
+      }
+    })
+  }, [narrow])
+
   return (
     <ErrorBoundary fallbackMessage="The application encountered an unexpected error.">
       <div className="flex flex-col h-full w-full" style={{ background: 'var(--bg-app)' }}>
         <SafariBanner />
         <Toolbar />
         <div className="workspace-main flex flex-1 min-h-0 relative">
+          {narrow && sidebarOpen && (
+            <div
+              className="workspace-scrim"
+              data-testid="workspace-scrim"
+              aria-hidden="true"
+              onClick={() => useProjectStore.getState().setSidebarOpen(false)}
+            />
+          )}
           {/* Keep mounted so expand/search/rename state survives hide/show. */}
           <div
             className="workspace-sidebar shrink-0 overflow-hidden"

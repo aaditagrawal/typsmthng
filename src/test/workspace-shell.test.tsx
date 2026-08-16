@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useProjectStore } from '@/stores/project-store'
 
@@ -70,5 +70,28 @@ describe('WorkspaceShell responsive layout', () => {
       listeners.forEach((listener) => listener())
     })
     expect(screen.getByTestId('panel-group')).toHaveAttribute('data-orientation', 'horizontal')
+  })
+
+  it('closes the overlay sidebar via the scrim and after picking a file on narrow screens', () => {
+    narrow = true
+    useProjectStore.setState({ sidebarOpen: true, currentFilePath: null })
+    render(<WorkspaceShell />)
+
+    fireEvent.click(screen.getByTestId('workspace-scrim'))
+    expect(useProjectStore.getState().sidebarOpen).toBe(false)
+    expect(screen.queryByTestId('workspace-scrim')).not.toBeInTheDocument()
+
+    act(() => { useProjectStore.setState({ sidebarOpen: true }) })
+    act(() => { useProjectStore.setState({ currentFilePath: '/main.typ' }) })
+    expect(useProjectStore.getState().sidebarOpen).toBe(false)
+  })
+
+  it('keeps the sidebar open when a file is picked on wide screens', () => {
+    useProjectStore.setState({ sidebarOpen: true, currentFilePath: null })
+    render(<WorkspaceShell />)
+
+    expect(screen.queryByTestId('workspace-scrim')).not.toBeInTheDocument()
+    act(() => { useProjectStore.setState({ currentFilePath: '/main.typ' }) })
+    expect(useProjectStore.getState().sidebarOpen).toBe(true)
   })
 })

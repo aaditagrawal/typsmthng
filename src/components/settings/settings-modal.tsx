@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useRef, useCallback, useId } from 'react'
 import { X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
 import { useSettingsStore, PAGE_SIZE_OPTIONS } from '@/stores/settings-store'
@@ -6,15 +6,21 @@ import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import type { PageSize } from '@/stores/settings-store'
 import { forceCompile } from '@/lib/compile-manager'
+import { useModalA11y } from '@/components/ui/context-menu'
 
 type Theme = 'light' | 'dark' | 'system'
 
-function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function Toggle({ checked, onChange, labelId }: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  labelId?: string
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-labelledby={labelId}
       onClick={() => onChange(!checked)}
       onKeyDown={(e) => {
         if (e.key === ' ') {
@@ -58,8 +64,9 @@ function SettingRow({
 }: {
   label: string
   description?: string
-  children: React.ReactNode
+  children: React.ReactNode | ((labelId: string) => React.ReactNode)
 }) {
+  const labelId = useId()
   return (
     <div
       style={{
@@ -73,6 +80,7 @@ function SettingRow({
     >
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
+          id={labelId}
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '12px',
@@ -95,7 +103,7 @@ function SettingRow({
           </div>
         )}
       </div>
-      {children}
+      {typeof children === 'function' ? children(labelId) : children}
     </div>
   )
 }
@@ -119,7 +127,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function ThemeSegment({ value, onChange }: { value: Theme; onChange: (v: Theme) => void }) {
+function ThemeSegment({ value, onChange, labelId }: {
+  value: Theme
+  onChange: (v: Theme) => void
+  labelId?: string
+}) {
   const options: { label: string; value: Theme }[] = [
     { label: 'Light', value: 'light' },
     { label: 'Dark', value: 'dark' },
@@ -128,6 +140,8 @@ function ThemeSegment({ value, onChange }: { value: Theme; onChange: (v: Theme) 
 
   return (
     <div
+      role="group"
+      aria-labelledby={labelId}
       style={{
         display: 'flex',
         border: '1px solid var(--border-default)',
@@ -139,6 +153,7 @@ function ThemeSegment({ value, onChange }: { value: Theme; onChange: (v: Theme) 
         <button
           key={opt.value}
           type="button"
+          aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
           style={{
             fontFamily: 'var(--font-mono)',
@@ -188,6 +203,7 @@ export function SettingsModal() {
   })))
 
   const backdropRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const handleClose = useCallback(() => setOpen(false), [setOpen])
   const forceRecompile = useCallback(() => {
@@ -209,14 +225,7 @@ export function SettingsModal() {
     forceRecompile()
   }, [forceRecompile, setPageSize])
 
-  useEffect(() => {
-    if (!open) return
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose()
-    }
-    document.addEventListener('keydown', handleKey)
-    return () => document.removeEventListener('keydown', handleKey)
-  }, [open, handleClose])
+  useModalA11y(panelRef, open, handleClose)
 
   if (!open) return null
 
@@ -237,6 +246,11 @@ export function SettingsModal() {
       }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        tabIndex={-1}
         style={{
           width: 'calc(100% - 48px)',
           maxWidth: '480px',
@@ -273,6 +287,7 @@ export function SettingsModal() {
           </span>
           <button
             onClick={handleClose}
+            aria-label="Close settings"
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -310,55 +325,60 @@ export function SettingsModal() {
           <SectionLabel>Editor</SectionLabel>
 
           <SettingRow label="Font Size">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="range"
-                min={12}
-                max={24}
-                value={fontSize}
-                onChange={(e) => setFontSize(Number(e.target.value))}
-                style={{
-                  width: '80px',
-                  accentColor: 'var(--accent)',
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  minWidth: '28px',
-                  textAlign: 'right',
-                }}
-              >
-                {fontSize}px
-              </span>
-            </div>
+            {(labelId) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="range"
+                  min={12}
+                  max={24}
+                  value={fontSize}
+                  aria-labelledby={labelId}
+                  onChange={(e) => setFontSize(Number(e.target.value))}
+                  style={{
+                    width: '80px',
+                    accentColor: 'var(--accent)',
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    minWidth: '28px',
+                    textAlign: 'right',
+                  }}
+                >
+                  {fontSize}px
+                </span>
+              </div>
+            )}
           </SettingRow>
 
           <SettingRow label="Line Wrapping" description="Wrap long lines in the editor">
-            <Toggle checked={lineWrapping} onChange={setLineWrapping} />
+            {(labelId) => <Toggle checked={lineWrapping} onChange={setLineWrapping} labelId={labelId} />}
           </SettingRow>
 
           <SettingRow label="Line Numbers" description="Show line numbers in the gutter">
-            <Toggle checked={lineNumbers} onChange={setLineNumbers} />
+            {(labelId) => <Toggle checked={lineNumbers} onChange={setLineNumbers} labelId={labelId} />}
           </SettingRow>
 
           <SettingRow label="Vim Mode" description="Experimental vim keybindings">
-            <Toggle checked={vimMode} onChange={setVimMode} />
+            {(labelId) => <Toggle checked={vimMode} onChange={setVimMode} labelId={labelId} />}
           </SettingRow>
 
           <SectionLabel>Appearance</SectionLabel>
 
           <SettingRow label="Theme">
-            <ThemeSegment value={theme} onChange={setTheme} />
+            {(labelId) => <ThemeSegment value={theme} onChange={setTheme} labelId={labelId} />}
           </SettingRow>
 
           <SectionLabel>Document</SectionLabel>
 
           <SettingRow label="Page Size" description="Overridden by #set page() in source">
+            {(labelId) => (
             <select
               value={pageSize}
+              aria-labelledby={labelId}
               onChange={(e) => handlePageSizeChange(e.target.value as PageSize)}
               style={{
                 fontFamily: 'var(--font-mono)',
@@ -377,51 +397,55 @@ export function SettingsModal() {
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
+            )}
           </SettingRow>
 
           <SettingRow label="Device Fonts" description="Use fonts installed on this device when the browser allows access">
-            <Toggle checked={systemFontsEnabled} onChange={handleSystemFontsChange} />
+            {(labelId) => <Toggle checked={systemFontsEnabled} onChange={handleSystemFontsChange} labelId={labelId} />}
           </SettingRow>
 
           <SettingRow
             label="Google Fonts"
             description={'Auto-import declared Google Font families, like font: "Inter"'}
           >
-            <Toggle checked={googleFontsEnabled} onChange={handleGoogleFontsChange} />
+            {(labelId) => <Toggle checked={googleFontsEnabled} onChange={handleGoogleFontsChange} labelId={labelId} />}
           </SettingRow>
 
           <SectionLabel>Compiler</SectionLabel>
 
           <SettingRow label="Auto Compile" description="Compile automatically on changes">
-            <Toggle checked={autoCompile} onChange={setAutoCompile} />
+            {(labelId) => <Toggle checked={autoCompile} onChange={setAutoCompile} labelId={labelId} />}
           </SettingRow>
 
           <SettingRow label="Compile Delay" description="Delay before auto-compile triggers (ms)">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="range"
-                min={50}
-                max={2000}
-                step={50}
-                value={compileDelay}
-                onChange={(e) => setCompileDelay(Number(e.target.value))}
-                style={{
-                  width: '80px',
-                  accentColor: 'var(--accent)',
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  color: 'var(--text-secondary)',
-                  minWidth: '42px',
-                  textAlign: 'right',
-                }}
-              >
-                {compileDelay}ms
-              </span>
-            </div>
+            {(labelId) => (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="range"
+                  min={50}
+                  max={2000}
+                  step={50}
+                  value={compileDelay}
+                  aria-labelledby={labelId}
+                  onChange={(e) => setCompileDelay(Number(e.target.value))}
+                  style={{
+                    width: '80px',
+                    accentColor: 'var(--accent)',
+                  }}
+                />
+                <span
+                  style={{
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    minWidth: '42px',
+                    textAlign: 'right',
+                  }}
+                >
+                  {compileDelay}ms
+                </span>
+              </div>
+            )}
           </SettingRow>
         </div>
 

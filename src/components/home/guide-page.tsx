@@ -187,6 +187,24 @@ const hierarchyData: Record<HierarchyLevel, { label: string; description: string
 function HierarchyDiagram() {
   const [active, setActive] = useState<HierarchyLevel | null>(null)
 
+  const toggle = (level: HierarchyLevel) => setActive(active === level ? null : level)
+  // The diagram levels are nested, so they cannot be native <button>s
+  // (buttons cannot contain buttons). role="button" + key handling instead.
+  const layerProps = (level: HierarchyLevel) => ({
+    role: 'button' as const,
+    tabIndex: 0,
+    'aria-expanded': active === level,
+    'aria-label': `${hierarchyData[level].label}: ${hierarchyData[level].description}`,
+    onClick: (e: React.MouseEvent) => { e.stopPropagation(); toggle(level) },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        e.stopPropagation()
+        toggle(level)
+      }
+    },
+  })
+
   return (
     <div>
       {/* Interactive nested boxes */}
@@ -199,7 +217,7 @@ function HierarchyDiagram() {
           transition: 'border-color 150ms ease',
           background: active === 'workspace' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
         }}
-        onClick={(e) => { e.stopPropagation(); setActive(active === 'workspace' ? null : 'workspace') }}
+        {...layerProps('workspace')}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
           <ChevronRight size={10} style={{ color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'workspace' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
@@ -219,7 +237,7 @@ function HierarchyDiagram() {
               transition: 'border-color 150ms ease',
               background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
             }}
-            onClick={(e) => { e.stopPropagation(); setActive(active === 'project' ? null : 'project') }}
+            {...layerProps('project')}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
               <ChevronRight size={10} style={{ color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'project' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
@@ -242,7 +260,7 @@ function HierarchyDiagram() {
                     transition: 'border-color 150ms ease, color 150ms ease',
                     background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                   }}
-                  onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+                  {...layerProps('file')}
                 >
                   {name}
                 </div>
@@ -259,7 +277,7 @@ function HierarchyDiagram() {
                   transition: 'border-color 150ms ease, color 150ms ease',
                   background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                 }}
-                onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+                {...layerProps('file')}
               >
                 images/fig.png
               </div>
@@ -278,7 +296,7 @@ function HierarchyDiagram() {
               transition: 'border-color 150ms ease',
               background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
             }}
-            onClick={(e) => { e.stopPropagation(); setActive(active === 'project' ? null : 'project') }}
+            {...layerProps('project')}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
               <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
@@ -298,7 +316,7 @@ function HierarchyDiagram() {
                     transition: 'border-color 150ms ease, color 150ms ease',
                     background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                   }}
-                  onClick={(e) => { e.stopPropagation(); setActive(active === 'file' ? null : 'file') }}
+                  {...layerProps('file')}
                 >
                   {name}
                 </div>
@@ -374,6 +392,7 @@ const workflowSteps: { id: WorkflowStep; label: string; description: string }[] 
 
 function WorkflowDiagram() {
   const [active, setActive] = useState<WorkflowStep | null>(null)
+  const activeStep = active ? workflowSteps.find((s) => s.id === active) ?? null : null
 
   return (
     <div>
@@ -416,7 +435,7 @@ function WorkflowDiagram() {
       </div>
 
       {/* Detail panel */}
-      {active && (
+      {activeStep && (
         <div
           style={{
             marginTop: '12px',
@@ -428,10 +447,10 @@ function WorkflowDiagram() {
           }}
         >
           <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '8px' }}>
-            {workflowSteps.find((s) => s.id === active)!.label}
+            {activeStep.label}
           </div>
           <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
-            {workflowSteps.find((s) => s.id === active)!.description}
+            {activeStep.description}
           </div>
         </div>
       )}

@@ -1,7 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
+import { useModalA11y } from '@/components/ui/context-menu'
+import { basename } from '@/lib/paths'
 
 function getMimeType(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase()
@@ -28,18 +30,11 @@ export function ImagePreviewModal() {
   const imagePreviewPath = useUIStore((s) => s.imagePreviewPath)
   const setImagePreviewPath = useUIStore((s) => s.setImagePreviewPath)
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => setImagePreviewPath(null), [setImagePreviewPath])
 
-  // Escape key to close
-  useEffect(() => {
-    if (!imagePreviewPath) return
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') close()
-    }
-    window.addEventListener('keydown', handleKey)
-    return () => window.removeEventListener('keydown', handleKey)
-  }, [imagePreviewPath, close])
+  useModalA11y(panelRef, Boolean(imagePreviewPath), close)
 
   // Create/cleanup blob URL for binary images
   useEffect(() => {
@@ -72,7 +67,7 @@ export function ImagePreviewModal() {
   const file = project?.files.find((f) => f.path === imagePreviewPath)
   if (!file) return null
 
-  const filename = imagePreviewPath.split('/').pop() ?? imagePreviewPath
+  const filename = basename(imagePreviewPath) || imagePreviewPath
   const isSvg = /\.svg$/i.test(imagePreviewPath)
 
   let imgSrc: string | null = null
@@ -84,6 +79,11 @@ export function ImagePreviewModal() {
 
   return (
     <div
+      ref={panelRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Image preview: ${filename}`}
+      tabIndex={-1}
       style={{
         position: 'fixed',
         inset: 0,
@@ -96,7 +96,7 @@ export function ImagePreviewModal() {
       }}
       onClick={close}
     >
-      {/* Header */}
+      {/* Header -- always light-on-dark: the backdrop is dark in both themes */}
       <div
         style={{
           position: 'absolute',
@@ -116,31 +116,32 @@ export function ImagePreviewModal() {
             fontSize: '12px',
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
-            color: 'var(--text-primary)',
+            color: '#fff',
           }}
         >
           {filename}
         </span>
         <button
           onClick={close}
+          aria-label="Close image preview"
           style={{
             width: '28px',
             height: '28px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            border: '1px solid var(--border-strong)',
+            border: '1px solid rgba(255, 255, 255, 0.25)',
             borderRadius: '2px',
             background: 'transparent',
-            color: 'var(--text-secondary)',
+            color: 'rgba(255, 255, 255, 0.7)',
             cursor: 'pointer',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.color = 'var(--text-primary)'
-            e.currentTarget.style.background = 'var(--bg-hover)'
+            e.currentTarget.style.color = '#fff'
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.color = 'var(--text-secondary)'
+            e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)'
             e.currentTarget.style.background = 'transparent'
           }}
         >
@@ -166,7 +167,7 @@ export function ImagePreviewModal() {
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '12px',
-            color: 'var(--text-tertiary)',
+            color: 'rgba(255, 255, 255, 0.7)',
             textTransform: 'uppercase',
           }}
         >

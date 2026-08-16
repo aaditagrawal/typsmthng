@@ -74,7 +74,7 @@
 
   --text-primary: var(--color-neutral-950);
   --text-secondary: var(--color-neutral-600);
-  --text-tertiary: var(--color-neutral-400);
+  --text-tertiary: #767676;
   --text-disabled: var(--color-neutral-300);
 
   --accent: var(--color-accent-500);
@@ -83,6 +83,9 @@
   --accent-text: var(--color-neutral-0);
 
   --indent-guide: rgba(0, 0, 0, 0.08);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.25);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.4);
 
   --status-error: #dc2626;
   --status-warning: #d97706;
@@ -115,6 +118,9 @@
   --accent-text: var(--color-neutral-0);
 
   --indent-guide: rgba(255, 255, 255, 0.07);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.35);
 
   --status-error: #f87171;
   --status-warning: #fbbf24;
@@ -209,6 +215,14 @@ body {
     inset: 0 auto 0 0;
     z-index: 30;
     box-shadow: 8px 0 24px rgb(0 0 0 / 20%);
+  }
+
+  /* Tap-to-dismiss scrim behind the overlay sidebar */
+  .workspace-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 29;
+    background: rgb(0 0 0 / 35%);
   }
 
   .workspace-panels [data-separator] {
@@ -333,7 +347,7 @@ body {
 /* ── macOS-style scrollbar ── */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 ::-webkit-scrollbar {
@@ -346,14 +360,14 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--scrollbar-thumb);
   border-radius: 9999px;
   border: 1px solid transparent;
   background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--scrollbar-thumb-hover);
   border: 1px solid transparent;
   background-clip: padding-box;
 }

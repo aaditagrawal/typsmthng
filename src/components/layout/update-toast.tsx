@@ -27,6 +27,7 @@ export function UpdateToast() {
 
   return (
     <div
+      role="status"
       className="fixed bottom-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg"
       style={{
         background: 'var(--bg-elevated)',

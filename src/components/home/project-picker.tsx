@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
-import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
-import { BookOpen, Check, Download, FileArchive, FileText, FileUp, FolderOpen, FolderPlus, FolderUp, Loader2, Monitor, Moon, Pencil, Plus, Store, Sun, Terminal, Trash2, Upload, X } from 'lucide-react'
+import { ContextMenu, useModalA11y, type ContextMenuAction } from '@/components/ui/context-menu'
+import { BookOpen, Check, Download, FileArchive, FileText, FileUp, FolderOpen, FolderPlus, FolderUp, Loader2, Monitor, Moon, MoreHorizontal, Pencil, Plus, Store, Sun, Terminal, Trash2, Upload, X } from 'lucide-react'
 import { runInitCommand } from '@/lib/template-init'
 import {
   MIN_MARKETPLACE_QUERY_LENGTH,
@@ -184,8 +184,17 @@ function ProjectCard({
           e.preventDefault()
           const rect = e.currentTarget.getBoundingClientRect()
           setContextMenu({ x: rect.left + rect.width / 2, y: rect.top + 24 })
+          return
+        }
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (editing || confirmDelete) return
+          if ((e.target as HTMLElement).closest('button, input')) return
+          e.preventDefault()
+          onSelect()
         }
       }}
+      role="button"
+      aria-label={selectionMode ? `${selected ? 'Deselect' : 'Select'} project ${project.name}` : `Open project ${project.name}`}
       tabIndex={0}
       style={{
         background: 'var(--bg-surface)',
@@ -207,7 +216,7 @@ function ProjectCard({
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.background = 'var(--bg-surface)'
-        e.currentTarget.style.borderColor = 'var(--border-default)'
+        e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-default)'
         if (confirmDelete) setConfirmDelete(false)
       }}
     >
@@ -471,6 +480,8 @@ export function ProjectPicker({
   const [workspaceQuickAddOpen, setWorkspaceQuickAddOpen] = useState(false)
   const [workspaceContextMenu, setWorkspaceContextMenu] = useState<{ workspaceId: string; x: number; y: number } | null>(null)
   const marketplaceSearchToken = useRef(0)
+  const workspaceSheetRef = useRef<HTMLDivElement>(null)
+  const marketplaceModalRef = useRef<HTMLDivElement>(null)
   const builtInTemplates = listBuiltInTemplates()
 
   useEffect(() => {
@@ -479,18 +490,8 @@ export function ProjectPicker({
     }
   }, [showNewInput])
 
-  useEffect(() => {
-    if (!marketplaceOpen) return
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setMarketplaceOpen(false)
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [marketplaceOpen])
+  useModalA11y(workspaceSheetRef, workspaceSheetOpen, () => setWorkspaceSheetOpen(false))
+  useModalA11y(marketplaceModalRef, marketplaceOpen, () => setMarketplaceOpen(false))
 
   useEffect(() => {
     if (!marketplaceOpen) return
@@ -838,39 +839,66 @@ export function ProjectPicker({
                   All
                 </button>
                 {homeWorkspaces.map((workspace) => (
-                  <button
-                    key={workspace.id}
-                    type="button"
-                    onClick={() => setSelectedHomeWorkspace(workspace.id)}
-                    onDoubleClick={() => {
-                      const nextName = window.prompt('Rename workspace', workspace.name)?.trim()
-                      if (nextName && nextName !== workspace.name) {
-                        void renameHomeWorkspace(workspace.id, nextName)
-                      }
-                    }}
-                    onContextMenu={(event) => {
-                      event.preventDefault()
-                      setWorkspaceContextMenu({
-                        workspaceId: workspace.id,
-                        x: event.clientX,
-                        y: event.clientY,
-                      })
-                    }}
-                    style={{
-                      border: selectedHomeWorkspaceId === workspace.id ? '1px solid var(--accent)' : '1px solid var(--border-default)',
-                      background: selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
-                      color: selectedHomeWorkspaceId === workspace.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      borderRadius: '2px',
-                      padding: '7px 12px',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title="Double-click to rename. Right-click to delete."
-                  >
-                    {workspace.name}
-                  </button>
+                  <div key={workspace.id} style={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedHomeWorkspace(workspace.id)}
+                      onDoubleClick={() => {
+                        const nextName = window.prompt('Rename workspace', workspace.name)?.trim()
+                        if (nextName && nextName !== workspace.name) {
+                          void renameHomeWorkspace(workspace.id, nextName)
+                        }
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        setWorkspaceContextMenu({
+                          workspaceId: workspace.id,
+                          x: event.clientX,
+                          y: event.clientY,
+                        })
+                      }}
+                      style={{
+                        border: selectedHomeWorkspaceId === workspace.id ? '1px solid var(--accent)' : '1px solid var(--border-default)',
+                        background: selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
+                        color: selectedHomeWorkspaceId === workspace.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        borderRadius: '2px 0 0 2px',
+                        padding: '7px 12px',
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '11px',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title="Double-click to rename. Right-click to delete."
+                    >
+                      {workspace.name}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label={`Workspace options for ${workspace.name}`}
+                      title={`Options for ${workspace.name}`}
+                      onClick={(event) => {
+                        const rect = event.currentTarget.getBoundingClientRect()
+                        setWorkspaceContextMenu({
+                          workspaceId: workspace.id,
+                          x: rect.left,
+                          y: rect.bottom + 4,
+                        })
+                      }}
+                      style={{
+                        border: selectedHomeWorkspaceId === workspace.id ? '1px solid var(--accent)' : '1px solid var(--border-default)',
+                        borderLeft: 'none',
+                        background: selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
+                        color: 'var(--text-tertiary)',
+                        borderRadius: '0 2px 2px 0',
+                        padding: '0 5px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <MoreHorizontal size={12} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -937,6 +965,7 @@ export function ProjectPicker({
                 <input
                   value={workspaceName}
                   onChange={(event) => setWorkspaceName(event.target.value)}
+                  aria-label="Workspace name"
                   placeholder="Research, Client, Notes..."
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
@@ -1132,6 +1161,7 @@ export function ProjectPicker({
                 value={marketplaceQuery}
                 onFocus={() => setMarketplaceOpen(true)}
                 onChange={(event) => { setMarketplaceQuery(event.target.value); setMarketplaceOpen(true) }}
+                aria-label="Search templates"
                 placeholder="Search templates (ieee, acm, thesis...)"
                 disabled={initBusy}
                 style={{
@@ -1181,6 +1211,7 @@ export function ProjectPicker({
               <input
                 value={initCommand}
                 onChange={(e) => setInitCommand(e.target.value)}
+                aria-label="Template init command"
                 placeholder="typst init @preview/aero-check:0.1.1"
                 onKeyDown={(e) => { if (e.key === 'Enter') void handleInitFromCommand() }}
                 disabled={initBusy}
@@ -1279,6 +1310,7 @@ export function ProjectPicker({
             <button
               type="button"
               onClick={() => setLatexError(null)}
+              aria-label="Dismiss import error"
               style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0 }}
             >
               <X size={12} />
@@ -1327,6 +1359,7 @@ export function ProjectPicker({
               <button
                 type="button"
                 onClick={() => setLatexResult(null)}
+                aria-label="Dismiss import result"
                 style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-start' }}
               >
                 <X size={12} />
@@ -1438,8 +1471,10 @@ export function ProjectPicker({
               />
             </div>
           ) : (
-            <div
+            <button
+              type="button"
               onClick={() => setShowNewInput(true)}
+              onFocus={() => onPreloadWorkspace?.()}
               style={{
                 background: 'transparent',
                 border: '1px dashed var(--border-default)',
@@ -1451,6 +1486,7 @@ export function ProjectPicker({
                 justifyContent: 'center',
                 gap: '6px',
                 color: 'var(--text-tertiary)',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '12px',
                 fontWeight: 600,
                 letterSpacing: '0.03em',
@@ -1466,7 +1502,7 @@ export function ProjectPicker({
             >
               <Plus size={14} />
               New Project
-            </div>
+            </button>
           )}
         </div>
 
@@ -1516,6 +1552,11 @@ export function ProjectPicker({
           }}
         >
           <div
+            ref={workspaceSheetRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Assign workspace"
+            tabIndex={-1}
             style={{
               width: '100%',
               maxWidth: '520px',
@@ -1539,6 +1580,7 @@ export function ProjectPicker({
               <button
                 type="button"
                 onClick={() => setWorkspaceSheetOpen(false)}
+                aria-label="Close workspace sheet"
                 style={{
                   width: '28px',
                   height: '28px',
@@ -1594,6 +1636,7 @@ export function ProjectPicker({
                 <input
                   value={workspaceName}
                   onChange={(event) => setWorkspaceName(event.target.value)}
+                  aria-label="Workspace name"
                   placeholder="Research, Client, Notes..."
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') {
@@ -1663,6 +1706,11 @@ export function ProjectPicker({
         >
           <div
             data-testid="marketplace-modal"
+            ref={marketplaceModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Template marketplace"
+            tabIndex={-1}
             style={{
               width: '100%',
               maxWidth: '720px',
@@ -1696,6 +1744,7 @@ export function ProjectPicker({
               <button
                 type="button"
                 onClick={() => setMarketplaceOpen(false)}
+                aria-label="Close marketplace"
                 style={{
                   width: '28px', height: '28px',
                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -1715,6 +1764,7 @@ export function ProjectPicker({
                 data-testid="marketplace-search-input"
                 value={marketplaceQuery}
                 onChange={(event) => setMarketplaceQuery(event.target.value)}
+                aria-label="Search Typst Universe packages"
                 placeholder="ieee, acm, thesis, conference..."
                 style={{
                   width: '100%',

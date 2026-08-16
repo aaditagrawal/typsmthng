@@ -6,6 +6,7 @@ import { useEditorStore } from '@/stores/editor-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { getProjectFileIndex } from '@/lib/file-index'
 import { isImagePath } from '@/lib/file-classification'
+import { useModalA11y } from '@/components/ui/context-menu'
 
 const ROW_HEIGHT = 34
 const ROW_OVERSCAN = 8
@@ -31,6 +32,7 @@ export function CommandSearch() {
   const [viewportHeight, setViewportHeight] = useState(300)
   const inputRef = useRef<HTMLInputElement>(null)
   const backdropRef = useRef<HTMLDivElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
   const currentProject = useMemo(
@@ -98,7 +100,10 @@ export function CommandSearch() {
     setQuery('')
     setSelectedIndex(0)
     setScrollTop(0)
+    useEditorStore.getState().editorView?.focus()
   }, [setOpen])
+
+  useModalA11y(panelRef, open, close)
 
   const openFile = useCallback(
     (path: string) => {
@@ -219,6 +224,11 @@ export function CommandSearch() {
       }}
     >
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        tabIndex={-1}
         style={{
           width: 'calc(100% - 48px)',
           maxWidth: '500px',
