@@ -1,4 +1,5 @@
 import type * as Ast from '@unified-latex/unified-latex-types'
+import { isLatexPath } from './file-classification'
 
 export interface ConversionWarning {
   message: string
@@ -502,7 +503,7 @@ function emitMacro(
       const lower = file.toLowerCase()
       if (lower.endsWith('.typ')) {
         // already typst
-      } else if (lower.endsWith('.tex')) {
+      } else if (isLatexPath(file)) {
         file = file.replace(/\.tex$/i, '.typ')
       } else if (!/\.[A-Za-z0-9]+$/.test(file)) {
         // LaTeX \input{chapter} implies .tex

@@ -64,19 +64,31 @@ const defaults: Settings = {
 }
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
+let pendingSettings: Settings | null = null
 const PERSIST_DEBOUNCE_MS = 300
 
+function flushPendingSettings() {
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  const settings = pendingSettings
+  pendingSettings = null
+  if (!settings) return
+  idbSet(SETTINGS_KEY, settings, settingsDb).catch((err) => {
+    console.warn('Failed to persist settings to IDB:', err)
+  })
+}
+
 function persistSettings(settings: Settings) {
+  pendingSettings = settings
   if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(() => {
-    try {
-      idbSet(SETTINGS_KEY, settings, settingsDb).catch((err) => {
-        console.warn('Failed to persist settings to IDB:', err)
-      })
-    } catch (err) {
-      console.warn('Failed to persist settings to IDB:', err)
-    }
-  }, PERSIST_DEBOUNCE_MS)
+  persistTimer = setTimeout(flushPendingSettings, PERSIST_DEBOUNCE_MS)
+}
+
+// Changes inside the debounce window would otherwise be lost on tab close.
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushPendingSettings)
 }
 
 function getPersistedFields(state: SettingsState): Settings {

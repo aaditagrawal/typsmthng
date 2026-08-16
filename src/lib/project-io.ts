@@ -1,7 +1,16 @@
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate'
-import { useProjectStore, type ProjectFile, type ProjectScaffold } from '@/stores/project-store'
+import {
+  isQuotaExceededError,
+  useProjectStore,
+  type CreateProjectResult,
+  type ProjectFile,
+  type ProjectScaffold,
+} from '@/stores/project-store'
+import { useEditorStore } from '@/stores/editor-store'
 import { isKnownTextPath, isLatexPath, shouldTreatUploadAsText } from '@/lib/file-classification'
 import { convertLatexToTypst, type ConversionResult, type ConversionWarning } from '@/lib/latex-converter'
+import { downloadBlob } from '@/lib/download'
+import { basename, dirname } from '@/lib/paths'
 
 export interface LatexImportResult {
   projectName: string
@@ -163,7 +172,7 @@ export function looksLikeImportableProject(paths: string[]): boolean {
       // Only root-level sources count. Nested ancillary .typ/.tex alone must
       // not unwrap an unrelated single top-level folder (e.g. photos + notes).
       || (isRootFile && normalizedPath.endsWith('.typ'))
-      || (isRootFile && normalizedPath.endsWith('.tex'))
+      || (isRootFile && isLatexPath(normalizedPath))
   })
 }
 
@@ -258,17 +267,19 @@ function dedupeProjectPath(path: string, used: Set<string>): string {
     return path
   }
 
-  const lastDot = path.lastIndexOf('.')
-  const lastSlash = path.lastIndexOf('/')
-  const hasExt = lastDot > lastSlash
-  const stem = hasExt ? path.slice(0, lastDot) : path
-  const ext = hasExt ? path.slice(lastDot) : ''
+  const parent = dirname(path)
+  const prefix = parent ? `${parent}/` : path.startsWith('/') ? '/' : ''
+  const name = basename(path)
+  const lastDot = name.lastIndexOf('.')
+  const hasExt = lastDot > 0
+  const stem = hasExt ? name.slice(0, lastDot) : name
+  const ext = hasExt ? name.slice(lastDot) : ''
 
   let suffix = 2
-  let candidate = `${stem}-${suffix}${ext}`
+  let candidate = `${prefix}${stem}-${suffix}${ext}`
   while (used.has(candidate)) {
     suffix++
-    candidate = `${stem}-${suffix}${ext}`
+    candidate = `${prefix}${stem}-${suffix}${ext}`
   }
   used.add(candidate)
   return candidate
@@ -290,6 +301,13 @@ function rewriteTypstPathRefs(content: string, renames: Map<string, string>): st
     (match, path: string) => {
       const renamed = resolveRename(path)
       return renamed ? `#include "${renamed}"` : match
+    },
+  )
+  next = next.replace(
+    /#import\s+"([^"]+)"/g,
+    (match, path: string) => {
+      const renamed = resolveRename(path)
+      return renamed ? `#import "${renamed}"` : match
     },
   )
   next = next.replace(
@@ -317,6 +335,34 @@ function applyPathRenames(projectFiles: ProjectFile[], renames: Map<string, stri
   }
 }
 
+interface DecodedZipText {
+  content: string
+  encoding: 'utf-8' | 'windows-1252'
+}
+
+/**
+ * Decode zip text strictly: non-fatal UTF-8 decoding would silently corrupt
+ * legacy-encoded files with U+FFFD. Fall back to Windows-1252, then binary.
+ */
+function decodeZipText(data: Uint8Array): DecodedZipText | null {
+  try {
+    return {
+      content: new TextDecoder('utf-8', { fatal: true }).decode(data),
+      encoding: 'utf-8',
+    }
+  } catch {
+    // Not valid UTF-8; try the most common legacy encoding.
+  }
+  try {
+    return {
+      content: new TextDecoder('windows-1252', { fatal: true }).decode(data),
+      encoding: 'windows-1252',
+    }
+  } catch {
+    return null
+  }
+}
+
 async function buildProjectFilesFromZipEntries(
   entries: ZipImportEntry[],
   options: { convertLatex: boolean },
@@ -339,10 +385,16 @@ async function buildProjectFilesFromZipEntries(
     if (path.endsWith('.folder')) continue
 
     const fullPath = toProjectPath(path)
-    const isText = isKnownTextPath(path)
+    const decoded = isKnownTextPath(path) ? decodeZipText(data) : null
 
-    if (isText) {
-      let content = strFromU8(data)
+    if (decoded) {
+      if (decoded.encoding === 'windows-1252') {
+        warnings.push({
+          message: `${fullPath} is not valid UTF-8; decoded it as Windows-1252.`,
+          construct: path,
+        })
+      }
+      let content = decoded.content
       let filePath = fullPath
 
       if (options.convertLatex && isLatexPath(path)) {
@@ -378,6 +430,12 @@ async function buildProjectFilesFromZipEntries(
         lastModified: Date.now(),
       })
     } else {
+      if (isKnownTextPath(path)) {
+        warnings.push({
+          message: `${fullPath} could not be decoded as text (invalid UTF-8 and Windows-1252); kept as binary.`,
+          construct: path,
+        })
+      }
       const uniquePath = dedupeProjectPath(fullPath, usedPaths)
       if (uniquePath !== fullPath) {
         renames.set(fullPath, uniquePath)
@@ -406,7 +464,7 @@ async function createImportedProject(
   projectFiles: ProjectFile[],
   options?: { select?: boolean },
   manifestMainFile?: string | null,
-): Promise<string> {
+): Promise<CreateProjectResult> {
   const validManifestMainFile = manifestMainFile
     && projectFiles.some((file) => file.path === manifestMainFile && !file.isBinary)
     ? manifestMainFile
@@ -427,16 +485,18 @@ async function createImportedProject(
   return useProjectStore.getState().createProject(projectName, scaffold)
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  // Delay revoke so browsers that download asynchronously still have the blob.
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
+/**
+ * The project store can lag the live CodeMirror buffer by the editor sync
+ * debounce; apply the buffer before exporting so zips include the latest typing.
+ */
+function flushLiveEditorContent(): void {
+  const projectState = useProjectStore.getState()
+  const { currentFilePath } = projectState
+  if (!currentFilePath) return
+  const editor = useEditorStore.getState()
+  if (!editor.isDirty) return
+  // updateFileContent no-ops when the buffer already matches the stored content.
+  projectState.updateFileContent(currentFilePath, editor.source)
 }
 
 /**
@@ -477,6 +537,7 @@ export function uniqueExportFolderNames(projectNames: string[]): string[] {
 }
 
 export async function exportProject(): Promise<void> {
+  flushLiveEditorContent()
   const project = useProjectStore.getState().getCurrentProject()
   if (!project) return
 
@@ -509,7 +570,7 @@ export async function exportProject(): Promise<void> {
     return
   }
   const blob = new Blob([zipped as BlobPart], { type: 'application/zip' })
-  triggerDownload(blob, `${project.name}.zip`)
+  downloadBlob(blob, `${project.name}.zip`)
   if (skippedMissingBinary > 0) {
     window.alert(
       `Export completed, but ${skippedMissingBinary} binary file(s) were skipped because their data was missing.`,
@@ -518,6 +579,7 @@ export async function exportProject(): Promise<void> {
 }
 
 export async function exportAllProjects(): Promise<void> {
+  flushLiveEditorContent()
   const projects = useProjectStore.getState().projects
   if (projects.length === 0) return
 
@@ -554,7 +616,7 @@ export async function exportAllProjects(): Promise<void> {
     return
   }
   const blob = new Blob([zipped as BlobPart], { type: 'application/zip' })
-  triggerDownload(blob, 'typsmthng-all-projects.zip')
+  downloadBlob(blob, 'typsmthng-all-projects.zip')
   if (skippedMissingBinary > 0) {
     window.alert(
       `Export completed, but ${skippedMissingBinary} binary file(s) were skipped because their data was missing.`,
@@ -572,10 +634,15 @@ export async function importAllProjects(file: File): Promise<number> {
   }
 
   const projectFolders = new Map<string, ZipImportEntry[]>()
+  let skippedRootEntries = 0
 
   for (const entry of collectZipEntries(unzipped)) {
     const slashIndex = entry.path.indexOf('/')
-    if (slashIndex < 0) continue
+    if (slashIndex < 0) {
+      // Bulk archives are one folder per project; loose root files have no home.
+      skippedRootEntries++
+      continue
+    }
     const folderName = entry.path.slice(0, slashIndex)
     const filePath = entry.path.slice(slashIndex + 1)
     if (!filePath) continue
@@ -590,25 +657,48 @@ export async function importAllProjects(file: File): Promise<number> {
   }
 
   let imported = 0
+  let failed = 0
+  let quotaFailure = false
 
   for (const [folderName, entries] of projectFolders) {
     const manifest = takeManifestMainFile(entries)
     const { projectFiles } = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: true })
     if (projectFiles.length === 0) continue
 
-    const id = await createImportedProject(
+    const result = await createImportedProject(
       folderName,
       projectFiles,
       { select: false },
       manifest.manifestMainFile,
     )
-    if (id) {
+    if (result.persisted) {
       imported++
+    } else {
+      failed++
+      if (isQuotaExceededError(result.persistError)) {
+        quotaFailure = true
+      }
     }
   }
 
   // Stay on the home picker after bulk import; do not leave a prior selection.
   useProjectStore.setState({ hasSelectedProject: false, currentProjectId: null, currentFilePath: null })
+
+  const quotaNote = quotaFailure ? ' — storage is full' : ''
+  if (imported === 0 && failed > 0) {
+    throw new Error(`No projects could be saved${quotaNote}. Free up space and try again.`)
+  }
+
+  const notes: string[] = []
+  if (failed > 0) {
+    notes.push(`${failed} project${failed === 1 ? '' : 's'} could not be saved${quotaNote}`)
+  }
+  if (skippedRootEntries > 0) {
+    notes.push(`${skippedRootEntries} root-level file${skippedRootEntries === 1 ? ' was' : 's were'} skipped (bulk archives contain one folder per project)`)
+  }
+  if (notes.length > 0) {
+    window.alert(`Imported ${imported} project${imported === 1 ? '' : 's'}, but ${notes.join('; ')}.`)
+  }
 
   return imported
 }
@@ -685,6 +775,7 @@ export async function importLatexProject(
   const usedPaths = new Set<string>()
   const renames = new Map<string, string>()
   let texCount = 0
+  let firstTexFileName: string | null = null
   let lastMeta: ConversionResult['metadata'] = { packages: [] }
 
   const relativePaths = stripSharedRootFolder(files.map((entry) => entry.relativePath))
@@ -726,6 +817,7 @@ export async function importLatexProject(
       allWarnings.push(...converted.warnings)
       lastMeta = mergeConversionMetadata(lastMeta, converted.metadata)
       texCount++
+      firstTexFileName ??= file.name
     } else if (shouldTreatUploadAsText(file)) {
       const content = await file.text()
       const uniquePath = dedupeProjectPath(path, usedPaths)
@@ -773,8 +865,8 @@ export async function importLatexProject(
   applyPathRenames(projectFiles, renames)
 
   const projectName = lastMeta.title
-    || (texCount === 1
-      ? files.find((f) => isLatexPath(f.file.name))!.file.name.replace(/\.tex$/i, '')
+    || (texCount === 1 && firstTexFileName
+      ? firstTexFileName.replace(/\.tex$/i, '')
       : `LaTeX Import (${texCount} files)`)
 
   await createImportedProject(projectName, projectFiles)

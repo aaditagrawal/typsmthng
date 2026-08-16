@@ -12,12 +12,16 @@ type IdbSetCall = {
 vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
   const delayedKeys = new Set<string>()
+  const failedKeyPrefixes = new Map<string, unknown>()
   const pendingSets: IdbSetCall[] = []
 
   return {
     createStore: () => 'mock-store',
     get: vi.fn(async (key: string) => store.get(key)),
     set: vi.fn(async (key: string, val: unknown) => {
+      for (const [prefix, error] of failedKeyPrefixes) {
+        if (key.startsWith(prefix)) throw error
+      }
       if (!delayedKeys.has(key)) {
         store.set(key, val)
         return
@@ -43,6 +47,8 @@ vi.mock('idb-keyval', () => {
       for (const key of keys) delayedKeys.add(key)
     },
     __clearDelayKeys: () => { delayedKeys.clear() },
+    __failKeyPrefix: (prefix: string, error: unknown) => { failedKeyPrefixes.set(prefix, error) },
+    __clearFailures: () => { failedKeyPrefixes.clear() },
     __flushPendingSets: () => {
       const queued = pendingSets.splice(0, pendingSets.length)
       for (const call of queued) call.resolve()
@@ -58,6 +64,8 @@ type MockIdb = typeof idbKeyval & {
   __pendingSets: IdbSetCall[]
   __delayKeys: (...keys: string[]) => void
   __clearDelayKeys: () => void
+  __failKeyPrefix: (prefix: string, error: unknown) => void
+  __clearFailures: () => void
   __flushPendingSets: () => void
 }
 
@@ -68,6 +76,7 @@ describe('Project Store', () => {
     vi.useRealTimers()
     resetProjectPersistStateForTests()
     mockIdb.__clearDelayKeys()
+    mockIdb.__clearFailures()
     mockIdb.__flushPendingSets()
 
     // Clear the mock idb store
@@ -84,14 +93,17 @@ describe('Project Store', () => {
       sidebarOpen: false,
       loading: true,
       hasSelectedProject: false,
+      saveError: null,
     })
   })
 
   afterEach(() => {
     resetProjectPersistStateForTests()
     mockIdb.__clearDelayKeys()
+    mockIdb.__clearFailures()
     mockIdb.__flushPendingSets()
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   it('should load projects and create default if empty', async () => {
@@ -120,7 +132,7 @@ describe('Project Store', () => {
 
   it('should create a new project', async () => {
     await useProjectStore.getState().loadProjects()
-    const id = await useProjectStore.getState().createProject('Test Project')
+    const { id } = await useProjectStore.getState().createProject('Test Project')
 
     const state = useProjectStore.getState()
     expect(state.projects).toHaveLength(2)
@@ -135,7 +147,7 @@ describe('Project Store', () => {
   it('should create a project from scaffold data', async () => {
     await useProjectStore.getState().loadProjects()
 
-    const id = await useProjectStore.getState().createProject('Scaffolded', {
+    const { id } = await useProjectStore.getState().createProject('Scaffolded', {
       mainFile: '/paper.typ',
       templateMeta: {
         source: 'typst-universe',
@@ -389,7 +401,7 @@ describe('Project Store', () => {
 
   it('should create and persist home workspaces with assignments', async () => {
     await useProjectStore.getState().loadProjects()
-    const projectId = await useProjectStore.getState().createProject('Grouped Project')
+    const { id: projectId } = await useProjectStore.getState().createProject('Grouped Project')
 
     const workspaceId = await useProjectStore.getState().createHomeWorkspace('Requirements', [projectId])
 
@@ -403,7 +415,7 @@ describe('Project Store', () => {
 
   it('should clear assignments when a workspace is deleted', async () => {
     await useProjectStore.getState().loadProjects()
-    const projectId = await useProjectStore.getState().createProject('Client Brief')
+    const { id: projectId } = await useProjectStore.getState().createProject('Client Brief')
     const workspaceId = await useProjectStore.getState().createHomeWorkspace('Client Docs', [projectId])
 
     await useProjectStore.getState().deleteHomeWorkspace(workspaceId)
@@ -416,7 +428,7 @@ describe('Project Store', () => {
 
   it('should restore the selected home workspace after reload', async () => {
     await useProjectStore.getState().loadProjects()
-    const projectId = await useProjectStore.getState().createProject('Persistent Workspace Project')
+    const { id: projectId } = await useProjectStore.getState().createProject('Persistent Workspace Project')
     const workspaceId = await useProjectStore.getState().createHomeWorkspace('Persistent Workspace', [projectId])
 
     await useProjectStore.getState().setSelectedHomeWorkspace(workspaceId)
@@ -445,10 +457,10 @@ describe('Project Store', () => {
 
   it('flushes pending autosave for the previous project when switching projects', async () => {
     await useProjectStore.getState().loadProjects()
-    const projectA = await useProjectStore.getState().createProject('Project A')
+    const { id: projectA } = await useProjectStore.getState().createProject('Project A')
     // Ensure distinct project ids when Date.now() is later frozen by fake timers.
     await new Promise((resolve) => setTimeout(resolve, 2))
-    const projectB = await useProjectStore.getState().createProject('Project B')
+    const { id: projectB } = await useProjectStore.getState().createProject('Project B')
 
     vi.useFakeTimers()
     useProjectStore.getState().selectProject(projectA)
@@ -471,7 +483,7 @@ describe('Project Store', () => {
 
   it('persists rename for a non-current project', async () => {
     await useProjectStore.getState().loadProjects()
-    const otherId = await useProjectStore.getState().createProject('Other')
+    const { id: otherId } = await useProjectStore.getState().createProject('Other')
     useProjectStore.getState().selectProject('default')
 
     await useProjectStore.getState().renameProject(otherId, 'Renamed Other')
@@ -483,7 +495,7 @@ describe('Project Store', () => {
 
   it('does not resurrect a project deleted during an in-flight save', async () => {
     await useProjectStore.getState().loadProjects()
-    const id = await useProjectStore.getState().createProject('Doomed')
+    const { id } = await useProjectStore.getState().createProject('Doomed')
     useProjectStore.getState().selectProject(id)
 
     mockIdb.__delayKeys(id)
@@ -508,7 +520,7 @@ describe('Project Store', () => {
 
   it('autosave after delete does not write the deleted project back', async () => {
     await useProjectStore.getState().loadProjects()
-    const id = await useProjectStore.getState().createProject('Temp')
+    const { id } = await useProjectStore.getState().createProject('Temp')
     useProjectStore.getState().selectProject(id)
 
     vi.useFakeTimers()
@@ -527,13 +539,13 @@ describe('Project Store', () => {
 
   it('creates unique project ids under rapid create calls', async () => {
     await useProjectStore.getState().loadProjects()
-    const ids = await Promise.all([
+    const results = await Promise.all([
       useProjectStore.getState().createProject('A', undefined, { select: false }),
       useProjectStore.getState().createProject('B', undefined, { select: false }),
       useProjectStore.getState().createProject('C', undefined, { select: false }),
     ])
-    expect(new Set(ids).size).toBe(3)
-    expect(ids.every((id) => mockIdb.__store.has(id))).toBe(true)
+    expect(new Set(results.map((result) => result.id)).size).toBe(3)
+    expect(results.every((result) => result.persisted && mockIdb.__store.has(result.id))).toBe(true)
     expect(useProjectStore.getState().hasSelectedProject).toBe(false)
   })
 
@@ -542,7 +554,7 @@ describe('Project Store', () => {
     const workspaceId = await useProjectStore.getState().createHomeWorkspace('Active')
     await useProjectStore.getState().setSelectedHomeWorkspace(workspaceId)
 
-    const projectId = await useProjectStore.getState().createProject('In Workspace')
+    const { id: projectId } = await useProjectStore.getState().createProject('In Workspace')
     expect(useProjectStore.getState().projectWorkspaceAssignments[projectId]).toBe(workspaceId)
 
     const homeMeta = mockIdb.__store.get('home-meta') as {
@@ -554,8 +566,8 @@ describe('Project Store', () => {
   it('persists editor buffer for the previous project on selectProject', async () => {
     const { useEditorStore } = await import('@/stores/editor-store')
     await useProjectStore.getState().loadProjects()
-    const projectA = await useProjectStore.getState().createProject('A')
-    const projectB = await useProjectStore.getState().createProject('B')
+    const { id: projectA } = await useProjectStore.getState().createProject('A')
+    const { id: projectB } = await useProjectStore.getState().createProject('B')
 
     useProjectStore.getState().selectProject(projectA)
     useEditorStore.setState({ source: '= live A buffer', isDirty: true, saveStatus: 'unsaved' })
@@ -637,7 +649,7 @@ describe('Project Store', () => {
 
   it('keeps newer content when concurrent saves overlap', async () => {
     await useProjectStore.getState().loadProjects()
-    const id = await useProjectStore.getState().createProject('Race')
+    const { id } = await useProjectStore.getState().createProject('Race')
     useProjectStore.getState().selectProject(id)
 
     mockIdb.__delayKeys(id)
@@ -657,5 +669,179 @@ describe('Project Store', () => {
 
     const saved = mockIdb.__store.get(id) as { files: Array<{ path: string; content: string }> }
     expect(saved.files.find((f) => f.path === '/main.typ')?.content).toBe('= second')
+  })
+
+  it('reports and alerts when a new project cannot be persisted', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    await useProjectStore.getState().loadProjects()
+
+    mockIdb.__failKeyPrefix('project-', new DOMException('quota exceeded', 'QuotaExceededError'))
+    const result = await useProjectStore.getState().createProject('Doomed Save')
+
+    expect(result.persisted).toBe(false)
+    expect(result.persistError).toBeInstanceOf(DOMException)
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('storage is full'))
+    // The project stays usable in memory for the session.
+    expect(useProjectStore.getState().projects.some((p) => p.id === result.id)).toBe(true)
+    expect(mockIdb.__store.has(result.id)).toBe(false)
+  })
+
+  it('does not alert on persistence failure for bulk (select: false) creates', async () => {
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    await useProjectStore.getState().loadProjects()
+
+    mockIdb.__failKeyPrefix('project-', new DOMException('quota exceeded', 'QuotaExceededError'))
+    const result = await useProjectStore.getState().createProject('Bulk', undefined, { select: false })
+
+    expect(result.persisted).toBe(false)
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it('journals edits to multiple files within one debounce window and recovers both', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFile('/second.typ', '= second')
+    await useProjectStore.getState().saveCurrentProject()
+
+    // Both edits land inside the 2s autosave debounce; neither reaches IDB.
+    useProjectStore.getState().updateFileContent('/main.typ', '= edit A')
+    useProjectStore.getState().updateFileContent('/second.typ', '= edit B')
+
+    await useProjectStore.getState().loadProjects()
+
+    const recovered = useProjectStore.getState().projects.find((p) => p.id === 'default')
+    expect(recovered?.files.find((f) => f.path === '/main.typ')?.content).toBe('= edit A')
+    expect(recovered?.files.find((f) => f.path === '/second.typ')?.content).toBe('= edit B')
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toBeNull()
+  })
+
+  it('recovers a legacy single-object recovery journal', async () => {
+    localStorage.setItem('typsmthng-recovery-journal', JSON.stringify({
+      projectId: 'default',
+      path: '/main.typ',
+      content: '= legacy journal',
+    }))
+
+    await useProjectStore.getState().loadProjects()
+
+    const recovered = useProjectStore.getState().projects.find((p) => p.id === 'default')
+    expect(recovered?.files.find((f) => f.path === '/main.typ')?.content).toBe('= legacy journal')
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toBeNull()
+  })
+
+  it('skips journaling oversized file contents', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+
+    useProjectStore.getState().updateFileContent('/main.typ', 'x'.repeat(2 * 1024 * 1024 + 1))
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('journal size limit'))
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toBeNull()
+  })
+
+  it('does not promote placeholders or hidden files when deleting the main file', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFolder('/empty')
+    await useProjectStore.getState().createFile('/.typsmthng/meta.json', '{}')
+    await useProjectStore.getState().createFile('/real.typ', '= real')
+    useProjectStore.getState().selectFile('/main.typ')
+
+    await useProjectStore.getState().deleteFile('/main.typ')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.mainFile).toBe('/real.typ')
+    expect(useProjectStore.getState().currentFilePath).toBe('/real.typ')
+  })
+
+  it('clears file pointers when deleting the main file leaves only placeholders', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFolder('/empty')
+    useProjectStore.getState().selectFile('/main.typ')
+
+    await useProjectStore.getState().deleteFile('/main.typ')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.mainFile).toBe('')
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+  })
+
+  it('serves a fresh file index when two mutations land in the same millisecond', async () => {
+    const { getProjectFileIndex } = await import('@/lib/file-index')
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+
+    // Freeze Date.now so both mutations share one updatedAt millisecond.
+    vi.useFakeTimers()
+    await useProjectStore.getState().createFilesBatch([{ path: '/notes.typ', content: '= notes' }])
+    const first = getProjectFileIndex(useProjectStore.getState().getCurrentProject())
+    expect(first.searchablePaths).toContain('/notes.typ')
+
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/img.png', data: new Uint8Array([1]) }])
+    const second = getProjectFileIndex(useProjectStore.getState().getCurrentProject())
+    expect(second.searchablePaths).toContain('/img.png')
+  })
+
+  it('does not clear dirty state when the user types during an in-flight save', async () => {
+    const { useEditorStore } = await import('@/stores/editor-store')
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Typing Race')
+    useProjectStore.getState().selectProject(id)
+
+    useProjectStore.getState().updateFileContent('/main.typ', '= v1')
+    useEditorStore.setState({ source: '= v1', isDirty: true, saveStatus: 'unsaved' })
+
+    mockIdb.__delayKeys(id)
+    const savePromise = useProjectStore.getState().saveProject(id)
+    for (let i = 0; i < 20 && !mockIdb.__pendingSets.some((call) => call.key === id); i++) {
+      await Promise.resolve()
+    }
+
+    useEditorStore.getState().setSource('= v2 typed during save')
+
+    mockIdb.__flushPendingSets()
+    mockIdb.__clearDelayKeys()
+    await savePromise
+
+    expect(useEditorStore.getState().isDirty).toBe(true)
+    expect(useEditorStore.getState().saveStatus).toBe('unsaved')
+    useEditorStore.setState({ source: '', isDirty: false, saveStatus: 'saved' })
+  })
+
+  it('clears dirty state after save when the editor buffer matches the persisted content', async () => {
+    const { useEditorStore } = await import('@/stores/editor-store')
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Clean Save')
+    useProjectStore.getState().selectProject(id)
+
+    useProjectStore.getState().updateFileContent('/main.typ', '= stable')
+    useEditorStore.setState({ source: '= stable', isDirty: true, saveStatus: 'unsaved' })
+
+    await useProjectStore.getState().saveProject(id)
+
+    expect(useEditorStore.getState().isDirty).toBe(false)
+    expect(useEditorStore.getState().saveStatus).toBe('saved')
+  })
+
+  it('records a quota save error on failure and clears it on the next successful save', async () => {
+    const { useEditorStore } = await import('@/stores/editor-store')
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Save Errors')
+    useProjectStore.getState().selectProject(id)
+    useEditorStore.setState({ source: '', isDirty: false, saveStatus: 'saved' })
+
+    mockIdb.__failKeyPrefix(id, new DOMException('quota exceeded', 'QuotaExceededError'))
+    await useProjectStore.getState().saveProject(id)
+
+    const saveError = useProjectStore.getState().saveError
+    expect(saveError?.quota).toBe(true)
+    expect(saveError?.message).toContain('storage is full')
+    expect(useEditorStore.getState().saveStatus).toBe('unsaved')
+
+    mockIdb.__clearFailures()
+    await useProjectStore.getState().saveProject(id)
+    expect(useProjectStore.getState().saveError).toBeNull()
   })
 })

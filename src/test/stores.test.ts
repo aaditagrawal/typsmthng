@@ -159,9 +159,9 @@ describe('Preview Store', () => {
     expect(usePreviewStore.getState().currentPage).toBe(3)
   })
 
-  it('should resolve auto preview mode based on document length', () => {
-    expect(resolvePreviewRenderMode('auto', 2)).toBe('canvas')
-    expect(resolvePreviewRenderMode('auto', 8)).toBe('canvas')
-    expect(resolvePreviewRenderMode('svg', 12)).toBe('svg')
+  it('should resolve preview modes', () => {
+    expect(resolvePreviewRenderMode('auto')).toBe('canvas')
+    expect(resolvePreviewRenderMode('canvas')).toBe('canvas')
+    expect(resolvePreviewRenderMode('svg')).toBe('svg')
   })
 })

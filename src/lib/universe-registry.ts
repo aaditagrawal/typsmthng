@@ -5,12 +5,14 @@ import {
   formatResolvedSpec,
   normalizeResolvedSpec,
   parsePackageSpec,
+  parseVersion,
   toResolvedSpec,
   type ParsedSpec,
   type ResolvedSpec,
 } from './universe-spec'
 import { extractTarEntriesFromGzip } from './tar'
 import { applyPackageImportCompatRewrites } from './package-compat'
+import { isKnownTextPath } from './file-classification'
 
 const UNIVERSE_NAMESPACE = 'preview'
 const INDEX_URL = `https://packages.typst.org/${UNIVERSE_NAMESPACE}/index.json`
@@ -72,6 +74,8 @@ export interface UniverseMarketplacePackage {
 
 let inMemoryIndex: UniverseIndexCache | null = null
 const inMemoryArchives = new Map<string, PackageArchiveCache>()
+// Insertion order doubles as recency for the LRU cap below.
+const IN_MEMORY_PREPARED_MAX = 8
 const inMemoryPrepared = new Map<string, PreparedPackage>()
 const inMemoryRuntimeDeps = new Map<string, string[]>()
 const inFlightEnsureDeps = new Map<string, Promise<string[]>>()
@@ -79,12 +83,6 @@ const inFlightPreparePackage = new Map<string, Promise<PreparedPackage>>()
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
-
-const TEXT_EXTENSIONS = [
-  '.typ', '.txt', '.md', '.tex', '.bib', '.bibtex', '.ris', '.csv', '.json',
-  '.xml', '.html', '.css', '.js', '.ts', '.yaml', '.yml', '.toml', '.cfg',
-  '.ini', '.log', '.sh', '.bat', '.ps1', '.py', '.rb', '.rs', '.svg',
-]
 
 interface ParsedManifest {
   packageName: string
@@ -185,11 +183,6 @@ function parseManifestToml(content: string): ParsedManifest {
   }
 
   return manifest
-}
-
-function isTextPath(path: string): boolean {
-  const lower = path.toLowerCase()
-  return TEXT_EXTENSIONS.some((ext) => lower.endsWith(ext))
 }
 
 function normalizeImportSpec(raw: string): string {
@@ -652,14 +645,23 @@ function toResolvedFromUnknownSpec(spec: unknown): ResolvedSpec | null {
   }
 }
 
+function setPreparedWithCap(memoryKey: string, prepared: PreparedPackage): void {
+  // Re-insert so Map iteration order stays least-recently-used-first.
+  inMemoryPrepared.delete(memoryKey)
+  inMemoryPrepared.set(memoryKey, prepared)
+  while (inMemoryPrepared.size > IN_MEMORY_PREPARED_MAX) {
+    const oldest = inMemoryPrepared.keys().next().value
+    if (oldest === undefined) break
+    inMemoryPrepared.delete(oldest)
+  }
+}
+
 async function preparePackage(spec: ResolvedSpec): Promise<PreparedPackage> {
   const memoryKey = inMemoryPreparedKey(spec)
   const existing = inMemoryPrepared.get(memoryKey)
   if (existing) {
     const compatExisting = applyCompatToPreparedPackage(existing)
-    if (compatExisting !== existing) {
-      inMemoryPrepared.set(memoryKey, compatExisting)
-    }
+    setPreparedWithCap(memoryKey, compatExisting)
     return compatExisting
   }
 
@@ -674,7 +676,7 @@ async function preparePackage(spec: ResolvedSpec): Promise<PreparedPackage> {
     for (const entry of entries) {
       if (entry.type !== 'file') continue
 
-      const isText = isTextPath(entry.path)
+      const isText = isKnownTextPath(entry.path)
       const data = new Uint8Array(entry.data)
       const decoded = isText ? textDecoder.decode(data) : undefined
       const textContent = decoded && isTypstFilePath(entry.path)
@@ -691,7 +693,10 @@ async function preparePackage(spec: ResolvedSpec): Promise<PreparedPackage> {
     }
 
     const prepared: PreparedPackage = applyCompatToPreparedPackage({ spec, files })
-    inMemoryPrepared.set(memoryKey, prepared)
+    setPreparedWithCap(memoryKey, prepared)
+    // The raw archive is only needed for extraction; the IDB copy remains
+    // available for future sessions.
+    inMemoryArchives.delete(packageCacheKey(spec))
     return prepared
   })()
 
@@ -739,6 +744,15 @@ function buildTemplateMetadata(spec: ResolvedSpec, entrypoint: string): ProjectT
   }
 }
 
+function isValidSemver(version: string): boolean {
+  try {
+    parseVersion(version)
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function resolveSpec(inputSpec: string): Promise<ResolvedSpec> {
   const parsed = parsePackageSpec(inputSpec)
 
@@ -755,24 +769,11 @@ export async function resolveSpec(inputSpec: string): Promise<ResolvedSpec> {
     throw new Error(`failed to find package @preview/${parsed.name}`)
   }
 
-  const validVersions = matches.filter((version) => {
-    try {
-      compareSemver(version, version)
-      return true
-    } catch {
-      return false
-    }
-  })
+  const validVersions = matches.filter(isValidSemver)
   if (validVersions.length === 0) {
     throw new Error(`failed to find package @preview/${parsed.name}`)
   }
-  validVersions.sort((a, b) => {
-    try {
-      return compareSemver(a, b)
-    } catch {
-      return 0
-    }
-  })
+  validVersions.sort(compareSemver)
   const latest = validVersions[validVersions.length - 1]
   return normalizeResolvedSpec(parsed, latest)
 }

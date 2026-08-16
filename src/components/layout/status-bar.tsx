@@ -1,6 +1,7 @@
 import { useUIStore } from '@/stores/ui-store'
 import { useCompileStore } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
+import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 
 const separatorStyle = {
@@ -19,6 +20,7 @@ export function StatusBar() {
   const errors = useCompileStore((s) => s.errorCount)
   const warnings = useCompileStore((s) => s.warningCount)
   const saveStatus = useEditorStore((s) => s.saveStatus)
+  const saveError = useProjectStore((s) => s.saveError)
   const vimMode = useSettingsStore((s) => s.vimMode)
   const compilerLabel = compileStatus === 'compiling'
     ? 'Compiling'
@@ -42,13 +44,21 @@ export function StatusBar() {
         padding: '0 10px',
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" role="status">
         <span>{compilerLabel}</span>
-        {saveStatus === 'unsaved' && (
-          <span style={{ color: 'var(--accent)', fontWeight: 700 }}>Unsaved</span>
-        )}
-        {saveStatus === 'saving' && (
-          <span>Saving...</span>
+        {saveError ? (
+          <span style={{ color: 'var(--status-error)', fontWeight: 700 }} title={saveError.message}>
+            Save failed — {saveError.quota ? 'storage full' : 'error'}
+          </span>
+        ) : (
+          <>
+            {saveStatus === 'unsaved' && (
+              <span style={{ color: 'var(--accent)', fontWeight: 700 }}>Unsaved</span>
+            )}
+            {saveStatus === 'saving' && (
+              <span>Saving...</span>
+            )}
+          </>
         )}
       </div>
 

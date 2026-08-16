@@ -17,7 +17,11 @@ const EMPTY_INDEX: ProjectFileIndex = {
   searchablePathEntries: [],
 }
 
-const indexCache = new Map<string, { updatedAt: number; index: ProjectFileIndex }>()
+// Keyed on project object identity: every store mutation replaces the project
+// object, so identity is a precise change signal (unlike millisecond updatedAt,
+// which collides when two mutations land in the same ms), and WeakMap lets
+// deleted projects — including their binaryData — be garbage collected.
+const indexCache = new WeakMap<Project, ProjectFileIndex>()
 
 export function isHiddenInternalPath(path: string): boolean {
   return path.startsWith('/.typsmthng/')
@@ -26,9 +30,9 @@ export function isHiddenInternalPath(path: string): boolean {
 export function getProjectFileIndex(project?: Project | null): ProjectFileIndex {
   if (!project) return EMPTY_INDEX
 
-  const cached = indexCache.get(project.id)
-  if (cached && cached.updatedAt === project.updatedAt) {
-    return cached.index
+  const cached = indexCache.get(project)
+  if (cached) {
+    return cached
   }
 
   const treeFiles = project.files.filter((file) => !isHiddenInternalPath(file.path))
@@ -46,6 +50,6 @@ export function getProjectFileIndex(project?: Project | null): ProjectFileIndex 
     searchablePaths: searchablePathEntries.map((entry) => entry.path),
   }
 
-  indexCache.set(project.id, { updatedAt: project.updatedAt, index })
+  indexCache.set(project, index)
   return index
 }

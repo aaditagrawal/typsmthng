@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { unzipSync, zipSync } from 'fflate'
+import { strFromU8, unzipSync, zipSync } from 'fflate'
 
 interface MockProjectFile {
   path: string
@@ -36,11 +36,13 @@ const mocked = vi.hoisted(() => {
     currentProjectId: string | null
     currentFilePath: string | null
     hasSelectedProject: boolean
+    failPersistNames: string[]
   } = {
     projects: [],
     currentProjectId: null,
     currentFilePath: null,
     hasSelectedProject: false,
+    failPersistNames: [],
   }
 
   const createProject = vi.fn(async (
@@ -68,21 +70,37 @@ const mocked = vi.hoisted(() => {
       state.currentFilePath = scaffold?.mainFile ?? '/main.typ'
       state.hasSelectedProject = true
     }
-    return id
+    if (state.failPersistNames.includes(name)) {
+      return {
+        id,
+        persisted: false,
+        persistError: new DOMException('quota exceeded', 'QuotaExceededError'),
+      }
+    }
+    return { id, persisted: true }
+  })
+
+  const updateFileContent = vi.fn((path: string, content: string) => {
+    const project = state.projects.find((p) => p.id === state.currentProjectId)
+    const file = project?.files.find((f) => f.path === path && !f.isBinary)
+    if (file) file.content = content
   })
 
   const saveCurrentProject = vi.fn(async () => {})
 
-  return { state, createProject, saveCurrentProject }
+  return { state, createProject, updateFileContent, saveCurrentProject }
 })
 
 vi.mock('@/stores/project-store', () => ({
+  isQuotaExceededError: (err: unknown) => err instanceof DOMException && err.name === 'QuotaExceededError',
   useProjectStore: {
     getState: () => ({
       createProject: mocked.createProject,
+      updateFileContent: mocked.updateFileContent,
       saveCurrentProject: mocked.saveCurrentProject,
       getCurrentProject: () => mocked.state.projects.find((p) => p.id === mocked.state.currentProjectId),
       projects: mocked.state.projects,
+      currentFilePath: mocked.state.currentFilePath,
     }),
     setState: (updater: unknown) => {
       const next = typeof updater === 'function'
@@ -123,7 +141,9 @@ describe('project-io import classification', () => {
     mocked.state.currentProjectId = null
     mocked.state.currentFilePath = null
     mocked.state.hasSelectedProject = false
+    mocked.state.failPersistNames = []
     mocked.createProject.mockClear()
+    mocked.updateFileContent.mockClear()
     mocked.saveCurrentProject.mockClear()
     vi.spyOn(window, 'alert').mockImplementation(() => {})
   })
@@ -329,6 +349,80 @@ describe('project-io import classification', () => {
     const project = mocked.state.projects[0]
     expect(project.files.map((f) => f.path)).toEqual(['/main.typ'])
   })
+
+  it('decodes non-UTF-8 text files as Windows-1252 with a warning instead of corrupting them', async () => {
+    const zipped = zipSync({
+      'main.typ': asciiBytes('= Paper'),
+      // "café" in latin-1/windows-1252: 0xE9 is invalid UTF-8.
+      'notes.txt': new Uint8Array([0x63, 0x61, 0x66, 0xe9]),
+    })
+
+    const result = await importProject(makeZipFileLike('Legacy.zip', zipped))
+    const project = mocked.state.projects[0]
+    const notes = project.files.find((f) => f.path === '/notes.txt')
+
+    expect(notes?.isBinary).toBe(false)
+    expect(notes?.content).toBe('café')
+    expect(result?.warnings.some((w) => (
+      w.message.includes('/notes.txt') && w.message.includes('Windows-1252')
+    ))).toBe(true)
+  })
+
+  it('rewrites #import path literals after collision renames', async () => {
+    const zipped = zipSync({
+      'one.tex': asciiBytes('\\section{First}'),
+      'one.TEX': asciiBytes('\\section{Second}'),
+      'main.typ': asciiBytes('#import "one.typ": *'),
+    })
+
+    await importProject(makeZipFileLike('Imports.zip', zipped))
+    const project = mocked.state.projects[0]
+    const byPath = Object.fromEntries(project.files.map((f) => [f.path, f.content]))
+
+    expect(Object.keys(byPath).sort()).toEqual(['/main.typ', '/one-2.typ', '/one.typ'])
+    expect(byPath['/main.typ']).toContain('#import "one-2.typ": *')
+    expect(byPath['/main.typ']).not.toContain('#import "one.typ"')
+  })
+
+  it('counts only persisted projects in importAllProjects and alerts on failures', async () => {
+    mocked.state.failPersistNames = ['Beta']
+    const zipped = zipSync({
+      'Alpha/main.typ': asciiBytes('= Alpha'),
+      'Beta/main.typ': asciiBytes('= Beta'),
+    })
+
+    const imported = await importAllProjects(makeZipFileLike('bundle.zip', zipped))
+
+    expect(imported).toBe(1)
+    expect(window.alert).toHaveBeenCalledWith(
+      expect.stringContaining('1 project could not be saved — storage is full'),
+    )
+  })
+
+  it('throws from importAllProjects when no project could be persisted', async () => {
+    mocked.state.failPersistNames = ['Alpha']
+    const zipped = zipSync({
+      'Alpha/main.typ': asciiBytes('= Alpha'),
+    })
+
+    await expect(importAllProjects(makeZipFileLike('bundle.zip', zipped)))
+      .rejects.toThrow('No projects could be saved — storage is full')
+  })
+
+  it('reports skipped root-level zip entries in importAllProjects', async () => {
+    const zipped = zipSync({
+      'loose.txt': asciiBytes('not in a project folder'),
+      'stray.typ': asciiBytes('= stray'),
+      'Alpha/main.typ': asciiBytes('= Alpha'),
+    })
+
+    const imported = await importAllProjects(makeZipFileLike('bundle.zip', zipped))
+
+    expect(imported).toBe(1)
+    expect(window.alert).toHaveBeenCalledWith(
+      expect.stringContaining('2 root-level files were skipped'),
+    )
+  })
 })
 
 describe('project-io zip helpers', () => {
@@ -381,7 +475,9 @@ describe('project-io export', () => {
     mocked.state.projects = []
     mocked.state.currentProjectId = null
     mocked.state.currentFilePath = null
+    mocked.state.failPersistNames = []
     mocked.createProject.mockClear()
+    mocked.updateFileContent.mockClear()
     vi.restoreAllMocks()
     vi.spyOn(window, 'alert').mockImplementation(() => {})
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:export')
@@ -443,6 +539,35 @@ describe('project-io export', () => {
     expect(byPath['/shared.typ']).toContain('Converted shared')
     expect(byPath['/shared-2.typ']).toContain('Native shared')
     expect(result?.warnings.some((w) => w.message.includes('/shared-2.typ'))).toBe(true)
+  })
+
+  it('flushes the live editor buffer into exported zips', async () => {
+    const { useEditorStore } = await import('@/stores/editor-store')
+    mocked.state.projects = [{
+      id: 'p1',
+      name: 'Live',
+      files: [{ path: '/main.typ', content: '= stale store copy', isBinary: false, lastModified: 1 }],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+    mocked.state.currentProjectId = 'p1'
+    mocked.state.currentFilePath = '/main.typ'
+    useEditorStore.setState({ source: '= fresh typing', isDirty: true, saveStatus: 'unsaved' })
+
+    await exportProject()
+
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const unzipped = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+    expect(strFromU8(unzipped['main.typ'])).toBe('= fresh typing')
+
+    vi.mocked(URL.createObjectURL).mockClear()
+    await exportAllProjects()
+    const allBlob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    const allUnzipped = unzipSync(new Uint8Array(await allBlob.arrayBuffer()))
+    expect(strFromU8(allUnzipped['Live/main.typ'])).toBe('= fresh typing')
+
+    useEditorStore.setState({ source: '', isDirty: false, saveStatus: 'saved' })
   })
 
   it('warns when export skips binaries with missing data', async () => {

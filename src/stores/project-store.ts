@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
+import { isHiddenInternalPath } from '@/lib/file-index'
 import { useCompileStore } from './compile-store'
 import { useEditorStore } from './editor-store'
 
@@ -11,37 +12,113 @@ const projectsStore = createStore('typsmthng-projects', 'projects')
 const legacyHomeStore = createStore('typsmthng-projects', 'home')
 const HOME_META_KEY = 'home-meta'
 const RECOVERY_JOURNAL_KEY = 'typsmthng-recovery-journal'
+// Skip journaling pathological single-file edits; localStorage quota is ~5MB.
+const RECOVERY_JOURNAL_MAX_ENTRY_CHARS = 2 * 1024 * 1024
+const RECOVERY_JOURNAL_MAX_TOTAL_CHARS = 4 * 1024 * 1024
 
-interface RecoveryJournal {
+export function isQuotaExceededError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return err.name === 'QuotaExceededError' || err.code === 22
+  }
+  return err instanceof Error && err.name === 'QuotaExceededError'
+}
+
+interface RecoveryJournalEntry {
   projectId: string
   path: string
   content: string
 }
 
-function readRecoveryJournal(): RecoveryJournal | null {
-  try {
-    const raw = localStorage.getItem(RECOVERY_JOURNAL_KEY)
-    if (!raw) return null
-    const value: unknown = JSON.parse(raw)
-    if (!value || typeof value !== 'object') return null
-    const { projectId, path, content } = value as Partial<RecoveryJournal>
-    return typeof projectId === 'string' && typeof path === 'string' && typeof content === 'string'
-      ? { projectId, path, content }
-      : null
-  } catch {
-    return null
-  }
+let recoveryJournalCache: Map<string, RecoveryJournalEntry> | null = null
+
+function recoveryJournalKey(projectId: string, path: string): string {
+  return `${projectId}\u0000${path}`
 }
 
-function writeRecoveryJournal(journal: RecoveryJournal): void {
+/** Insertion order doubles as recency: entries are re-inserted on every write. */
+function readRecoveryJournalMap(): Map<string, RecoveryJournalEntry> {
+  if (recoveryJournalCache) return recoveryJournalCache
+
+  const map = new Map<string, RecoveryJournalEntry>()
   try {
-    localStorage.setItem(RECOVERY_JOURNAL_KEY, JSON.stringify(journal))
+    const raw = localStorage.getItem(RECOVERY_JOURNAL_KEY)
+    if (raw) {
+      const value: unknown = JSON.parse(raw)
+      // Older builds stored a single journal object; accept both shapes.
+      const items = Array.isArray(value) ? value : [value]
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue
+        const { projectId, path, content } = item as Partial<RecoveryJournalEntry>
+        if (typeof projectId === 'string' && typeof path === 'string' && typeof content === 'string') {
+          map.set(recoveryJournalKey(projectId, path), { projectId, path, content })
+        }
+      }
+    }
+  } catch {
+    // Corrupt or unavailable synchronous storage; start with an empty journal.
+  }
+  recoveryJournalCache = map
+  return map
+}
+
+function persistRecoveryJournal(map: Map<string, RecoveryJournalEntry>): void {
+  try {
+    if (map.size === 0) {
+      localStorage.removeItem(RECOVERY_JOURNAL_KEY)
+    } else {
+      localStorage.setItem(RECOVERY_JOURNAL_KEY, JSON.stringify([...map.values()]))
+    }
   } catch {
     // IndexedDB autosave remains the fallback when synchronous storage is unavailable.
   }
 }
 
+function writeRecoveryJournalEntry(entry: RecoveryJournalEntry): void {
+  const map = readRecoveryJournalMap()
+  const key = recoveryJournalKey(entry.projectId, entry.path)
+
+  if (entry.content.length > RECOVERY_JOURNAL_MAX_ENTRY_CHARS) {
+    console.warn(`Skipping recovery journal for ${entry.path}: content exceeds journal size limit.`)
+    // Drop any stale smaller snapshot so recovery cannot roll the file back.
+    if (map.delete(key)) persistRecoveryJournal(map)
+    return
+  }
+
+  const existing = map.get(key)
+  if (existing?.content === entry.content) return
+
+  // Re-insert so Map iteration order stays oldest-first for eviction.
+  map.delete(key)
+  map.set(key, entry)
+
+  let total = 0
+  for (const item of map.values()) total += item.content.length
+  for (const [oldestKey, oldest] of map) {
+    if (total <= RECOVERY_JOURNAL_MAX_TOTAL_CHARS || map.size <= 1) break
+    map.delete(oldestKey)
+    total -= oldest.content.length
+  }
+
+  persistRecoveryJournal(map)
+}
+
+/** Drop journal entries the given persisted snapshot now covers (or that point at missing files). */
+function pruneRecoveryJournalForProject(project: Project): void {
+  const map = readRecoveryJournalMap()
+  let changed = false
+  for (const [key, entry] of map) {
+    if (entry.projectId !== project.id) continue
+    const file = project.files.find((item) => item.path === entry.path && !item.isBinary)
+    if (!file || file.content === entry.content) {
+      map.delete(key)
+      changed = true
+    }
+  }
+  if (changed) persistRecoveryJournal(map)
+}
+
 function clearRecoveryJournal(): void {
+  recoveryJournalCache = null
   try {
     localStorage.removeItem(RECOVERY_JOURNAL_KEY)
   } catch {
@@ -137,6 +214,19 @@ export interface CreateProjectOptions {
   select?: boolean
 }
 
+export interface CreateProjectResult {
+  id: string
+  /** False when the project exists in memory but could not be written to IndexedDB. */
+  persisted: boolean
+  /** The persistence error, when `persisted` is false. */
+  persistError?: unknown
+}
+
+export interface ProjectSaveError {
+  message: string
+  quota: boolean
+}
+
 export interface ProjectFile {
   path: string
   content: string
@@ -200,8 +290,9 @@ interface ProjectState {
   sidebarOpen: boolean
   loading: boolean
   hasSelectedProject: boolean
+  saveError: ProjectSaveError | null
   loadProjects: () => Promise<void>
-  createProject: (name: string, scaffold?: ProjectScaffold, options?: CreateProjectOptions) => Promise<string>
+  createProject: (name: string, scaffold?: ProjectScaffold, options?: CreateProjectOptions) => Promise<CreateProjectResult>
   deleteProject: (id: string) => Promise<void>
   renameProject: (id: string, name: string) => Promise<void>
   createHomeWorkspace: (name: string, projectIds?: string[]) => Promise<string>
@@ -266,10 +357,22 @@ function persistHomeMeta(getState: () => ProjectState): Promise<void> {
     try {
       await idbSet(HOME_META_KEY, homeMeta, projectsStore)
     } catch (err) {
-      console.warn('Failed to persist home metadata to IDB:', err)
+      console.error(
+        isQuotaExceededError(err)
+          ? 'Failed to persist home metadata to IDB (storage full):'
+          : 'Failed to persist home metadata to IDB:',
+        err,
+      )
     }
   })
   return homeMetaWriteChain
+}
+
+/** Files eligible to become mainFile / currentFilePath after a delete. */
+function isSelectableFallbackFile(file: ProjectFile): boolean {
+  return !file.isBinary
+    && !file.path.endsWith('.folder')
+    && !isHiddenInternalPath(file.path)
 }
 
 function createDefaultProject(): Project {
@@ -298,6 +401,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   sidebarOpen: false,
   loading: true,
   hasSelectedProject: false,
+  saveError: null,
 
   loadProjects: async () => {
     const projects: Project[] = []
@@ -329,31 +433,46 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       try {
         await idbSet(defaultProject.id, defaultProject, projectsStore)
       } catch (err) {
-        console.warn('Failed to save default project to IDB:', err)
+        console.error(
+          isQuotaExceededError(err)
+            ? 'Failed to save default project to IDB (storage full):'
+            : 'Failed to save default project to IDB:',
+          err,
+        )
       }
       projects.push(defaultProject)
     }
 
-    const recoveryJournal = readRecoveryJournal()
-    if (recoveryJournal) {
-      const project = projects.find((item) => item.id === recoveryJournal.projectId)
-      const file = project?.files.find((item) => (
-        item.path === recoveryJournal.path && !item.isBinary
-      ))
-      if (project && file) {
+    const recoveryJournal = readRecoveryJournalMap()
+    if (recoveryJournal.size > 0) {
+      const recoveredKeysByProject = new Map<Project, string[]>()
+      for (const [key, entry] of recoveryJournal) {
+        const project = projects.find((item) => item.id === entry.projectId)
+        const file = project?.files.find((item) => (
+          item.path === entry.path && !item.isBinary
+        ))
+        if (!project || !file) {
+          // Stale entry: the project or file no longer exists.
+          recoveryJournal.delete(key)
+          continue
+        }
         const recoveredAt = Date.now()
-        file.content = recoveryJournal.content
+        file.content = entry.content
         file.lastModified = recoveredAt
         project.updatedAt = recoveredAt
+        const keys = recoveredKeysByProject.get(project) ?? []
+        keys.push(key)
+        recoveredKeysByProject.set(project, keys)
+      }
+      for (const [project, keys] of recoveredKeysByProject) {
         try {
           await idbSet(project.id, project, projectsStore)
-          clearRecoveryJournal()
+          for (const key of keys) recoveryJournal.delete(key)
         } catch (err) {
           console.warn('Failed to persist recovered editor content to IDB:', err)
         }
-      } else {
-        clearRecoveryJournal()
       }
+      persistRecoveryJournal(recoveryJournal)
     }
 
     // Migrate the legacy seeded `default` project when its main file was stored
@@ -435,10 +554,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       createdAt: now,
       updatedAt: now,
     }
+    let persisted = true
+    let persistError: unknown
     try {
       await idbSet(id, project, projectsStore)
     } catch (err) {
-      console.warn('Failed to save new project to IDB:', err)
+      persisted = false
+      persistError = err
+      console.error('Failed to save new project to IDB:', err)
+      // Bulk import (select: false) reports persistence failures itself.
+      if (select) {
+        window.alert(isQuotaExceededError(err)
+          ? `Project "${name}" could not be saved — storage is full. It will disappear when this tab is closed.`
+          : `Project "${name}" could not be saved to browser storage and may disappear on reload.`)
+      }
     }
 
     const selectedWorkspaceId = get().selectedHomeWorkspaceId
@@ -464,7 +593,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (selectedWorkspaceId) {
       await persistHomeMeta(get)
     }
-    return id
+    return persisted ? { id, persisted } : { id, persisted, persistError }
   },
 
   deleteProject: async (id) => {
@@ -708,18 +837,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!project) return s
 
       const nextFiles = project.files.filter((f) => f.path !== path)
+      const fallbackFile = nextFiles.find(isSelectableFallbackFile)
       let nextMainFile = project.mainFile
       if (nextMainFile === path) {
-        nextMainFile = nextFiles.find((f) => !f.isBinary)?.path
-          ?? nextFiles[0]?.path
-          ?? '/main.typ'
+        nextMainFile = fallbackFile?.path ?? ''
       }
 
       let nextCurrentPath = s.currentFilePath
       if (nextCurrentPath === path) {
         nextCurrentPath = nextFiles.some((f) => f.path === nextMainFile)
           ? nextMainFile
-          : (nextFiles[0]?.path ?? null)
+          : (fallbackFile?.path ?? null)
       }
 
       return {
@@ -790,7 +918,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return { projects: nextProjects }
     })
     if (!changed) return
-    writeRecoveryJournal({ projectId, path, content })
+    writeRecoveryJournalEntry({ projectId, path, content })
     scheduleAutoSave(projectId, (id) => get().saveProject(id))
   },
 
@@ -907,9 +1035,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const project = s.projects.find((p) => p.id === s.currentProjectId)
       if (!project) return s
       const remainingFiles = project.files.filter((f) => !f.path.startsWith(prefix))
-      const fallbackFile = remainingFiles.find((file) => (
-        !file.isBinary && !file.path.endsWith('.folder')
-      ))
+      const fallbackFile = remainingFiles.find(isSelectableFallbackFile)
       const mainWasRemoved = project.mainFile.startsWith(prefix)
       const nextMainFile = mainWasRemoved
         ? (fallbackFile?.path ?? '')
@@ -1001,12 +1127,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
         await idbSet(id, latest, projectsStore)
 
-        const recoveryJournal = readRecoveryJournal()
-        const persistedRecoveryFile = recoveryJournal?.projectId === id
-          ? latest.files.find((file) => file.path === recoveryJournal.path && !file.isBinary)
-          : undefined
-        if (recoveryJournal && persistedRecoveryFile?.content === recoveryJournal.content) {
-          clearRecoveryJournal()
+        pruneRecoveryJournalForProject(latest)
+        if (get().saveError) {
+          set({ saveError: null })
         }
 
         // Reconcile races that landed during idbSet:
@@ -1031,10 +1154,30 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         }
 
         if (get().currentProjectId === id && get().projects.some((p) => p.id === id)) {
-          useEditorStore.setState({ isDirty: false, saveStatus: 'saved' })
+          // Only clear dirty state when the live editor buffer matches what we
+          // just persisted — the user may have typed during the await above.
+          const editor = useEditorStore.getState()
+          const currentPath = get().currentFilePath
+          const persistedFile = currentPath
+            ? latest.files.find((file) => file.path === currentPath && !file.isBinary)
+            : undefined
+          if (!persistedFile || !editor.isDirty || editor.source === persistedFile.content) {
+            useEditorStore.setState({ isDirty: false, saveStatus: 'saved' })
+          } else {
+            useEditorStore.setState({ saveStatus: 'unsaved' })
+          }
         }
       } catch (err) {
         console.warn('Failed to save project to IDB:', err)
+        const quota = isQuotaExceededError(err)
+        set({
+          saveError: {
+            quota,
+            message: quota
+              ? 'Save failed — browser storage is full. Free up space to keep your changes.'
+              : 'Save failed — changes could not be written to browser storage.',
+          },
+        })
         if (get().currentProjectId === id) {
           useEditorStore.setState({ saveStatus: 'unsaved', isDirty: true })
         }
