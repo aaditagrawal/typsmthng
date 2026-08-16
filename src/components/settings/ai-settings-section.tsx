@@ -117,6 +117,7 @@ export function AiSettingsSection() {
         <button
           type="button"
           role="switch"
+          aria-label="AI Editing"
           aria-checked={enabled}
           onClick={() => setEnabled(!enabled)}
           onKeyDown={(e) => {

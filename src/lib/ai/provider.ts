@@ -23,6 +23,10 @@ export class AiRequestError extends Error {
 
 const ANTHROPIC_VERSION = '2023-06-01'
 const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+/** Time allowed for the server to return response headers. */
+const STREAM_CONNECT_TIMEOUT_MS = 30_000
+/** Max silence between stream chunks before the request is treated as stalled. */
+const STREAM_IDLE_TIMEOUT_MS = 90_000
 
 /** Trim whitespace and trailing slashes from a user-entered base URL. */
 export function normalizeBaseUrl(baseUrl: string): string {
@@ -61,12 +65,19 @@ export interface SseEvent {
   data: string
 }
 
+/** Structural subset of ReadableStreamDefaultReader, so callers can wrap reads. */
+export interface SseReader {
+  read(): Promise<ReadableStreamReadResult<Uint8Array>>
+  cancel(): Promise<void>
+  releaseLock(): void
+}
+
 /**
  * Read an SSE byte stream to completion, invoking `onEvent` per `data:` line.
  * Returns early if `onEvent` returns `false` (stream is cancelled).
  */
 export async function consumeSseStream(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
+  reader: SseReader,
   onEvent: (event: SseEvent) => boolean | void,
 ): Promise<void> {
   const decoder = new TextDecoder()
@@ -229,59 +240,97 @@ export async function streamCompletion(opts: {
 }): Promise<string> {
   const { config, system, userPrompt, signal, onDelta } = opts
   const body = buildRequestBody(config, system, userPrompt, { stream: true })
-  const response = await postCompletion(config, body, signal)
-  if (!response.body) {
-    throw new AiRequestError(0, 'Server returned no response body.')
+
+  // Guard against servers that accept the request but stop sending data: a
+  // connect timeout until headers arrive, then an idle watchdog that resets on
+  // every received chunk. A flat request timeout would kill legitimately long
+  // generations, so only silence is treated as a stall.
+  const watchdog = new AbortController()
+  let stalled = false
+  let watchdogTimer: ReturnType<typeof setTimeout> | null = null
+  const armWatchdog = (ms: number) => {
+    if (watchdogTimer !== null) clearTimeout(watchdogTimer)
+    watchdogTimer = setTimeout(() => {
+      stalled = true
+      watchdog.abort()
+    }, ms)
   }
+  const effectiveSignal = AbortSignal.any([signal, watchdog.signal])
 
   let accumulated = ''
   let streamError: AiRequestError | null = null
-  const reader = response.body.getReader()
+  try {
+    armWatchdog(STREAM_CONNECT_TIMEOUT_MS)
+    const response = await postCompletion(config, body, effectiveSignal)
+    if (!response.body) {
+      throw new AiRequestError(0, 'Server returned no response body.')
+    }
 
-  await consumeSseStream(reader, ({ event, data }) => {
-    if (config.protocol === 'openai') {
-      if (data === '[DONE]') return false
-      let chunk: OpenAiStreamChunk
+    const reader = response.body.getReader()
+    const watchedReader: SseReader = {
+      read: () => {
+        armWatchdog(STREAM_IDLE_TIMEOUT_MS)
+        return reader.read()
+      },
+      cancel: () => reader.cancel(),
+      releaseLock: () => reader.releaseLock(),
+    }
+
+    await consumeSseStream(watchedReader, ({ event, data }) => {
+      if (config.protocol === 'openai') {
+        if (data === '[DONE]') return false
+        let chunk: OpenAiStreamChunk
+        try {
+          chunk = JSON.parse(data) as OpenAiStreamChunk
+        } catch {
+          return true
+        }
+        if (chunk.error?.message) {
+          streamError = new AiRequestError(0, chunk.error.message)
+          return false
+        }
+        const delta = chunk.choices?.[0]?.delta?.content ?? ''
+        if (delta) {
+          accumulated += delta
+          onDelta(delta)
+        }
+        return true
+      }
+
+      // Anthropic protocol
+      let parsed: AnthropicStreamEvent
       try {
-        chunk = JSON.parse(data) as OpenAiStreamChunk
+        parsed = JSON.parse(data) as AnthropicStreamEvent
       } catch {
         return true
       }
-      if (chunk.error?.message) {
-        streamError = new AiRequestError(0, chunk.error.message)
+      const type = parsed.type ?? event
+      if (type === 'error' || event === 'error') {
+        streamError = new AiRequestError(0, parsed.error?.message ?? 'Server reported a stream error.')
         return false
       }
-      const delta = chunk.choices?.[0]?.delta?.content ?? ''
-      if (delta) {
-        accumulated += delta
-        onDelta(delta)
+      if (type === 'message_stop') return false
+      if (type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+        const delta = parsed.delta.text ?? ''
+        if (delta) {
+          accumulated += delta
+          onDelta(delta)
+        }
       }
+      // thinking_delta and other block types are intentionally ignored.
       return true
+    })
+  } catch (err) {
+    if (stalled) {
+      throw new AiRequestError(
+        0,
+        `The stream stalled (no data for ${Math.round(STREAM_IDLE_TIMEOUT_MS / 1000)}s). Check the server and try again.`,
+      )
     }
-
-    // Anthropic protocol
-    let parsed: AnthropicStreamEvent
-    try {
-      parsed = JSON.parse(data) as AnthropicStreamEvent
-    } catch {
-      return true
-    }
-    const type = parsed.type ?? event
-    if (type === 'error' || event === 'error') {
-      streamError = new AiRequestError(0, parsed.error?.message ?? 'Server reported a stream error.')
-      return false
-    }
-    if (type === 'message_stop') return false
-    if (type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
-      const delta = parsed.delta.text ?? ''
-      if (delta) {
-        accumulated += delta
-        onDelta(delta)
-      }
-    }
-    // thinking_delta and other block types are intentionally ignored.
-    return true
-  })
+    throw err
+  } finally {
+    if (watchdogTimer !== null) clearTimeout(watchdogTimer)
+  }
 
   if (streamError) throw streamError
   if (signal.aborted) {

@@ -94,6 +94,35 @@ describe('AI store', () => {
     expect(state.maxTokens).toBe(4096)
   })
 
+  it('does not let a slow hydration read overwrite newer setter values', async () => {
+    mockIdb.__store.set('ai-settings', {
+      enabled: false,
+      protocol: 'openai',
+      baseUrl: 'http://stale:1234',
+      apiKey: 'stale-key',
+      model: 'stale-model',
+      maxTokens: 1024,
+    })
+    // Defer the IDB read so a setter can run while it is in flight.
+    let releaseRead: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      releaseRead = resolve
+    })
+    const realGet = vi.mocked(idbKeyval.get).getMockImplementation()
+    vi.mocked(idbKeyval.get).mockImplementationOnce(async (key, store) => {
+      await gate
+      return realGet?.(key, store)
+    })
+
+    const loading = useAiStore.getState().loadAiSettings()
+    useAiStore.getState().setBaseUrl('http://fresh:9999')
+    releaseRead?.()
+    await loading
+
+    expect(useAiStore.getState().baseUrl).toBe('http://fresh:9999')
+    expect(useAiStore.getState().model).not.toBe('stale-model')
+  })
+
   it('exposes a request config snapshot', () => {
     useAiStore.getState().setBaseUrl('http://localhost:11434/v1')
     useAiStore.getState().setModel('llama3')

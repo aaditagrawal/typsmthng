@@ -3,7 +3,7 @@ import type { EditorView } from '@codemirror/view'
 import { useProjectStore } from '@/stores/project-store'
 import { useCompileStore } from '@/stores/compile-store'
 import { getAiConfig } from '@/stores/ai-store'
-import { registerAiInlineTrigger } from '@/lib/ai/inline-trigger'
+import { registerAiInlineTrigger, unregisterAiInlineTrigger } from '@/lib/ai/inline-trigger'
 import { streamCompletion, AiRequestError } from '@/lib/ai/provider'
 import { buildSystemPrompt, buildEditPrompt, stripCodeFences } from '@/lib/ai/prompts'
 
@@ -115,11 +115,12 @@ export function AiInlinePanel() {
 
   // Expose the open handler to the Mod-i keybinding in lib/keybindings.ts.
   useEffect(() => {
-    registerAiInlineTrigger((view) => {
+    const handler = (view: EditorView) => {
       openPanel(view)
       return true
-    })
-    return () => registerAiInlineTrigger(null)
+    }
+    registerAiInlineTrigger(handler)
+    return () => unregisterAiInlineTrigger(handler)
   }, [openPanel])
 
   // Focus the instruction input when the panel opens.
@@ -172,6 +173,13 @@ export function AiInlinePanel() {
       diagnostics,
     })
 
+    const config = getAiConfig()
+    if (!config.baseUrl.trim() || !config.model.trim()) {
+      setStatus('error')
+      setError('Configure the AI base URL and model in Settings first.')
+      return
+    }
+
     const controller = new AbortController()
     abortRef.current = controller
     setStatus('streaming')
@@ -180,7 +188,7 @@ export function AiInlinePanel() {
     setError(null)
 
     streamCompletion({
-      config: getAiConfig(),
+      config,
       system: buildSystemPrompt(),
       userPrompt,
       signal: controller.signal,
@@ -305,6 +313,7 @@ export function AiInlinePanel() {
         type="text"
         value={instruction}
         onChange={(e) => setInstruction(e.target.value)}
+        aria-label="AI edit instruction"
         placeholder={isInsertion ? 'e.g. continue writing this section' : 'e.g. convert this to a table'}
         disabled={busy}
         style={{

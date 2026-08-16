@@ -38,6 +38,9 @@ const defaults: AiSettings = {
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 const PERSIST_DEBOUNCE_MS = 300
 
+/** Bumped by every setter so a slow hydration read can't clobber newer edits. */
+let settingsRevision = 0
+
 function persistAiSettings(settings: AiSettings) {
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
@@ -66,31 +69,37 @@ export const useAiStore = create<AiState>((set, get) => ({
   ...defaults,
 
   setEnabled: (enabled) => {
+    settingsRevision += 1
     set({ enabled })
     persistAiSettings(getPersistedFields({ ...get(), enabled }))
   },
 
   setProtocol: (protocol) => {
+    settingsRevision += 1
     set({ protocol })
     persistAiSettings(getPersistedFields({ ...get(), protocol }))
   },
 
   setBaseUrl: (baseUrl) => {
+    settingsRevision += 1
     set({ baseUrl })
     persistAiSettings(getPersistedFields({ ...get(), baseUrl }))
   },
 
   setApiKey: (apiKey) => {
+    settingsRevision += 1
     set({ apiKey })
     persistAiSettings(getPersistedFields({ ...get(), apiKey }))
   },
 
   setModel: (model) => {
+    settingsRevision += 1
     set({ model })
     persistAiSettings(getPersistedFields({ ...get(), model }))
   },
 
   setMaxTokens: (maxTokens) => {
+    settingsRevision += 1
     const clamped = Math.min(1_000_000, Math.max(0, Math.floor(maxTokens) || 0))
     set({ maxTokens: clamped })
     persistAiSettings(getPersistedFields({ ...get(), maxTokens: clamped }))
@@ -98,7 +107,10 @@ export const useAiStore = create<AiState>((set, get) => ({
 
   loadAiSettings: async () => {
     try {
+      const revisionAtStart = settingsRevision
       const saved = await idbGet<AiSettings>(AI_SETTINGS_KEY, aiDb)
+      // A setter ran while the read was in flight; its values are newer.
+      if (settingsRevision !== revisionAtStart) return
       if (saved) {
         set({
           enabled: saved.enabled ?? defaults.enabled,

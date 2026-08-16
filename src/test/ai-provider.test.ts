@@ -249,3 +249,39 @@ describe('testConnection', () => {
     expect((await testConnection(makeConfig({ model: '' }))).ok).toBe(false)
   })
 })
+
+describe('streamCompletion — stall watchdog', () => {
+  it('aborts and reports a stalled stream when the server goes silent', async () => {
+    vi.useFakeTimers()
+    try {
+      const encoder = new TextEncoder()
+      const fetchMock = vi.fn(async (_url: unknown, init?: RequestInit) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n'))
+            // Never closes; error the stream when the request signal aborts,
+            // mirroring real fetch behavior.
+            init?.signal?.addEventListener('abort', () => {
+              controller.error(new DOMException('The operation was aborted.', 'AbortError'))
+            })
+          },
+        })
+        return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+
+      const promise = streamCompletion({
+        config: makeConfig(),
+        system: 'sys',
+        userPrompt: 'user',
+        signal: new AbortController().signal,
+        onDelta: () => {},
+      })
+      const assertion = expect(promise).rejects.toThrow(/stalled/)
+      await vi.advanceTimersByTimeAsync(120_000)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
