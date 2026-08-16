@@ -7,6 +7,7 @@ import { useProjectStore } from '@/stores/project-store'
 import type { PageSize } from '@/stores/settings-store'
 import { forceCompile } from '@/lib/compile-manager'
 import { useModalA11y } from '@/components/ui/context-menu'
+import { AiSettingsSection } from './ai-settings-section'
 
 type Theme = 'light' | 'dark' | 'system'
 
@@ -447,6 +448,8 @@ export function SettingsModal() {
               </div>
             )}
           </SettingRow>
+
+          <AiSettingsSection />
         </div>
 
         {/* Footer */}

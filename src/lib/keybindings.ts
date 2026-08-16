@@ -5,6 +5,8 @@ import { forceCompile } from './compile-manager'
 import { useSettingsStore } from '@/stores/settings-store'
 import { exportCurrentProjectPdf } from './pdf-export'
 import { toggleTypstLineComment } from './commenting'
+import { useAiStore } from '@/stores/ai-store'
+import { triggerAiInline } from './ai/inline-trigger'
 
 export const typstKeymap: KeyBinding[] = [
   {
@@ -35,6 +37,14 @@ export const typstKeymap: KeyBinding[] = [
   // Mod-j also has a window-level fallback in App.tsx so the theme toggle
   // works when focus is outside CodeMirror; that handler skips events this
   // binding already consumed.
+  {
+    key: 'Mod-i',
+    run: (view) => {
+      // Opt-in: fall through to default Mod-i behavior until AI is configured.
+      if (!useAiStore.getState().enabled) return false
+      return triggerAiInline(view)
+    },
+  },
   {
     key: 'Mod-j',
     run: () => {

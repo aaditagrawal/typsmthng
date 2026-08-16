@@ -13,6 +13,7 @@ import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { createEditorTheme } from './theme'
+import { AiInlinePanel } from './ai-inline-panel'
 import { requestCompile, forceCompile, ensureCompilerReady } from '@/lib/compile-manager'
 import { typstKeymap } from '@/lib/keybindings'
 import { sourceHighlightField } from '@/lib/editor-highlight'
@@ -473,10 +474,13 @@ export function TypstEditor() {
   }, [flushPendingProjectSync])
 
   return (
-    <div
-      ref={editorRef}
-      className="h-full w-full overflow-hidden"
-      style={{ background: 'var(--bg-surface)' }}
-    />
+    <>
+      <div
+        ref={editorRef}
+        className="h-full w-full overflow-hidden"
+        style={{ background: 'var(--bg-surface)' }}
+      />
+      <AiInlinePanel />
+    </>
   )
 }
