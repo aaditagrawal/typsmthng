@@ -844,4 +844,190 @@ describe('Project Store', () => {
     await useProjectStore.getState().saveProject(id)
     expect(useProjectStore.getState().saveError).toBeNull()
   })
+
+  it('persists binary payloads as separate bin records and stitches them on load', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Binary Split')
+    useProjectStore.getState().selectProject(id)
+
+    const bytes = new Uint8Array([1, 2, 3, 4])
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/img/logo.png', data: bytes }])
+    await useProjectStore.getState().saveProject(id)
+
+    expect(mockIdb.__store.get(`bin:${id}:/img/logo.png`)).toBe(bytes)
+    const stored = mockIdb.__store.get(id) as {
+      files: Array<{ path: string; isBinary: boolean } & Record<string, unknown>>
+    }
+    const storedBinary = stored.files.find((f) => f.path === '/img/logo.png')
+    expect(storedBinary?.isBinary).toBe(true)
+    expect(storedBinary).not.toHaveProperty('binaryData')
+
+    await useProjectStore.getState().loadProjects()
+    const reloaded = useProjectStore.getState().projects.find((p) => p.id === id)
+    expect(reloaded?.files.find((f) => f.path === '/img/logo.png')?.binaryData).toEqual(bytes)
+    expect(reloaded?.files.find((f) => f.path === '/main.typ')?.isBinary).toBe(false)
+  })
+
+  it('does not rewrite binary payloads on text-only autosave', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Text Autosave')
+    useProjectStore.getState().selectProject(id)
+
+    const bytes = new Uint8Array([10, 20, 30])
+    vi.useFakeTimers()
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/img.png', data: bytes }])
+    await vi.advanceTimersByTimeAsync(2500)
+    expect(mockIdb.__store.get(`bin:${id}:/img.png`)).toBe(bytes)
+
+    vi.mocked(mockIdb.set).mockClear()
+    useProjectStore.getState().updateFileContent('/main.typ', '= one tiny edit')
+    await vi.advanceTimersByTimeAsync(2500)
+
+    const setCalls = vi.mocked(mockIdb.set).mock.calls
+    const projectWrites = setCalls.filter(([key]) => key === id)
+    expect(projectWrites.length).toBeGreaterThan(0)
+    // No bin: namespace writes, and no inline binaryData in the main record.
+    expect(setCalls.some(([key]) => String(key).startsWith('bin:'))).toBe(false)
+    for (const [, val] of projectWrites) {
+      const record = val as { files: Array<Record<string, unknown>> }
+      expect(record.files.some((f) => 'binaryData' in f)).toBe(false)
+    }
+
+    const stored = mockIdb.__store.get(id) as { files: Array<{ path: string; content: string }> }
+    expect(stored.files.find((f) => f.path === '/main.typ')?.content).toBe('= one tiny edit')
+    expect(mockIdb.__store.get(`bin:${id}:/img.png`)).toBe(bytes)
+  })
+
+  it('loads legacy inline-binary records and migrates them to the split layout on save', async () => {
+    const bytes = new Uint8Array([9, 8, 7])
+    mockIdb.__store.set('project-legacy', {
+      id: 'project-legacy',
+      name: 'Legacy',
+      files: [
+        { path: '/main.typ', content: '= Legacy', isBinary: false, lastModified: 1 },
+        { path: '/img.png', content: '', isBinary: true, binaryData: bytes, lastModified: 1 },
+      ],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+
+    await useProjectStore.getState().loadProjects()
+    const loaded = useProjectStore.getState().projects.find((p) => p.id === 'project-legacy')
+    expect(loaded?.files.find((f) => f.path === '/img.png')?.binaryData).toEqual(bytes)
+    // Legacy layout untouched until the next save.
+    expect(mockIdb.__store.has('bin:project-legacy:/img.png')).toBe(false)
+
+    await useProjectStore.getState().saveProject('project-legacy')
+    expect(mockIdb.__store.get('bin:project-legacy:/img.png')).toEqual(bytes)
+    const stored = mockIdb.__store.get('project-legacy') as {
+      files: Array<{ path: string } & Record<string, unknown>>
+    }
+    expect(stored.files.find((f) => f.path === '/img.png')).not.toHaveProperty('binaryData')
+
+    await useProjectStore.getState().loadProjects()
+    const reloaded = useProjectStore.getState().projects.find((p) => p.id === 'project-legacy')
+    expect(reloaded?.files.find((f) => f.path === '/img.png')?.binaryData).toEqual(bytes)
+  })
+
+  it('drops binary files whose payload record is missing and keeps the rest of the project', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const okBytes = new Uint8Array([7])
+    mockIdb.__store.set('project-split', {
+      id: 'project-split',
+      name: 'Split',
+      files: [
+        { path: '/main.typ', content: '= Split', isBinary: false, lastModified: 1 },
+        { path: '/missing.png', content: '', isBinary: true, lastModified: 1 },
+        { path: '/ok.png', content: '', isBinary: true, lastModified: 1 },
+      ],
+      mainFile: '/main.typ',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    mockIdb.__store.set('bin:project-split:/ok.png', okBytes)
+
+    await useProjectStore.getState().loadProjects()
+
+    const project = useProjectStore.getState().projects.find((p) => p.id === 'project-split')
+    expect(project?.files.map((f) => f.path).sort()).toEqual(['/main.typ', '/ok.png'])
+    expect(project?.files.find((f) => f.path === '/ok.png')?.binaryData).toEqual(okBytes)
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('/missing.png'))
+  })
+
+  it('cascades project deletion to its binary records', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Doomed Binaries')
+    useProjectStore.getState().selectProject(id)
+    await useProjectStore.getState().addBinaryFilesBatch([
+      { path: '/a.png', data: new Uint8Array([1]) },
+      { path: '/b.png', data: new Uint8Array([2]) },
+    ])
+    await useProjectStore.getState().saveProject(id)
+
+    const binKeysBefore = [...mockIdb.__store.keys()].filter((key) => key.startsWith(`bin:${id}:`))
+    expect(binKeysBefore.sort()).toEqual([`bin:${id}:/a.png`, `bin:${id}:/b.png`])
+
+    await useProjectStore.getState().deleteProject(id)
+
+    expect(mockIdb.__store.has(id)).toBe(false)
+    const binKeysAfter = [...mockIdb.__store.keys()].filter((key) => key.startsWith(`bin:${id}:`))
+    expect(binKeysAfter).toEqual([])
+  })
+
+  it('removes stale binary records when a binary file is renamed or deleted', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Stale Bins')
+    useProjectStore.getState().selectProject(id)
+    const bytes = new Uint8Array([3, 3])
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/img.png', data: bytes }])
+    await useProjectStore.getState().saveProject(id)
+    expect(mockIdb.__store.has(`bin:${id}:/img.png`)).toBe(true)
+
+    await useProjectStore.getState().renameFile('/img.png', '/moved.png')
+    expect(mockIdb.__store.get(`bin:${id}:/moved.png`)).toBe(bytes)
+    expect(mockIdb.__store.has(`bin:${id}:/img.png`)).toBe(false)
+
+    await useProjectStore.getState().deleteFile('/moved.png')
+    const binKeys = [...mockIdb.__store.keys()].filter((key) => key.startsWith(`bin:${id}:`))
+    expect(binKeys).toEqual([])
+  })
+
+  it('writes split records for projects created from scaffolds with binaries', async () => {
+    await useProjectStore.getState().loadProjects()
+    const bytes = new Uint8Array([4, 5, 6])
+    const { id, persisted } = await useProjectStore.getState().createProject('Imported', {
+      mainFile: '/main.typ',
+      files: [
+        { path: '/main.typ', content: '= Imported', isBinary: false },
+        { path: '/logo.png', content: '', isBinary: true, binaryData: bytes },
+      ],
+    })
+
+    expect(persisted).toBe(true)
+    expect(mockIdb.__store.get(`bin:${id}:/logo.png`)).toBe(bytes)
+    const stored = mockIdb.__store.get(id) as {
+      files: Array<{ path: string } & Record<string, unknown>>
+    }
+    expect(stored.files.find((f) => f.path === '/logo.png')).not.toHaveProperty('binaryData')
+  })
+
+  it('surfaces quota errors from binary payload writes and clears them on retry', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Quota Bin')
+    useProjectStore.getState().selectProject(id)
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/big.png', data: new Uint8Array([1]) }])
+
+    mockIdb.__failKeyPrefix('bin:', new DOMException('quota exceeded', 'QuotaExceededError'))
+    await useProjectStore.getState().saveProject(id)
+
+    const saveError = useProjectStore.getState().saveError
+    expect(saveError?.quota).toBe(true)
+    expect(saveError?.message).toContain('storage is full')
+
+    mockIdb.__clearFailures()
+    await useProjectStore.getState().saveProject(id)
+    expect(useProjectStore.getState().saveError).toBeNull()
+    expect(mockIdb.__store.get(`bin:${id}:/big.png`)).toEqual(new Uint8Array([1]))
+  })
 })

@@ -136,6 +136,140 @@ const AUTO_SAVE_MS = 2000
 /** Bumped on delete so in-flight idbSet cannot resurrect a removed project. */
 const projectPersistEpoch = new Map<string, number>()
 
+// Binary payloads are persisted as separate IDB records (`bin:{projectId}:{path}`)
+// so text-only autosaves never re-serialize multi-MB Uint8Arrays. The main
+// project record stores binary files without their `binaryData`; payloads are
+// stitched back in on load, so the split is invisible outside this module.
+// Project ids never contain `:` (they are `default` or `project-<uuid>`).
+const BINARY_RECORD_PREFIX = 'bin:'
+
+function binaryRecordKey(projectId: string, path: string): string {
+  return `${BINARY_RECORD_PREFIX}${projectId}:${path}`
+}
+
+function binaryRecordKeyPrefixForProject(projectId: string): string {
+  return `${BINARY_RECORD_PREFIX}${projectId}:`
+}
+
+/**
+ * Per-project map of path → the exact Uint8Array last persisted to its binary
+ * record. Buffer identity doubles as a dirty check: mutating actions always
+ * install a fresh Uint8Array, so `tracked.get(path) === file.binaryData` means
+ * the record on disk is already current and the payload write can be skipped.
+ * Tracked per project (not a global WeakSet) so the same buffer imported into
+ * two projects is persisted under both key namespaces.
+ */
+const persistedBinaryRecords = new Map<string, Map<string, Uint8Array>>()
+
+function trackedBinariesFor(projectId: string): Map<string, Uint8Array> {
+  let tracked = persistedBinaryRecords.get(projectId)
+  if (!tracked) {
+    tracked = new Map()
+    persistedBinaryRecords.set(projectId, tracked)
+  }
+  return tracked
+}
+
+/** The stored main-record shape: identical to Project minus binary payloads. */
+function stripBinaryPayloads(project: Project): Project {
+  if (!project.files.some((file) => file.binaryData)) return project
+  return {
+    ...project,
+    files: project.files.map((file) => (
+      file.binaryData
+        ? {
+            path: file.path,
+            content: file.content,
+            isBinary: file.isBinary,
+            lastModified: file.lastModified,
+          }
+        : file
+    )),
+  }
+}
+
+/**
+ * Persist a project using the split layout: write new/replaced binary payloads
+ * first (so the main record never references a missing payload), then the
+ * lightweight main record, then best-effort deletion of stale payload records
+ * (deleted or renamed binary files). Throws on main-record/payload write
+ * failure so callers surface quota errors exactly as before.
+ */
+async function persistProjectRecord(project: Project): Promise<void> {
+  const tracked = trackedBinariesFor(project.id)
+
+  const liveBinaryPaths = new Set<string>()
+  for (const file of project.files) {
+    if (!file.isBinary) continue
+    // Keep paths without in-memory data alive: never delete a record we may
+    // simply have failed to stitch or that another flow owns.
+    liveBinaryPaths.add(file.path)
+    if (!file.binaryData || tracked.get(file.path) === file.binaryData) continue
+    await idbSet(binaryRecordKey(project.id, file.path), file.binaryData, projectsStore)
+    tracked.set(file.path, file.binaryData)
+  }
+
+  await idbSet(project.id, stripBinaryPayloads(project), projectsStore)
+
+  for (const path of [...tracked.keys()]) {
+    if (liveBinaryPaths.has(path)) continue
+    try {
+      await idbDel(binaryRecordKey(project.id, path), projectsStore)
+      tracked.delete(path)
+    } catch (err) {
+      console.warn('Failed to delete stale binary record from IDB:', err)
+    }
+  }
+}
+
+/** Delete every `bin:{projectId}:*` record (delete cascade / rollback). */
+async function deleteProjectBinaryRecords(projectId: string): Promise<void> {
+  persistedBinaryRecords.delete(projectId)
+  const prefix = binaryRecordKeyPrefixForProject(projectId)
+  const allKeys = await idbKeys(projectsStore)
+  const targets = allKeys.filter(
+    (key): key is string => typeof key === 'string' && key.startsWith(prefix),
+  )
+  await Promise.all(targets.map((key) => idbDel(key, projectsStore)))
+}
+
+/**
+ * Reattach binary payloads to a loaded main record. Legacy records with inline
+ * `binaryData` pass through untouched (and are left untracked, so their next
+ * save migrates them to the split layout). Binary files whose payload record is
+ * missing or unreadable are dropped with a console.error rather than failing
+ * the whole project load.
+ */
+async function stitchProjectBinaries(stored: Project): Promise<Project> {
+  if (!stored.files.some((file) => file.isBinary && !file.binaryData)) return stored
+
+  const tracked = trackedBinariesFor(stored.id)
+  const files: ProjectFile[] = []
+  for (const file of stored.files) {
+    if (!file.isBinary || file.binaryData) {
+      files.push(file)
+      continue
+    }
+    try {
+      const data = await idbGet<Uint8Array>(binaryRecordKey(stored.id, file.path), projectsStore)
+      if (data instanceof Uint8Array) {
+        files.push({ ...file, binaryData: data })
+        tracked.set(file.path, data)
+      } else {
+        console.error(
+          `Missing binary record for "${file.path}" in project "${stored.id}"; dropping the file.`,
+        )
+      }
+    } catch (err) {
+      console.error(
+        `Failed to read binary record for "${file.path}" in project "${stored.id}"; dropping the file:`,
+        err,
+      )
+    }
+  }
+  return { ...stored, files }
+}
+
 /** Serialize IDB writes per project so an older in-flight save cannot clobber a newer one. */
 const projectSaveChains = new Map<string, Promise<void>>()
 
@@ -205,6 +339,7 @@ export function resetProjectPersistStateForTests(): void {
   autoSaveProjectId = null
   projectPersistEpoch.clear()
   projectSaveChains.clear()
+  persistedBinaryRecords.clear()
   homeMetaWriteChain = Promise.resolve()
   clearRecoveryJournal()
 }
@@ -406,14 +541,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadProjects: async () => {
     const projects: Project[] = []
     let homeMeta: HomeMeta | undefined
+    persistedBinaryRecords.clear()
     try {
       const allKeys = await idbKeys(projectsStore)
+      const projectKeys = allKeys.filter(
+        (key): key is string => typeof key === 'string' && !key.startsWith(BINARY_RECORD_PREFIX),
+      )
       const loaded = await Promise.all(
-        allKeys.map((key) => idbGet<Project>(key as string, projectsStore)),
+        projectKeys.map((key) => idbGet<Project>(key, projectsStore)),
       )
       for (const project of loaded) {
         if (project && Array.isArray(project.files) && typeof project.mainFile === 'string') {
-          projects.push(project)
+          projects.push(await stitchProjectBinaries(project))
         }
       }
     } catch (err) {
@@ -431,7 +570,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // Invalidate any in-flight persist that still holds a deleted `default`.
       bumpProjectEpoch(defaultProject.id)
       try {
-        await idbSet(defaultProject.id, defaultProject, projectsStore)
+        await persistProjectRecord(defaultProject)
       } catch (err) {
         console.error(
           isQuotaExceededError(err)
@@ -466,7 +605,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
       for (const [project, keys] of recoveredKeysByProject) {
         try {
-          await idbSet(project.id, project, projectsStore)
+          await persistProjectRecord(project)
           for (const key of keys) recoveryJournal.delete(key)
         } catch (err) {
           console.warn('Failed to persist recovered editor content to IDB:', err)
@@ -485,7 +624,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       mainFile.lastModified = Date.now()
       project.updatedAt = Date.now()
       try {
-        await idbSet(project.id, project, projectsStore)
+        await persistProjectRecord(project)
       } catch (err) {
         console.warn('Failed to save migrated project to IDB:', err)
       }
@@ -557,7 +696,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     let persisted = true
     let persistError: unknown
     try {
-      await idbSet(id, project, projectsStore)
+      await persistProjectRecord(project)
     } catch (err) {
       persisted = false
       persistError = err
@@ -605,6 +744,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       await idbDel(id, projectsStore)
     } catch (err) {
       console.warn('Failed to delete project from IDB:', err)
+    }
+    // Cascade: remove the project's split binary payload records too.
+    try {
+      await deleteProjectBinaryRecords(id)
+    } catch (err) {
+      console.warn('Failed to delete project binary records from IDB:', err)
     }
     let nextState: ProjectState | null = null
     set((s) => {
@@ -1125,7 +1270,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         const latest = get().projects.find((p) => p.id === id)
         if (!latest) return
 
-        await idbSet(id, latest, projectsStore)
+        await persistProjectRecord(latest)
 
         pruneRecoveryJournalForProject(latest)
         if (get().saveError) {
@@ -1140,12 +1285,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           if (!live) {
             try {
               await idbDel(id, projectsStore)
+              // A payload record may have been written after deleteProject's
+              // cascade scan; sweep the namespace again.
+              await deleteProjectBinaryRecords(id)
             } catch (err) {
               console.warn('Failed to roll back resurrected project in IDB:', err)
             }
           } else {
             try {
-              await idbSet(id, live, projectsStore)
+              await persistProjectRecord(live)
             } catch (err) {
               console.warn('Failed to re-save live project after stale write:', err)
             }
