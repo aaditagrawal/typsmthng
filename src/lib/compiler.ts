@@ -7,7 +7,7 @@ import {
   resolveSourceLocBatchClient,
   resolveSourceLocClient,
 } from './compiler-client'
-export type { CompileResult, PageDimension, CompileTimings } from './compiler-backend'
+export type { CompileResult, PdfCompileResult, PageDimension, CompileTimings } from './compiler-backend'
 
 export const initCompiler = initCompilerClient
 export const compileTypst = compileTypstClient

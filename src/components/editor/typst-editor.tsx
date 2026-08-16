@@ -26,11 +26,23 @@ const lineNumbersCompartment = new Compartment()
 const lineWrappingCompartment = new Compartment()
 const fontSizeCompartment = new Compartment()
 const PROJECT_SYNC_DELAY_MS = 800
+let vimWriteCommandRegistered = false
 
 function fontSizeExtension(fontSize: number) {
   return EditorView.theme({
     '&': { fontSize: `${fontSize}px` },
   })
+}
+
+/** Copy CodeMirror's authoritative buffer into the project before persistence. */
+function saveLiveEditorBuffer(view: EditorView | null) {
+  if (!view) return
+  const projectStore = useProjectStore.getState()
+  const path = projectStore.currentFilePath
+  if (path) {
+    projectStore.updateFileContent(path, view.state.doc.toString())
+  }
+  void projectStore.saveCurrentProject()
 }
 
 export function TypstEditor() {
@@ -183,8 +195,14 @@ export function TypstEditor() {
     forceCompile(src, filePath)
 
     if (settings.vimMode) {
-      void import('@replit/codemirror-vim').then(({ vim }) => {
+      void import('@replit/codemirror-vim').then(({ Vim, vim }) => {
         if (viewRef.current !== view || !useSettingsStore.getState().vimMode) return
+        if (!vimWriteCommandRegistered) {
+          Vim.defineEx('write', 'w', () => {
+            saveLiveEditorBuffer(useEditorStore.getState().editorView)
+          })
+          vimWriteCommandRegistered = true
+        }
         view.dispatch({ effects: vimCompartment.reconfigure(vim()) })
       })
     }
@@ -237,8 +255,14 @@ export function TypstEditor() {
     }
 
     let cancelled = false
-    void import('@replit/codemirror-vim').then(({ vim }) => {
+    void import('@replit/codemirror-vim').then(({ Vim, vim }) => {
       if (cancelled || viewRef.current !== view || !useSettingsStore.getState().vimMode) return
+      if (!vimWriteCommandRegistered) {
+        Vim.defineEx('write', 'w', () => {
+          saveLiveEditorBuffer(useEditorStore.getState().editorView)
+        })
+        vimWriteCommandRegistered = true
+      }
       view.dispatch({ effects: vimCompartment.reconfigure(vim()) })
     })
     return () => {
@@ -314,15 +338,23 @@ export function TypstEditor() {
     })
   }, [diagnostics])
 
-  // Flush pending project sync if the tab/window is hidden.
+  // Persist CodeMirror's current buffer immediately when the page is leaving.
   useEffect(() => {
+    const saveBeforeLeaving = () => {
+      flushPendingProjectSync()
+      saveLiveEditorBuffer(viewRef.current)
+    }
     const handleVisibilityChange = () => {
       if (document.visibilityState !== 'visible') {
-        flushPendingProjectSync()
+        saveBeforeLeaving()
       }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange)
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', saveBeforeLeaving)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', saveBeforeLeaving)
+    }
   }, [flushPendingProjectSync])
 
   return (

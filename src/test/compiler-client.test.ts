@@ -19,7 +19,7 @@ vi.mock('@/lib/compiler-backend', () => ({
     diagnostics: [],
     success: true,
   })),
-  compileToPdfBackend: vi.fn(async () => new Uint8Array([1, 2, 3])),
+  compileToPdfBackend: vi.fn(async () => ({ pdf: new Uint8Array([1, 2, 3]), diagnostics: [] })),
   configureCompilerBackend: vi.fn(),
   ensurePackagesForCompileBackend: vi.fn(async () => {}),
   isCompilerReadyBackend: vi.fn(() => false),
@@ -80,7 +80,7 @@ describe('compiler-client', () => {
     expect(backend.compileTypstBackend).toHaveBeenCalled()
     expect(backend.compileToPdfBackend).toHaveBeenCalled()
     expect(compileResult.success).toBe(true)
-    expect(pdf).toEqual(new Uint8Array([1, 2, 3]))
+    expect(pdf).toEqual({ pdf: new Uint8Array([1, 2, 3]), diagnostics: [] })
     expect(typeof isCompilerReadyClient()).toBe('boolean')
   })
 
@@ -138,7 +138,7 @@ describe('compiler-client', () => {
         diagnostics: [],
         success: true,
       }),
-      compileToPdf: vi.fn().mockResolvedValue(new Uint8Array([5])),
+      compileToPdf: vi.fn().mockResolvedValue({ pdf: new Uint8Array([5]), diagnostics: [] }),
       ensurePackagesForCompile: vi.fn().mockResolvedValue(undefined),
       isCompilerReady: vi.fn().mockReturnValue(true),
       resolveSourceLoc: vi.fn().mockResolvedValue(undefined),

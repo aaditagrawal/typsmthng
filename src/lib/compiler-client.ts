@@ -12,6 +12,7 @@ import {
   resolveSourceLocBackend,
   resolveSourceLocBatchBackend,
   type CompileResult,
+  type PdfCompileResult,
 } from './compiler-backend'
 
 interface CompilerInitOptions {
@@ -33,7 +34,7 @@ interface CompilerWorkerApi {
     extraFiles?: Array<{ path: string; content: string }>,
     mainFilePath?: string,
     extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-  ) => Promise<Uint8Array | null>
+  ) => Promise<PdfCompileResult>
   ensurePackagesForCompile: (specs: string[]) => Promise<void>
   isCompilerReady: () => boolean
 }
@@ -269,7 +270,7 @@ export async function compileToPdfClient(
   extraFiles?: Array<{ path: string; content: string }>,
   mainFilePath = '/main.typ',
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-): Promise<Uint8Array | null> {
+): Promise<PdfCompileResult> {
   await ensureCompilerConfig(source, extraFiles)
   if (!compilerReady) {
     await initCompilerClient(source, extraFiles)

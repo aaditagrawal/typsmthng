@@ -1,5 +1,6 @@
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
+import { useCompileStore } from '@/stores/compile-store'
 import { buildCompileInputs } from '@/lib/compile-inputs'
 import { applyPagePreamble, ensureCompilerReady } from '@/lib/compile-manager'
 import { compileToPdf, ensurePackagesForCompile } from '@/lib/compiler'
@@ -64,14 +65,17 @@ export async function exportCurrentProjectPdf(options?: {
       await ensurePackagesForCompile(packageSpecs)
     }
 
-    const pdf = await compileToPdf(
+    const compileResult = await compileToPdf(
       applyPagePreamble(compileInputs.mainSource),
       compileInputs.extraFiles,
       compileInputs.mainPath,
       compileInputs.extraBinaryFiles,
     )
 
-    if (!pdf || pdf.length === 0) {
+    if (!compileResult.pdf || compileResult.pdf.length === 0) {
+      const compileStore = useCompileStore.getState()
+      compileStore.setDiagnostics(compileResult.diagnostics)
+      compileStore.setStatus('error')
       const result: PdfExportResult = {
         ok: false,
         reason: 'empty',
@@ -82,10 +86,18 @@ export async function exportCurrentProjectPdf(options?: {
     }
 
     const filename = `${project?.name ?? 'document'}.pdf`
-    triggerPdfDownload(pdf, filename)
-    return { ok: true, bytes: pdf, filename }
+    triggerPdfDownload(compileResult.pdf, filename)
+    return { ok: true, bytes: compileResult.pdf, filename }
   } catch (err) {
     console.error('Failed to export PDF:', err)
+    const compileStore = useCompileStore.getState()
+    compileStore.setDiagnostics([{
+      severity: 'error',
+      path: '',
+      range: '',
+      message: err instanceof Error ? err.message : 'Unknown PDF compilation error',
+    }])
+    compileStore.setStatus('error')
     const result: PdfExportResult = {
       ok: false,
       reason: 'error',

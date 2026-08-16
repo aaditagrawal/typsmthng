@@ -198,6 +198,24 @@ export interface CompileResult {
   timings?: CompileTimings
 }
 
+export interface PdfCompileResult {
+  pdf: Uint8Array | null
+  diagnostics: Diagnostic[]
+}
+
+function normalizeDiagnostics(rawDiags: unknown[] | undefined): Diagnostic[] {
+  return (rawDiags ?? []).map((d: unknown) => {
+    const diag = d as Record<string, unknown>
+    return {
+      severity: String(diag.severity || 'error') as Diagnostic['severity'],
+      path: String(diag.path || ''),
+      range: String(diag.range || ''),
+      message: String(diag.message || ''),
+      package: diag.package ? String(diag.package) : undefined,
+    }
+  })
+}
+
 export async function compileTypstBackend(
   source: string,
   extraFiles?: Array<{ path: string; content: string }>,
@@ -246,16 +264,7 @@ async function compileTypstBackendUnlocked(
   })
   const compileMs = performance.now() - compileStart
 
-  const diagnostics: Diagnostic[] = (rawDiags ?? []).map((d: unknown) => {
-    const diag = d as Record<string, unknown>
-    return {
-      severity: String(diag.severity || 'error') as Diagnostic['severity'],
-      path: String(diag.path || ''),
-      range: String(diag.range || ''),
-      message: String(diag.message || ''),
-      package: diag.package ? String(diag.package) : undefined,
-    }
-  })
+  const diagnostics = normalizeDiagnostics(rawDiags)
 
   if (!vectorData) {
     return {
@@ -352,7 +361,7 @@ export async function compileToPdfBackend(
   extraFiles?: Array<{ path: string; content: string }>,
   mainFilePath = '/main.typ',
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-): Promise<Uint8Array | null> {
+): Promise<PdfCompileResult> {
   return enqueueCompilerOperation(async () => {
     if (!compiler) {
       throw new Error('Compiler not initialized')
@@ -371,14 +380,17 @@ export async function compileToPdfBackend(
       }
     }
 
-    const { result } = await compiler.compile({
+    const { result, diagnostics } = await compiler.compile({
       mainFilePath,
       root: PROJECT_ROOT,
       format: 1,
-      diagnostics: 'none',
+      diagnostics: 'full',
     })
 
-    return result ?? null
+    return {
+      pdf: result ?? null,
+      diagnostics: normalizeDiagnostics(diagnostics),
+    }
   })
 }
 
