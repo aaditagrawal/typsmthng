@@ -1,13 +1,23 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { File } from 'lucide-react'
+import { Download, File, MoonStar, Play, Save, Settings } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
+import { useEditorStore } from '@/stores/editor-store'
+import { useSettingsStore } from '@/stores/settings-store'
 import { getProjectFileIndex } from '@/lib/file-index'
 import { isImagePath } from '@/lib/file-classification'
 
 const ROW_HEIGHT = 34
 const ROW_OVERSCAN = 8
 const VIRTUALIZE_THRESHOLD = 140
+const RESULTS_LIST_ID = 'command-palette-results'
+
+function resultOptionId(index: number) {
+  return `command-palette-option-${index}`
+}
+
+type ActionResult = { type: 'action'; id: string; label: string; keywords: string; icon: typeof Play; run: () => void }
+type SearchResult = ActionResult | { type: 'file'; path: string }
 
 export function CommandSearch() {
   const open = useUIStore((s) => s.commandSearchOpen)
@@ -30,13 +40,58 @@ export function CommandSearch() {
 
   const fileIndex = useMemo(() => getProjectFileIndex(currentProject), [currentProject])
 
-  const filtered = useMemo(() => {
-    if (!query) return fileIndex.searchablePaths
+  const actions = useMemo<ActionResult[]>(() => [
+    {
+      type: 'action', id: 'compile', label: 'Compile document', keywords: 'build render preview', icon: Play,
+      run: () => {
+        const { source } = useEditorStore.getState()
+        const { currentFilePath } = useProjectStore.getState()
+        void import('@/lib/compile-manager')
+          .then(({ forceCompile }) => forceCompile(source, currentFilePath))
+          .catch(() => window.alert('Could not compile the document. Please try again.'))
+      },
+    },
+    {
+      type: 'action', id: 'settings', label: 'Open settings', keywords: 'preferences options', icon: Settings,
+      run: () => useSettingsStore.getState().setSettingsOpen(true),
+    },
+    {
+      type: 'action', id: 'pdf', label: 'Download PDF', keywords: 'export document', icon: Download,
+      run: () => {
+        void import('@/lib/pdf-export')
+          .then(({ exportCurrentProjectPdf }) => exportCurrentProjectPdf())
+          .catch(() => window.alert('Could not load PDF export. Please try again.'))
+      },
+    },
+    {
+      type: 'action', id: 'save', label: 'Save project', keywords: 'write persist', icon: Save,
+      run: () => {
+        const projectStore = useProjectStore.getState()
+        if (projectStore.currentFilePath) {
+          projectStore.updateFileContent(projectStore.currentFilePath, useEditorStore.getState().source)
+        }
+        void projectStore.saveCurrentProject()
+      },
+    },
+    {
+      type: 'action', id: 'theme', label: 'Cycle theme', keywords: 'appearance light dark system', icon: MoonStar,
+      run: () => {
+        const settings = useSettingsStore.getState()
+        settings.setTheme(settings.theme === 'system' ? 'light' : settings.theme === 'light' ? 'dark' : 'system')
+      },
+    },
+  ], [])
+
+  const filtered = useMemo<SearchResult[]>(() => {
     const lowerQuery = query.toLowerCase()
-    return fileIndex.searchablePathEntries
+    const matchingActions = actions.filter((item) =>
+      `${item.label} ${item.keywords}`.toLowerCase().includes(lowerQuery),
+    )
+    const matchingFiles = fileIndex.searchablePathEntries
       .filter((entry) => entry.lowerPath.includes(lowerQuery))
-      .map((entry) => entry.path)
-  }, [fileIndex, query])
+      .map<SearchResult>((entry) => ({ type: 'file', path: entry.path }))
+    return [...matchingActions, ...matchingFiles]
+  }, [actions, fileIndex, query])
 
   const close = useCallback(() => {
     setOpen(false)
@@ -56,6 +111,15 @@ export function CommandSearch() {
     },
     [close],
   )
+
+  const selectResult = useCallback((result: SearchResult) => {
+    if (result.type === 'file') {
+      openFile(result.path)
+      return
+    }
+    close()
+    result.run()
+  }, [close, openFile])
 
   useEffect(() => {
     if (!open) return
@@ -115,14 +179,14 @@ export function CommandSearch() {
         setSelectedIndex((index) => Math.max(index - 1, 0))
       } else if (e.key === 'Enter') {
         e.preventDefault()
-        const path = filtered[effectiveSelectedIndex]
-        if (path) openFile(path)
+        const result = filtered[effectiveSelectedIndex]
+        if (result) selectResult(result)
       } else if (e.key === 'Escape') {
         e.preventDefault()
         close()
       }
     },
-    [filtered, effectiveSelectedIndex, openFile, close],
+    [filtered, effectiveSelectedIndex, selectResult, close],
   )
 
   const shouldVirtualize = filtered.length > VIRTUALIZE_THRESHOLD
@@ -177,7 +241,14 @@ export function CommandSearch() {
           <input
             ref={inputRef}
             type="text"
-            placeholder="SEARCH FILES..."
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={RESULTS_LIST_ID}
+            aria-activedescendant={filtered.length > 0
+              ? resultOptionId(effectiveSelectedIndex)
+              : undefined}
+            placeholder="SEARCH FILES AND COMMANDS..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -197,7 +268,10 @@ export function CommandSearch() {
         </div>
 
         <div
+          id={RESULTS_LIST_ID}
           ref={listRef}
+          role="listbox"
+          aria-label="Command palette results"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
           style={{
             overflowY: 'auto',
@@ -217,17 +291,21 @@ export function CommandSearch() {
                 textAlign: 'center',
               }}
             >
-              No files found
+              No results found
             </div>
           ) : (
             <div style={{ height: shouldVirtualize ? `${totalHeight}px` : 'auto', position: 'relative' }}>
-              {visibleRows.map((path, rowIndex) => {
+              {visibleRows.map((result, rowIndex) => {
                 const index = windowStart + rowIndex
                 const isSelected = index === effectiveSelectedIndex
+                const Icon = result.type === 'action' ? result.icon : File
                 return (
                   <div
-                    key={path}
-                    onClick={() => openFile(path)}
+                    id={resultOptionId(index)}
+                    key={result.type === 'action' ? `action:${result.id}` : `file:${result.path}`}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => selectResult(result)}
                     onMouseEnter={() => setSelectedIndex(index)}
                     style={{
                       display: 'flex',
@@ -245,7 +323,7 @@ export function CommandSearch() {
                       top: shouldVirtualize ? `${index * ROW_HEIGHT}px` : undefined,
                     }}
                   >
-                    <File
+                    <Icon
                       size={14}
                       style={{
                         flexShrink: 0,
@@ -263,7 +341,7 @@ export function CommandSearch() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {path}
+                      {result.type === 'action' ? result.label : result.path}
                     </span>
                   </div>
                 )

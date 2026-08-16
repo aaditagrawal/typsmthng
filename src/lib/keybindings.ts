@@ -1,4 +1,5 @@
 import type { KeyBinding } from '@codemirror/view'
+import { copyLineDown } from '@codemirror/commands'
 import { useProjectStore } from '@/stores/project-store'
 import { forceCompile } from './compile-manager'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -9,6 +10,10 @@ export const typstKeymap: KeyBinding[] = [
   {
     key: 'Mod-/',
     run: (view) => toggleTypstLineComment(view),
+  },
+  {
+    key: 'Mod-d',
+    run: copyLineDown,
   },
   // Mod-s is handled once at the window level in App.tsx so focus outside
   // CodeMirror still saves, without double-persisting from this keymap.

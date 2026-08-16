@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useCompileStore } from '@/stores/compile-store'
+import type { PdfCompileResult } from '@/lib/compiler'
 
 const mocked = vi.hoisted(() => ({
   ensureCompilerReady: vi.fn(async () => {}),
   ensurePackagesForCompile: vi.fn(async () => {}),
-  compileToPdf: vi.fn(async (): Promise<Uint8Array | null> => new Uint8Array([37, 80, 68, 70])),
+  compileToPdf: vi.fn<() => Promise<PdfCompileResult>>(async () => ({
+    pdf: new Uint8Array([37, 80, 68, 70]),
+    diagnostics: [],
+  })),
   findPreviewImportSpecs: vi.fn(() => [] as string[]),
   buildCompileInputs: vi.fn(() => ({
     mainSource: '= Doc',
@@ -57,7 +62,8 @@ import { exportCurrentProjectPdf } from '@/lib/pdf-export'
 describe('exportCurrentProjectPdf', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocked.compileToPdf.mockResolvedValue(new Uint8Array([37, 80, 68, 70]))
+    mocked.compileToPdf.mockResolvedValue({ pdf: new Uint8Array([37, 80, 68, 70]), diagnostics: [] })
+    useCompileStore.setState({ status: 'success', diagnostics: [], errorCount: 0, warningCount: 0 })
     mocked.findPreviewImportSpecs.mockReturnValue([])
     vi.spyOn(window, 'alert').mockImplementation(() => {})
     vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:pdf')
@@ -76,7 +82,10 @@ describe('exportCurrentProjectPdf', () => {
   })
 
   it('alerts when the compiler returns empty output', async () => {
-    mocked.compileToPdf.mockResolvedValue(new Uint8Array())
+    mocked.compileToPdf.mockResolvedValue({
+      pdf: null,
+      diagnostics: [{ severity: 'error', path: '/main.typ', range: '2:1-2:4', message: 'unknown variable' }],
+    })
     const result = await exportCurrentProjectPdf()
     expect(result).toEqual({
       ok: false,
@@ -85,6 +94,11 @@ describe('exportCurrentProjectPdf', () => {
     })
     expect(window.alert).toHaveBeenCalled()
     expect(URL.createObjectURL).not.toHaveBeenCalled()
+    expect(useCompileStore.getState()).toMatchObject({
+      status: 'error',
+      errorCount: 1,
+      diagnostics: [expect.objectContaining({ message: 'unknown variable' })],
+    })
   })
 
   it('alerts when compilation throws', async () => {
@@ -95,6 +109,8 @@ describe('exportCurrentProjectPdf', () => {
       expect(result.reason).toBe('error')
     }
     expect(window.alert).toHaveBeenCalledWith('Failed to export PDF. Please try again.')
+    expect(useCompileStore.getState()).toMatchObject({ status: 'error', errorCount: 1 })
+    expect(useCompileStore.getState().diagnostics[0]?.message).toBe('boom')
   })
 
   it('uses liveSource from the editor view when provided', async () => {
@@ -105,7 +121,7 @@ describe('exportCurrentProjectPdf', () => {
   })
 
   it('treats null PDF output as empty and can mute alerts', async () => {
-    mocked.compileToPdf.mockResolvedValue(null)
+    mocked.compileToPdf.mockResolvedValue({ pdf: null, diagnostics: [] })
     const silent = await exportCurrentProjectPdf({ alertOnFailure: false })
     expect(silent).toEqual({
       ok: false,

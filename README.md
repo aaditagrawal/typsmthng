@@ -30,7 +30,7 @@ Editor + live preview (desktop):
 ## Tech Stack
 
 - React 19 + TypeScript
-- Vite 7
+- Vite 8
 - CodeMirror 6
 - Zustand
 - Typst WASM toolchain via `@myriaddreamin/typst.ts`
@@ -41,6 +41,7 @@ Editor + live preview (desktop):
 ### Prerequisites
 
 - Bun `1.3+`
+- Node.js `20.19+` or `22.12+` (required by Vite 8)
 
 ### Install
 

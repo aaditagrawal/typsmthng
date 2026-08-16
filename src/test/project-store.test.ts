@@ -212,6 +212,36 @@ describe('Project Store', () => {
     expect(mainFile?.content).toBe('new content')
   })
 
+  it('recovers editor content journaled before a debounced IDB save', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useProjectStore.getState().updateFileContent('/main.typ', '= Recovered immediately')
+
+    await useProjectStore.getState().loadProjects()
+
+    const recovered = useProjectStore.getState().projects
+      .find((project) => project.id === 'default')
+      ?.files.find((file) => file.path === '/main.typ')
+    expect(recovered?.content).toBe('= Recovered immediately')
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toBeNull()
+    const persisted = mockIdb.__store.get('default') as { files: Array<{ path: string; content: string }> }
+    expect(persisted.files.find((file) => file.path === '/main.typ')?.content)
+      .toBe('= Recovered immediately')
+  })
+
+  it('discards a recovery journal that no longer points to a live project file', async () => {
+    localStorage.setItem('typsmthng-recovery-journal', JSON.stringify({
+      projectId: 'deleted-project',
+      path: '/main.typ',
+      content: '= stale',
+    }))
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects[0].files[0].content).toBe(SAMPLE_DOCUMENT)
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toBeNull()
+  })
+
   it('should delete a file', async () => {
     await useProjectStore.getState().loadProjects()
     useProjectStore.getState().selectProject('default')
@@ -231,6 +261,39 @@ describe('Project Store', () => {
     const project = useProjectStore.getState().getCurrentProject()
     expect(project?.files[0].path).toBe('/document.typ')
     expect(useProjectStore.getState().currentFilePath).toBe('/document.typ')
+  })
+
+  it('rejects renaming a file over an existing file without mutation', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFile('/existing.typ', '= keep me')
+    const before = useProjectStore.getState().getCurrentProject()
+
+    await expect(
+      useProjectStore.getState().renameFile('/main.typ', '/existing.typ'),
+    ).rejects.toThrow('already exists')
+
+    const after = useProjectStore.getState().getCurrentProject()
+    expect(after).toEqual(before)
+    expect(after?.files.find((f) => f.path === '/main.typ')?.content).toBe(SAMPLE_DOCUMENT)
+    expect(after?.files.find((f) => f.path === '/existing.typ')?.content).toBe('= keep me')
+  })
+
+  it('rejects renaming a folder when a descendant target exists without mutation', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFile('/source/note.typ', '= source')
+    await useProjectStore.getState().createFile('/destination/note.typ', '= destination')
+    const before = useProjectStore.getState().getCurrentProject()
+
+    await expect(
+      useProjectStore.getState().renameFolder('/source', '/destination'),
+    ).rejects.toThrow('already exists')
+
+    const after = useProjectStore.getState().getCurrentProject()
+    expect(after).toEqual(before)
+    expect(after?.files.find((f) => f.path === '/source/note.typ')?.content).toBe('= source')
+    expect(after?.files.find((f) => f.path === '/destination/note.typ')?.content).toBe('= destination')
   })
 
   it('should toggle sidebar', () => {
@@ -516,6 +579,60 @@ describe('Project Store', () => {
     const project = useProjectStore.getState().getCurrentProject()
     expect(project?.mainFile).toBe('/other.typ')
     expect(useProjectStore.getState().currentFilePath).toBe('/other.typ')
+  })
+
+  it('retargets mainFile and currentFilePath when their folder is deleted', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().renameFile('/main.typ', '/removed/main.typ')
+    await useProjectStore.getState().createFile('/remaining.typ', '= remaining')
+    useProjectStore.getState().selectFile('/removed/main.typ')
+
+    await useProjectStore.getState().deleteFolder('/removed')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.files.map((f) => f.path)).toEqual(['/remaining.typ'])
+    expect(project?.mainFile).toBe('/remaining.typ')
+    expect(useProjectStore.getState().currentFilePath).toBe('/remaining.typ')
+  })
+
+  it('clears file pointers when deleting the only populated folder', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().renameFile('/main.typ', '/only/main.typ')
+
+    await useProjectStore.getState().deleteFolder('/only')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.files).toEqual([])
+    expect(project?.mainFile).toBe('')
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+  })
+
+  it('does not select an empty-folder placeholder after deleting the main folder', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().renameFile('/main.typ', '/removed/main.typ')
+    await useProjectStore.getState().createFolder('/empty')
+
+    await useProjectStore.getState().deleteFolder('/removed')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.files.map((file) => file.path)).toEqual(['/empty/.folder'])
+    expect(project?.mainFile).toBe('')
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+  })
+
+  it('rejects renaming a folder into its own descendant', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().createFile('/notes/item.typ', '= note')
+    const before = useProjectStore.getState().getCurrentProject()
+
+    await expect(
+      useProjectStore.getState().renameFolder('/notes', '/notes/archive'),
+    ).rejects.toThrow('descendants')
+    expect(useProjectStore.getState().getCurrentProject()).toEqual(before)
   })
 
   it('keeps newer content when concurrent saves overlap', async () => {

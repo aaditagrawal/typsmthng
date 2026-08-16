@@ -392,7 +392,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
 
   return (
     <div
-      className="flex items-center justify-between h-10 pl-3 pr-5 shrink-0 select-none"
+      className="preview-toolbar flex items-center justify-between h-10 pl-3 pr-5 shrink-0 select-none overflow-x-auto"
       style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-default)',
@@ -1234,6 +1234,12 @@ export function PreviewPanel() {
   const hasCanvas = vectorData !== null && pageDimensions.length > 0
   const hasPreview = resolvedRenderMode === 'canvas' ? hasCanvas : hasSvg
   const interactiveSvg = resolvedRenderMode === 'svg' && hasSvg
+
+  useEffect(() => {
+    const currentPage = usePreviewStore.getState().currentPage
+    const clampedPage = Math.min(Math.max(currentPage, 1), Math.max(totalPages, 1))
+    if (clampedPage !== currentPage) setCurrentPage(clampedPage)
+  }, [totalPages, pageDimensions, setCurrentPage])
 
   useEffect(() => {
     return () => {

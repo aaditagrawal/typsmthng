@@ -48,6 +48,7 @@ export function UpdateToast() {
         onClick={() => setShow(false)}
         className="p-0.5 rounded"
         style={{ color: 'var(--text-tertiary)' }}
+        aria-label="Dismiss update"
       >
         <X size={14} />
       </button>

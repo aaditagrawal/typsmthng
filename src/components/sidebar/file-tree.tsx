@@ -397,15 +397,19 @@ function FolderItem({
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
-  const handleRename = (newName: string) => {
+  const handleRename = async (newName: string) => {
     if (/[/\\\0]/.test(newName)) {
       alert('Name cannot contain /, \\, or null characters.')
       return
     }
     const parentPath = node.path.substring(0, node.path.lastIndexOf('/'))
     const newPath = parentPath ? `${parentPath}/${newName}` : `/${newName}`
-    renameFolder(node.path, newPath)
-    setRenaming(false)
+    try {
+      await renameFolder(node.path, newPath)
+      setRenaming(false)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not rename folder.')
+    }
   }
 
   if (renaming) {
@@ -598,14 +602,18 @@ function FileItem({
     setContextMenu({ x: e.clientX, y: e.clientY })
   }
 
-  const handleRename = (newName: string) => {
+  const handleRename = async (newName: string) => {
     if (/[/\\\0]/.test(newName)) {
       alert('Name cannot contain /, \\, or null characters.')
       return
     }
     const dir = path.substring(0, path.lastIndexOf('/'))
-    renameFile(path, `${dir}/${newName}`)
-    setRenaming(false)
+    try {
+      await renameFile(path, `${dir}/${newName}`)
+      setRenaming(false)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not rename file.')
+    }
   }
 
   const handleDuplicate = async () => {

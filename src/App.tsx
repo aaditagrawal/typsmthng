@@ -5,6 +5,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { preloadWorkspaceShell } from '@/components/workspace/preload'
+import { UpdateToast } from '@/components/layout/update-toast'
 
 const HomeShell = lazy(() => import('@/components/home/home-shell'))
 const WorkspaceShell = lazy(() => import('@/components/workspace/workspace-shell'))
@@ -70,21 +71,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  let content: React.ReactNode
   if (loading) {
-    return <FullscreenLoading label="Loading..." />
-  }
-
-  if (!hasSelectedProject) {
-    return (
+    content = <FullscreenLoading label="Loading..." />
+  } else if (!hasSelectedProject) {
+    content = (
       <Suspense fallback={<FullscreenLoading label="Loading home..." />}>
         <HomeShell onPreloadWorkspace={() => { void preloadWorkspaceShell() }} />
+      </Suspense>
+    )
+  } else {
+    content = (
+      <Suspense fallback={<FullscreenLoading label="Loading workspace..." />}>
+        <WorkspaceShell />
       </Suspense>
     )
   }
 
   return (
-    <Suspense fallback={<FullscreenLoading label="Loading workspace..." />}>
-      <WorkspaceShell />
-    </Suspense>
+    <>
+      {content}
+      {/* Keep the listener mounted while moving between home and workspace. */}
+      <UpdateToast />
+    </>
   )
 }
