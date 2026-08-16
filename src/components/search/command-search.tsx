@@ -10,6 +10,11 @@ import { isImagePath } from '@/lib/file-classification'
 const ROW_HEIGHT = 34
 const ROW_OVERSCAN = 8
 const VIRTUALIZE_THRESHOLD = 140
+const RESULTS_LIST_ID = 'command-palette-results'
+
+function resultOptionId(index: number) {
+  return `command-palette-option-${index}`
+}
 
 type ActionResult = { type: 'action'; id: string; label: string; keywords: string; icon: typeof Play; run: () => void }
 type SearchResult = ActionResult | { type: 'file'; path: string }
@@ -41,7 +46,9 @@ export function CommandSearch() {
       run: () => {
         const { source } = useEditorStore.getState()
         const { currentFilePath } = useProjectStore.getState()
-        void import('@/lib/compile-manager').then(({ forceCompile }) => forceCompile(source, currentFilePath))
+        void import('@/lib/compile-manager')
+          .then(({ forceCompile }) => forceCompile(source, currentFilePath))
+          .catch(() => window.alert('Could not compile the document. Please try again.'))
       },
     },
     {
@@ -50,7 +57,11 @@ export function CommandSearch() {
     },
     {
       type: 'action', id: 'pdf', label: 'Download PDF', keywords: 'export document', icon: Download,
-      run: () => { void import('@/lib/pdf-export').then(({ exportCurrentProjectPdf }) => exportCurrentProjectPdf()) },
+      run: () => {
+        void import('@/lib/pdf-export')
+          .then(({ exportCurrentProjectPdf }) => exportCurrentProjectPdf())
+          .catch(() => window.alert('Could not load PDF export. Please try again.'))
+      },
     },
     {
       type: 'action', id: 'save', label: 'Save project', keywords: 'write persist', icon: Save,
@@ -230,6 +241,13 @@ export function CommandSearch() {
           <input
             ref={inputRef}
             type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls={RESULTS_LIST_ID}
+            aria-activedescendant={filtered.length > 0
+              ? resultOptionId(effectiveSelectedIndex)
+              : undefined}
             placeholder="SEARCH FILES AND COMMANDS..."
             value={query}
             onChange={(e) => {
@@ -250,6 +268,7 @@ export function CommandSearch() {
         </div>
 
         <div
+          id={RESULTS_LIST_ID}
           ref={listRef}
           role="listbox"
           aria-label="Command palette results"
@@ -282,6 +301,7 @@ export function CommandSearch() {
                 const Icon = result.type === 'action' ? result.icon : File
                 return (
                   <div
+                    id={resultOptionId(index)}
                     key={result.type === 'action' ? `action:${result.id}` : `file:${result.path}`}
                     role="option"
                     aria-selected={isSelected}

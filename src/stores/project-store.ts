@@ -907,7 +907,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const project = s.projects.find((p) => p.id === s.currentProjectId)
       if (!project) return s
       const remainingFiles = project.files.filter((f) => !f.path.startsWith(prefix))
-      const fallbackFile = remainingFiles.find((f) => !f.isBinary) ?? remainingFiles[0]
+      const fallbackFile = remainingFiles.find((file) => (
+        !file.isBinary && !file.path.endsWith('.folder')
+      ))
       const mainWasRemoved = project.mainFile.startsWith(prefix)
       const nextMainFile = mainWasRemoved
         ? (fallbackFile?.path ?? '')

@@ -609,6 +609,20 @@ describe('Project Store', () => {
     expect(useProjectStore.getState().currentFilePath).toBeNull()
   })
 
+  it('does not select an empty-folder placeholder after deleting the main folder', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().renameFile('/main.typ', '/removed/main.typ')
+    await useProjectStore.getState().createFolder('/empty')
+
+    await useProjectStore.getState().deleteFolder('/removed')
+
+    const project = useProjectStore.getState().getCurrentProject()
+    expect(project?.files.map((file) => file.path)).toEqual(['/empty/.folder'])
+    expect(project?.mainFile).toBe('')
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+  })
+
   it('rejects renaming a folder into its own descendant', async () => {
     await useProjectStore.getState().loadProjects()
     useProjectStore.getState().selectProject('default')

@@ -17,6 +17,7 @@ vi.mock('@/lib/pdf-export', () => ({ exportCurrentProjectPdf }))
 describe('CommandSearch actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
     useUIStore.setState({ commandSearchOpen: true, theme: 'dark', resolvedTheme: 'dark' })
     useSettingsStore.setState({ settingsOpen: false, theme: 'dark' })
     useEditorStore.setState({ source: 'live editor text' })
@@ -39,12 +40,37 @@ describe('CommandSearch actions', () => {
     expect(screen.getByText('Cycle theme')).toBeInTheDocument()
 
     const input = screen.getByPlaceholderText('SEARCH FILES AND COMMANDS...')
+    expect(input).toHaveAttribute('role', 'combobox')
+    expect(input).toHaveAttribute('aria-controls', 'command-palette-results')
+    expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-0')
+    fireEvent.keyDown(input, { key: 'ArrowDown' })
+    expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-1')
+    fireEvent.change(input, { target: { value: 'no matching result' } })
+    expect(input).not.toHaveAttribute('aria-activedescendant')
     fireEvent.change(input, { target: { value: 'build' } })
     expect(screen.getAllByRole('option')).toHaveLength(1)
     fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => expect(forceCompile).toHaveBeenCalledWith('live editor text', 'main.typ'))
     expect(useUIStore.getState().commandSearchOpen).toBe(false)
+  })
+
+  it('reports rejected compile and PDF actions instead of leaking rejections', async () => {
+    forceCompile.mockRejectedValueOnce(new Error('compile unavailable'))
+    const { rerender } = render(<CommandSearch />)
+
+    fireEvent.click(screen.getByText('Compile document'))
+    await waitFor(() => {
+      expect(window.alert).toHaveBeenCalledWith('Could not compile the document. Please try again.')
+    })
+
+    act(() => useUIStore.setState({ commandSearchOpen: true }))
+    rerender(<CommandSearch />)
+    exportCurrentProjectPdf.mockRejectedValueOnce(new Error('chunk unavailable'))
+    fireEvent.click(screen.getByText('Download PDF'))
+    await waitFor(() => {
+      expect(window.alert).toHaveBeenCalledWith('Could not load PDF export. Please try again.')
+    })
   })
 
   it('flushes the editor buffer before saving and closes the palette', () => {
