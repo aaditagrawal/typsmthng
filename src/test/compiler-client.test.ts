@@ -46,6 +46,56 @@ function installWindow(overrides?: Partial<Window>): void {
   })
 }
 
+class MockEventWorker {
+  static instances: MockEventWorker[] = []
+  private listeners = new Map<string, Array<(event: Event) => void>>()
+  terminate = vi.fn()
+
+  constructor() {
+    MockEventWorker.instances.push(this)
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void): void {
+    const bucket = this.listeners.get(type) ?? []
+    bucket.push(listener)
+    this.listeners.set(type, bucket)
+  }
+
+  removeEventListener(): void {}
+
+  dispatch(type: string): void {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ type } as Event)
+    }
+  }
+}
+
+function installMockEventWorker(): void {
+  MockEventWorker.instances = []
+  Object.defineProperty(globalThis, 'Worker', {
+    configurable: true,
+    value: MockEventWorker,
+  })
+}
+
+function mockWorkerApi() {
+  return {
+    initCompiler: vi.fn().mockResolvedValue(undefined),
+    compileTypst: vi.fn().mockResolvedValue({
+      svg: '<svg>worker</svg>',
+      vectorData: new Uint8Array([3]),
+      pageDimensions: [],
+      diagnostics: [],
+      success: true,
+    }),
+    compileToPdf: vi.fn().mockResolvedValue({ pdf: new Uint8Array([5]), diagnostics: [] }),
+    ensurePackagesForCompile: vi.fn().mockResolvedValue(undefined),
+    isCompilerReady: vi.fn().mockReturnValue(true),
+    resolveSourceLoc: vi.fn().mockResolvedValue(undefined),
+    resolveSourceLocBatch: vi.fn().mockResolvedValue([]),
+  }
+}
+
 describe('compiler-client', () => {
   beforeEach(() => {
     vi.resetModules()
@@ -129,26 +179,8 @@ describe('compiler-client', () => {
       ]),
     } as Partial<Window>)
 
-    const workerApi = {
-      initCompiler: vi.fn().mockResolvedValue(undefined),
-      compileTypst: vi.fn().mockResolvedValue({
-        svg: '<svg>worker</svg>',
-        vectorData: new Uint8Array([3]),
-        pageDimensions: [],
-        diagnostics: [],
-        success: true,
-      }),
-      compileToPdf: vi.fn().mockResolvedValue({ pdf: new Uint8Array([5]), diagnostics: [] }),
-      ensurePackagesForCompile: vi.fn().mockResolvedValue(undefined),
-      isCompilerReady: vi.fn().mockReturnValue(true),
-      resolveSourceLoc: vi.fn().mockResolvedValue(undefined),
-      resolveSourceLocBatch: vi.fn().mockResolvedValue([]),
-    }
-
-    Object.defineProperty(globalThis, 'Worker', {
-      configurable: true,
-      value: class MockWorker {},
-    })
+    const workerApi = mockWorkerApi()
+    installMockEventWorker()
     wrapMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
@@ -157,5 +189,64 @@ describe('compiler-client', () => {
     expect(workerApi.initCompiler).toHaveBeenCalledWith({
       fontData: [new Uint8Array([9, 8, 7])],
     })
+  })
+
+  it('fails over in-flight calls when the worker dies mid-call', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    // Comlink calls against a dead endpoint never settle on their own.
+    workerApi.compileTypst.mockImplementation(() => new Promise(() => {}))
+    wrapMock.mockReturnValue(workerApi)
+
+    const backend = await import('@/lib/compiler-backend')
+    const { useCompileStore } = await import('@/stores/compile-store')
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+
+    const generationBefore = useCompileStore.getState().compilerGeneration
+    const pending = compileTypstClient('= Crash')
+    await vi.waitFor(() => expect(workerApi.compileTypst).toHaveBeenCalled())
+
+    MockEventWorker.instances[0].dispatch('error')
+
+    const result = await pending
+    expect(result.success).toBe(true)
+    expect(backend.compileTypstBackend).toHaveBeenCalled()
+    expect(MockEventWorker.instances[0].terminate).toHaveBeenCalled()
+    expect(useCompileStore.getState().compilerGeneration).toBe(generationBefore + 1)
+  })
+
+  it('propagates worker application errors without falling back or disabling the worker', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    workerApi.compileTypst.mockRejectedValueOnce(new Error('layout panicked'))
+    wrapMock.mockReturnValue(workerApi)
+
+    const backend = await import('@/lib/compiler-backend')
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+
+    await expect(compileTypstClient('= Boom')).rejects.toThrow('layout panicked')
+    expect(backend.compileTypstBackend).not.toHaveBeenCalled()
+
+    const result = await compileTypstClient('= Boom')
+    expect(result.svg).toBe('<svg>worker</svg>')
+    expect(workerApi.compileTypst).toHaveBeenCalledTimes(2)
+    expect(MockEventWorker.instances).toHaveLength(1)
+  })
+
+  it('forwards the wantSvg compile option to the worker', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    wrapMock.mockReturnValue(workerApi)
+
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+    await compileTypstClient('= Doc', undefined, '/main.typ', undefined, { wantSvg: true })
+
+    expect(workerApi.compileTypst).toHaveBeenCalledWith(
+      '= Doc',
+      undefined,
+      '/main.typ',
+      undefined,
+      { wantSvg: true },
+    )
   })
 })

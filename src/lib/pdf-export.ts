@@ -2,8 +2,14 @@ import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useCompileStore } from '@/stores/compile-store'
 import { buildCompileInputs } from '@/lib/compile-inputs'
-import { applyPagePreamble, ensureCompilerReady } from '@/lib/compile-manager'
+import {
+  applyPagePreamble,
+  ensureCompilerReady,
+  getInjectedPreambleLineCount,
+  shiftDiagnosticsForPreamble,
+} from '@/lib/compile-manager'
 import { compileToPdf, ensurePackagesForCompile } from '@/lib/compiler'
+import { downloadBlob } from '@/lib/download'
 import { applyPackageImportCompatRewrites } from '@/lib/package-compat'
 import { findPreviewImportSpecs } from '@/lib/universe-registry'
 
@@ -19,18 +25,6 @@ function collectPackageSpecs(mainSource: string, extraFiles: Array<{ content: st
     }
   }
   return [...packageSpecs]
-}
-
-function triggerPdfDownload(bytes: Uint8Array, filename: string): void {
-  const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 /**
@@ -74,7 +68,11 @@ export async function exportCurrentProjectPdf(options?: {
 
     if (!compileResult.pdf || compileResult.pdf.length === 0) {
       const compileStore = useCompileStore.getState()
-      compileStore.setDiagnostics(compileResult.diagnostics)
+      compileStore.setDiagnostics(shiftDiagnosticsForPreamble(
+        compileResult.diagnostics,
+        compileInputs.mainPath,
+        getInjectedPreambleLineCount(compileInputs.mainSource),
+      ))
       compileStore.setStatus('error')
       const result: PdfExportResult = {
         ok: false,
@@ -86,7 +84,7 @@ export async function exportCurrentProjectPdf(options?: {
     }
 
     const filename = `${project?.name ?? 'document'}.pdf`
-    triggerPdfDownload(compileResult.pdf, filename)
+    downloadBlob(new Blob([new Uint8Array(compileResult.pdf)], { type: 'application/pdf' }), filename)
     return { ok: true, bytes: compileResult.pdf, filename }
   } catch (err) {
     console.error('Failed to export PDF:', err)

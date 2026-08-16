@@ -1,11 +1,14 @@
 import { useCompileStore } from '@/stores/compile-store'
+import type { Diagnostic } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
+import { usePreviewStore, resolvePreviewRenderMode } from '@/stores/preview-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import type { PageSize } from '@/stores/settings-store'
 import { initCompiler, compileTypst, ensurePackagesForCompile, isCompilerReady } from './compiler'
 import { applyPackageImportCompatRewrites } from './package-compat'
 import { buildCompileInputs } from './compile-inputs'
+import type { CompileInputs } from './compile-inputs'
 import { perfMark, perfMeasure, perfSample } from './perf'
 
 const MIN_COMPILE_DELAY_MS = 120
@@ -141,11 +144,11 @@ function normalizeDiagnosticPath(path: string): string {
   return path.startsWith('/') ? path : `/${path}`
 }
 
-function shiftDiagnosticsForPreamble(
-  diagnostics: Array<{ severity: 'error' | 'warning' | 'info'; path: string; range: string; message: string; package?: string }>,
+export function shiftDiagnosticsForPreamble(
+  diagnostics: Diagnostic[],
   mainPath: string,
   preambleLines: number,
-) {
+): Diagnostic[] {
   if (preambleLines <= 0) return diagnostics
   const normalizedMain = normalizeDiagnosticPath(mainPath)
   return diagnostics.map((diag) => {
@@ -172,14 +175,59 @@ interface CompileRequest {
   requestId: number
 }
 
+let scheduledRequest: CompileRequest | null = null
 let pendingRequest: CompileRequest | null = null
 let compiling = false
 let initPromise: Promise<void> | null = null
 let lastEnsuredPackagesKey: string | null = null
+let lastSuccessfulCompileFingerprint: string | null = null
 let smoothedCompileTimeMs = 0
 let nextCompileRequestId = 0
 let latestRequestedCompileId = 0
 const requestSettleWaiters = new Map<number, Array<() => void>>()
+
+const binaryInputIds = new WeakMap<Uint8Array, number>()
+let nextBinaryInputId = 1
+
+function binaryInputId(data: Uint8Array): number {
+  let id = binaryInputIds.get(data)
+  if (id === undefined) {
+    id = nextBinaryInputId
+    nextBinaryInputId += 1
+    binaryInputIds.set(data, id)
+  }
+  return id
+}
+
+/** Compiler config identity: worker/transport generation plus font settings. */
+function compileConfigToken(): string {
+  const { systemFontsEnabled, googleFontsEnabled } = useSettingsStore.getState()
+  const generation = useCompileStore.getState().compilerGeneration
+  return `${generation}:${systemFontsEnabled ? 1 : 0}${googleFontsEnabled ? 1 : 0}`
+}
+
+/**
+ * Cheap identity for the effective compile inputs. Page size is covered via
+ * finalSource (the injected preamble), binaries via object identity.
+ */
+function computeCompileFingerprint(
+  compileInputs: CompileInputs,
+  finalSource: string,
+  wantSvg: boolean,
+): string {
+  const parts: string[] = [
+    `cfg:${compileConfigToken()}`,
+    `svg:${wantSvg ? 1 : 0}`,
+    `main:${compileInputs.mainPath}:${hashString(finalSource)}`,
+  ]
+  for (const file of compileInputs.extraFiles) {
+    parts.push(`t:${file.path}:${hashString(file.content)}`)
+  }
+  for (const file of compileInputs.extraBinaryFiles) {
+    parts.push(`b:${file.path}:${binaryInputId(file.data)}:${file.data.byteLength}`)
+  }
+  return parts.join('|')
+}
 
 function nextRequestId(): number {
   nextCompileRequestId += 1
@@ -245,18 +293,36 @@ export async function ensureCompilerReady(): Promise<void> {
   useCompileStore.getState().setCompilerReady(true)
 }
 
-function scheduleDeferredCompile(request: CompileRequest): void {
-  const { autoCompile, compileDelay } = useSettingsStore.getState()
-  if (!autoCompile && !request.urgent) return
-
+function clearScheduledCompile(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
+    debounceTimer = null
   }
+  if (scheduledRequest) {
+    // Dropped without running — release any forceCompile awaiters.
+    settleRequest(scheduledRequest.requestId)
+    scheduledRequest = null
+  }
+}
 
-  const delay = request.urgent ? 0 : effectiveCompileDelay(compileDelay)
+function scheduleCompileTimer(request: CompileRequest, delay: number): void {
+  clearScheduledCompile()
+  scheduledRequest = request
   debounceTimer = setTimeout(() => {
+    debounceTimer = null
+    scheduledRequest = null
     void doCompile(request)
   }, delay)
+}
+
+function scheduleDeferredCompile(request: CompileRequest): void {
+  const { autoCompile, compileDelay } = useSettingsStore.getState()
+  if (!autoCompile && !request.urgent) {
+    settleRequest(request.requestId)
+    return
+  }
+
+  scheduleCompileTimer(request, request.urgent ? 0 : effectiveCompileDelay(compileDelay))
 }
 
 function isStaleRequest(requestId: number): boolean {
@@ -303,13 +369,10 @@ async function doCompile(request: CompileRequest): Promise<void> {
 
   compiling = true
   const store = useCompileStore.getState()
-  store.setStatus('compiling')
 
   const totalStart = perfMark()
 
   try {
-    await ensureCompilerReady()
-
     const inputStart = perfMark()
     const project = useProjectStore.getState().getCurrentProject()
     const sourcePath = request.sourcePath ?? useProjectStore.getState().currentFilePath
@@ -324,6 +387,27 @@ async function doCompile(request: CompileRequest): Promise<void> {
       requestId: request.requestId,
     })
 
+    const { pageSize } = useSettingsStore.getState()
+    const preamble = buildPagePreamble(pageSize, compileInputs.mainSource, currentProjectLayoutLocked())
+    const finalSource = preamble ? preamble + compileInputs.mainSource : compileInputs.mainSource
+
+    const wantSvg = resolvePreviewRenderMode(usePreviewStore.getState().renderMode) === 'svg'
+
+    const fingerprint = computeCompileFingerprint(compileInputs, finalSource, wantSvg)
+    if (
+      fingerprint === lastSuccessfulCompileFingerprint
+      && useCompileStore.getState().vectorData !== null
+    ) {
+      // Byte-identical inputs with an applied successful result — nothing to do.
+      if (useCompileStore.getState().status !== 'success') {
+        store.setStatus('success')
+      }
+      return
+    }
+
+    store.setStatus('compiling')
+    await ensureCompilerReady()
+
     const packageStart = perfMark()
     const packageSpecs = new Set<string>()
     const activePaths = new Set<string>()
@@ -336,7 +420,9 @@ async function doCompile(request: CompileRequest): Promise<void> {
 
     if (packageSpecs.size > 0) {
       const specList = [...packageSpecs].sort()
-      const ensureKey = specList.join('|')
+      // Key on the compiler generation: a restarted worker loses its prepared
+      // package map, so a fresh instance must be re-ensured.
+      const ensureKey = `${useCompileStore.getState().compilerGeneration}:${specList.join('|')}`
       if (ensureKey !== lastEnsuredPackagesKey) {
         if (isStaleRequest(request.requestId)) return
         try {
@@ -344,6 +430,7 @@ async function doCompile(request: CompileRequest): Promise<void> {
           lastEnsuredPackagesKey = ensureKey
         } catch (err) {
           lastEnsuredPackagesKey = null
+          lastSuccessfulCompileFingerprint = null
           if (!isStaleRequest(request.requestId)) {
             store.setStatus('error')
             store.setDiagnostics([{
@@ -367,16 +454,13 @@ async function doCompile(request: CompileRequest): Promise<void> {
       requestId: request.requestId,
     })
 
-    const { pageSize } = useSettingsStore.getState()
-    const preamble = buildPagePreamble(pageSize, compileInputs.mainSource, currentProjectLayoutLocked())
-    const finalSource = preamble ? preamble + compileInputs.mainSource : compileInputs.mainSource
-
     const compileStageStart = perfMark()
     const result = await compileTypst(
       finalSource,
       compileInputs.extraFiles,
       compileInputs.mainPath,
       compileInputs.extraBinaryFiles,
+      { wantSvg },
     )
     perfMeasure('compile.run', compileStageStart, {
       requestId: request.requestId,
@@ -423,14 +507,20 @@ async function doCompile(request: CompileRequest): Promise<void> {
       })
     }
 
-    if (result.success && result.svg && result.vectorData) {
-      store.setSvgResult(result.svg, result.vectorData, result.pageDimensions)
+    if (result.success && result.vectorData) {
+      store.setSvgResult(result.svg ?? null, result.vectorData, result.pageDimensions)
       const hasErrors = result.diagnostics.some((d) => d.severity === 'error')
       store.setStatus(hasErrors ? 'error' : 'success')
+      // Re-read the config token: the compile itself may have swapped fonts.
+      lastSuccessfulCompileFingerprint = hasErrors
+        ? null
+        : computeCompileFingerprint(compileInputs, finalSource, wantSvg)
     } else {
       store.setStatus('error')
+      lastSuccessfulCompileFingerprint = null
     }
   } catch (err) {
+    lastSuccessfulCompileFingerprint = null
     if (!isStaleRequest(request.requestId)) {
       console.error('Compilation failed:', err)
       store.setStatus('error')
@@ -464,26 +554,13 @@ export function requestCompile(source: string, sourcePath?: string | null): void
   const { autoCompile, compileDelay } = useSettingsStore.getState()
   if (!autoCompile) return
 
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-  }
-
-  const delay = effectiveCompileDelay(compileDelay)
-  const request: CompileRequest = {
-    source,
-    sourcePath,
-    urgent: false,
-    requestId: nextRequestId(),
-  }
-  debounceTimer = setTimeout(() => {
-    void doCompile(request)
-  }, delay)
+  scheduleCompileTimer(
+    { source, sourcePath, urgent: false, requestId: nextRequestId() },
+    effectiveCompileDelay(compileDelay),
+  )
 }
 
 export function forceCompile(source: string, sourcePath?: string | null): Promise<void> {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
+  clearScheduledCompile()
   return doCompile({ source, sourcePath, urgent: true, requestId: nextRequestId() })
 }

@@ -11,6 +11,7 @@ function deferred(): Deferred {
 const initGates: Deferred[] = []
 const compileGates: Deferred[] = []
 let compileCall = 0
+const renderSvgMock = vi.fn(async () => '<svg/>')
 
 vi.mock('@myriaddreamin/typst.ts', () => {
   class MemoryAccessModel {
@@ -53,7 +54,7 @@ vi.mock('@myriaddreamin/typst.ts', () => {
       }) => Promise<void>) => {
         await cb({
           retrievePagesInfo: () => [],
-          renderSvg: async () => '<svg/>',
+          renderSvg: renderSvgMock,
           getSourceLoc: () => undefined,
         })
       }),
@@ -63,6 +64,10 @@ vi.mock('@myriaddreamin/typst.ts', () => {
 
 vi.mock('@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url', () => ({
   default: 'renderer.wasm',
+}))
+
+vi.mock('@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url', () => ({
+  default: 'compiler.wasm',
 }))
 
 vi.mock('@/lib/universe-registry', () => ({
@@ -75,6 +80,7 @@ describe('compiler-backend races', () => {
     initGates.length = 0
     compileGates.length = 0
     compileCall = 0
+    renderSvgMock.mockClear()
     vi.resetModules()
   })
 
@@ -130,5 +136,35 @@ describe('compiler-backend races', () => {
 
     await Promise.all([svg, pdf])
     expect(order).toEqual(['svg', 'pdf'])
+  })
+
+  it('renders the full-document SVG only when requested', async () => {
+    const backend = await import('@/lib/compiler-backend')
+    const ready = backend.initCompilerBackend()
+    await vi.waitFor(() => expect(initGates.length).toBe(1))
+    initGates[0].resolve()
+    await ready
+
+    // First mocked compile yields no vector data; run it to advance the counter.
+    const warmup = backend.compileTypstBackend('= warmup')
+    await vi.waitFor(() => expect(compileGates.length).toBe(1))
+    compileGates[0].resolve()
+    await warmup
+
+    const canvasOnly = backend.compileTypstBackend('= doc')
+    await vi.waitFor(() => expect(compileGates.length).toBe(2))
+    compileGates[1].resolve()
+    const canvasResult = await canvasOnly
+    expect(canvasResult.success).toBe(true)
+    expect(canvasResult.vectorData).not.toBeNull()
+    expect(canvasResult.svg).toBeNull()
+    expect(renderSvgMock).not.toHaveBeenCalled()
+
+    const withSvg = backend.compileTypstBackend('= doc', undefined, '/main.typ', undefined, { wantSvg: true })
+    await vi.waitFor(() => expect(compileGates.length).toBe(3))
+    compileGates[2].resolve()
+    const svgResult = await withSvg
+    expect(svgResult.svg).toBe('<svg/>')
+    expect(renderSvgMock).toHaveBeenCalledTimes(1)
   })
 })

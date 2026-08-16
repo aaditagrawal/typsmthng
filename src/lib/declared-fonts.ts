@@ -50,9 +50,14 @@ const CSS_KEYWORDS = new Set([
   'unicase', 'titling-caps',
 ])
 
+const GOOGLE_FONT_NETWORK_ERROR_TTL_MS = 30_000
+const GOOGLE_FONT_NOT_FOUND_TTL_MS = 5 * 60_000
+
 let localFontsIndexPromise: Promise<Map<string, LocalFontDescriptor[]>> | null = null
 const localFontFamilyCache = new Map<string, Promise<Uint8Array[]>>()
 const googleFontFamilyCache = new Map<string, Promise<Uint8Array[]>>()
+/** Negative cache: normalized family -> timestamp after which a retry is allowed. */
+const googleFontFailureUntil = new Map<string, number>()
 
 export function normalizeFontFamily(value: string): string {
   return value.trim().replace(/\s+/g, ' ').toLowerCase()
@@ -285,13 +290,32 @@ function extractGoogleFontUrls(css: string): string[] {
   return [...urls]
 }
 
+function markGoogleFontFailure(normalizedFamily: string, status?: number): void {
+  // Missing families (4xx) are stable; network hiccups deserve an earlier retry.
+  const ttl = status !== undefined && status >= 400 && status < 500
+    ? GOOGLE_FONT_NOT_FOUND_TTL_MS
+    : GOOGLE_FONT_NETWORK_ERROR_TTL_MS
+  googleFontFailureUntil.set(normalizedFamily, Date.now() + ttl)
+}
+
 async function fetchGoogleFontData(family: string): Promise<Uint8Array[]> {
   const normalizedFamily = normalizeFontFamily(family)
+
+  const failedUntil = googleFontFailureUntil.get(normalizedFamily)
+  if (failedUntil !== undefined) {
+    if (Date.now() < failedUntil) {
+      // Recently failed — keep the retry off the compile critical path.
+      return []
+    }
+    googleFontFailureUntil.delete(normalizedFamily)
+  }
+
   let cached = googleFontFamilyCache.get(normalizedFamily)
   if (!cached) {
     cached = (async () => {
       const cssResponse = await fetch(buildGoogleFontCssUrl(family))
       if (!cssResponse.ok) {
+        markGoogleFontFailure(normalizedFamily, cssResponse.status)
         throw new Error(`Google Fonts CSS request failed with ${cssResponse.status}`)
       }
 
@@ -305,6 +329,7 @@ async function fetchGoogleFontData(family: string): Promise<Uint8Array[]> {
         fontUrls.map(async (fontUrl) => {
           const fontResponse = await fetch(fontUrl)
           if (!fontResponse.ok) {
+            markGoogleFontFailure(normalizedFamily, fontResponse.status)
             throw new Error(`Google Fonts asset request failed with ${fontResponse.status}`)
           }
           return new Uint8Array(await fontResponse.arrayBuffer())
@@ -312,6 +337,9 @@ async function fetchGoogleFontData(family: string): Promise<Uint8Array[]> {
       )
     })().catch((err) => {
       googleFontFamilyCache.delete(normalizedFamily)
+      if (!googleFontFailureUntil.has(normalizedFamily)) {
+        markGoogleFontFailure(normalizedFamily)
+      }
       throw err
     })
 

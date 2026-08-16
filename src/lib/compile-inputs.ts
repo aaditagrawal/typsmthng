@@ -46,7 +46,8 @@ export function buildCompileInputs({
     }
   }
 
-  const mainPath = project.mainFile ?? defaultMainPath
+  // deleteFolder can leave mainFile as '' — treat empty as unset.
+  const mainPath = project.mainFile || defaultMainPath
   const textFiles: CompileTextFile[] = []
   const extraFiles: CompileTextFile[] = []
   const extraBinaryFiles: CompileBinaryFile[] = []

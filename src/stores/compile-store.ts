@@ -14,6 +14,8 @@ export interface Diagnostic {
 interface CompileState {
   status: CompileStatus
   compilerReady: boolean
+  /** Bumped whenever the compiler worker/config is torn down; invalidates per-worker caches. */
+  compilerGeneration: number
   diagnostics: Diagnostic[]
   svg: string | null
   vectorData: Uint8Array | null
@@ -25,8 +27,9 @@ interface CompileState {
   autoCompile: boolean
   setStatus: (status: CompileStatus) => void
   setCompilerReady: (ready: boolean) => void
+  bumpCompilerGeneration: () => void
   setDiagnostics: (diagnostics: Diagnostic[]) => void
-  setSvgResult: (svg: string, vectorData: Uint8Array, pageDimensions: PageDimension[]) => void
+  setSvgResult: (svg: string | null, vectorData: Uint8Array, pageDimensions: PageDimension[]) => void
   clearPreview: () => void
   setCompileTime: (ms: number) => void
   setAutoCompile: (auto: boolean) => void
@@ -35,6 +38,7 @@ interface CompileState {
 export const useCompileStore = create<CompileState>((set) => ({
   status: 'idle',
   compilerReady: false,
+  compilerGeneration: 0,
   diagnostics: [],
   svg: null,
   vectorData: null,
@@ -46,10 +50,15 @@ export const useCompileStore = create<CompileState>((set) => ({
   autoCompile: true,
   setStatus: (status) => set({ status }),
   setCompilerReady: (compilerReady) => set({ compilerReady }),
-  setDiagnostics: (diagnostics) => set({
-    diagnostics,
-    errorCount: diagnostics.reduce((count, diag) => count + (diag.severity === 'error' ? 1 : 0), 0),
-    warningCount: diagnostics.reduce((count, diag) => count + (diag.severity === 'warning' ? 1 : 0), 0),
+  bumpCompilerGeneration: () => set((state) => ({ compilerGeneration: state.compilerGeneration + 1 })),
+  setDiagnostics: (diagnostics) => set((state) => {
+    // Keep the previous reference on empty -> empty so downstream effects can skip work.
+    if (diagnostics.length === 0 && state.diagnostics.length === 0) return state
+    return {
+      diagnostics,
+      errorCount: diagnostics.reduce((count, diag) => count + (diag.severity === 'error' ? 1 : 0), 0),
+      warningCount: diagnostics.reduce((count, diag) => count + (diag.severity === 'warning' ? 1 : 0), 0),
+    }
   }),
   setSvgResult: (svg, vectorData, pageDimensions) => set({
     svg,

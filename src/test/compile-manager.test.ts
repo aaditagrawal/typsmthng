@@ -33,9 +33,10 @@ vi.mock('idb-keyval', () => {
 
 import { useCompileStore } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
+import { usePreviewStore } from '@/stores/preview-store'
 import { useProjectStore } from '@/stores/project-store'
 import { ensureCompilerReady, forceCompile } from '@/lib/compile-manager'
-import { compileTypst, isCompilerReady } from '@/lib/compiler'
+import { compileTypst, ensurePackagesForCompile, isCompilerReady } from '@/lib/compiler'
 
 describe('Compile Manager', () => {
   beforeEach(() => {
@@ -216,6 +217,95 @@ describe('Compile Manager', () => {
     await Promise.all([oldCompile, queued])
     expect(queuedDone).toBe(true)
     expect(useCompileStore.getState().svg).toContain('QUEUED')
+  })
+
+  it('requests SVG rendering only when the preview mode resolves to svg', async () => {
+    usePreviewStore.getState().setRenderMode('svg')
+    await forceCompile('= Svg Mode')
+    expect(vi.mocked(compileTypst).mock.calls.at(-1)?.[4]).toEqual({ wantSvg: true })
+
+    usePreviewStore.getState().setRenderMode('auto')
+    await forceCompile('= Canvas Mode')
+    expect(vi.mocked(compileTypst).mock.calls.at(-1)?.[4]).toEqual({ wantSvg: false })
+  })
+
+  it('skips recompiling byte-identical inputs after a successful compile', async () => {
+    await forceCompile('= Identical')
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(1)
+
+    await forceCompile('= Identical')
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(1)
+    expect(useCompileStore.getState().status).toBe('success')
+
+    await forceCompile('= Changed')
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(2)
+  })
+
+  it('never skips a compile after an error result', async () => {
+    vi.mocked(compileTypst).mockResolvedValueOnce({
+      svg: null,
+      vectorData: null,
+      pageDimensions: [],
+      diagnostics: [{ severity: 'error', path: '', range: '', message: 'boom' }],
+      success: false,
+    })
+
+    await forceCompile('= Broken Doc')
+    expect(useCompileStore.getState().status).toBe('error')
+
+    await forceCompile('= Broken Doc')
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(2)
+    expect(useCompileStore.getState().status).toBe('success')
+  })
+
+  it('re-ensures packages and recompiles after a compiler generation bump', async () => {
+    const source = '#import "@preview/example:0.1.0": *\n= Pkg'
+
+    await forceCompile(source)
+    expect(vi.mocked(ensurePackagesForCompile)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(1)
+
+    // Identical inputs, same worker: nothing to do.
+    await forceCompile(source)
+    expect(vi.mocked(ensurePackagesForCompile)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(1)
+
+    // Worker restarted: its prepared package map is gone.
+    useCompileStore.getState().bumpCompilerGeneration()
+    await forceCompile(source)
+    expect(vi.mocked(ensurePackagesForCompile)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(2)
+  })
+
+  it('settles a queued compile that is replaced before its deferred run', async () => {
+    let releaseFirst: (() => void) | undefined
+    vi.mocked(compileTypst).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { releaseFirst = resolve })
+      return {
+        svg: '<svg>FIRST</svg>',
+        vectorData: new Uint8Array([1]),
+        pageDimensions: [{ width: 1, height: 1 }],
+        diagnostics: [],
+        success: true,
+      }
+    })
+
+    const first = forceCompile('= First')
+    await vi.waitFor(() => expect(releaseFirst).toBeDefined())
+
+    const queued = forceCompile('= Queued')
+    let queuedSettled = false
+    void queued.then(() => { queuedSettled = true })
+
+    releaseFirst?.()
+    await first
+
+    // The queued request now sits on a deferred timer; replacing it must
+    // release its awaiters instead of leaving them hanging.
+    const replacement = forceCompile('= Replacement')
+    await vi.waitFor(() => expect(queuedSettled).toBe(true))
+    await replacement
+    expect(useCompileStore.getState().svg).toContain('Replacem')
   })
 
   it('defers compile result application while the editor is actively typing', async () => {

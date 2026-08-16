@@ -47,6 +47,22 @@ describe('buildCompileInputs', () => {
     expect(inputs.textFiles.some((f) => f.content === '= Should Not Become Main')).toBe(true)
   })
 
+  it('falls back to the default main path when mainFile is empty', () => {
+    const inputs = buildCompileInputs({
+      project: project({
+        mainFile: '',
+        files: [
+          { path: '/main.typ', content: '= Main', isBinary: false, lastModified: 1 },
+        ],
+      }),
+      currentFilePath: '/main.typ',
+      liveSource: '= Live Main',
+    })
+
+    expect(inputs.mainPath).toBe('/main.typ')
+    expect(inputs.mainSource).toBe('= Live Main')
+  })
+
   it('uses live source when the open file is the missing main', () => {
     const inputs = buildCompileInputs({
       project: project({

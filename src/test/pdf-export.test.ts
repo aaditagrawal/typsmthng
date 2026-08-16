@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCompileStore } from '@/stores/compile-store'
+import type { Diagnostic } from '@/stores/compile-store'
 import type { PdfCompileResult } from '@/lib/compiler'
 
 const mocked = vi.hoisted(() => ({
@@ -17,6 +18,8 @@ const mocked = vi.hoisted(() => ({
     extraBinaryFiles: [] as Array<{ path: string; data: Uint8Array }>,
   })),
   applyPagePreamble: vi.fn((source: string) => source),
+  getInjectedPreambleLineCount: vi.fn(() => 0),
+  shiftDiagnosticsForPreamble: vi.fn((diagnostics: unknown[]) => diagnostics),
   getCurrentProject: vi.fn(() => ({ name: 'Paper', files: [], mainFile: '/main.typ' })),
   currentFilePath: '/main.typ',
   source: '= Doc',
@@ -25,6 +28,8 @@ const mocked = vi.hoisted(() => ({
 vi.mock('@/lib/compile-manager', () => ({
   ensureCompilerReady: mocked.ensureCompilerReady,
   applyPagePreamble: mocked.applyPagePreamble,
+  getInjectedPreambleLineCount: mocked.getInjectedPreambleLineCount,
+  shiftDiagnosticsForPreamble: mocked.shiftDiagnosticsForPreamble,
 }))
 
 vi.mock('@/lib/compiler', () => ({
@@ -152,6 +157,23 @@ describe('exportCurrentProjectPdf', () => {
       '@preview/foo:0.1.0',
       '@preview/bar:0.2.0',
     ])
+  })
+
+  it('shifts empty-output diagnostics for the injected preamble', async () => {
+    const rawDiagnostics: Diagnostic[] = [
+      { severity: 'error', path: '/main.typ', range: '2:1-2:4', message: 'unknown variable' },
+    ]
+    const shiftedDiagnostics: Diagnostic[] = [
+      { severity: 'error', path: '/main.typ', range: '1:1-1:4', message: 'unknown variable' },
+    ]
+    mocked.getInjectedPreambleLineCount.mockReturnValueOnce(1)
+    mocked.shiftDiagnosticsForPreamble.mockReturnValueOnce(shiftedDiagnostics)
+    mocked.compileToPdf.mockResolvedValue({ pdf: null, diagnostics: rawDiagnostics })
+
+    await exportCurrentProjectPdf({ alertOnFailure: false })
+
+    expect(mocked.shiftDiagnosticsForPreamble).toHaveBeenCalledWith(rawDiagnostics, '/main.typ', 1)
+    expect(useCompileStore.getState().diagnostics).toEqual(shiftedDiagnostics)
   })
 
   it('applies package-compat transformText like preview', async () => {

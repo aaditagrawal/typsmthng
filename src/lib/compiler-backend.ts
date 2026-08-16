@@ -6,10 +6,9 @@ import {
   MemoryAccessModel,
 } from '@myriaddreamin/typst.ts'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url'
+import compilerWasmUrl from '@myriaddreamin/typst-ts-web-compiler/pkg/typst_ts_web_compiler_bg.wasm?url'
 import type { Diagnostic } from '@/stores/compile-store'
 import { getPreparedPackageForResolver, ensurePackagesForCompile as ensurePackagesForCompileRegistry } from './universe-registry'
-
-const compilerWasmUrl = 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0-rc2/pkg/typst_ts_web_compiler_bg.wasm'
 
 let compiler: Awaited<ReturnType<typeof createTypstCompiler>> | null = null
 let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
@@ -127,10 +126,10 @@ export async function initCompilerBackend(): Promise<void> {
             getModule: () => ({ module_or_path: compilerWasmUrl }),
             beforeBuild: [
               loadFonts(fontsForInit, { assets: ['text'] }),
-              initOptions.withAccessModel(packageAccessModel as never),
+              initOptions.withAccessModel(packageAccessModel),
               initOptions.withPackageRegistry({
                 resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
-              } as never),
+              }),
             ],
           })
 
@@ -203,6 +202,11 @@ export interface PdfCompileResult {
   diagnostics: Diagnostic[]
 }
 
+export interface CompileOptions {
+  /** Render the full-document SVG alongside vector data. Skipped by default; canvas preview only needs vector data. */
+  wantSvg?: boolean
+}
+
 function normalizeDiagnostics(rawDiags: unknown[] | undefined): Diagnostic[] {
   return (rawDiags ?? []).map((d: unknown) => {
     const diag = d as Record<string, unknown>
@@ -221,12 +225,14 @@ export async function compileTypstBackend(
   extraFiles?: Array<{ path: string; content: string }>,
   mainFilePath = '/main.typ',
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
+  options?: CompileOptions,
 ): Promise<CompileResult> {
   return enqueueCompilerOperation(() => compileTypstBackendUnlocked(
     source,
     extraFiles,
     mainFilePath,
     extraBinaryFiles,
+    options,
   ))
 }
 
@@ -235,6 +241,7 @@ async function compileTypstBackendUnlocked(
   extraFiles?: Array<{ path: string; content: string }>,
   mainFilePath = '/main.typ',
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
+  options?: CompileOptions,
 ): Promise<CompileResult> {
   if (!compiler || !renderer) {
     throw new Error('Compiler not initialized')
@@ -289,7 +296,9 @@ async function compileTypstBackendUnlocked(
     { format: 'vector', artifactContent: vectorData },
     async (session) => {
       const pagesInfo = session.retrievePagesInfo()
-      svg = await session.renderSvg({})
+      if (options?.wantSvg) {
+        svg = await session.renderSvg({})
+      }
 
       pageDimensions = pagesInfo.map((page) => ({
         width: page.width,
