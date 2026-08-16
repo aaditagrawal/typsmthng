@@ -10,6 +10,44 @@ const projectsStore = createStore('typsmthng-projects', 'projects')
 // from it as a fallback; all new home-meta writes go to `projectsStore`.
 const legacyHomeStore = createStore('typsmthng-projects', 'home')
 const HOME_META_KEY = 'home-meta'
+const RECOVERY_JOURNAL_KEY = 'typsmthng-recovery-journal'
+
+interface RecoveryJournal {
+  projectId: string
+  path: string
+  content: string
+}
+
+function readRecoveryJournal(): RecoveryJournal | null {
+  try {
+    const raw = localStorage.getItem(RECOVERY_JOURNAL_KEY)
+    if (!raw) return null
+    const value: unknown = JSON.parse(raw)
+    if (!value || typeof value !== 'object') return null
+    const { projectId, path, content } = value as Partial<RecoveryJournal>
+    return typeof projectId === 'string' && typeof path === 'string' && typeof content === 'string'
+      ? { projectId, path, content }
+      : null
+  } catch {
+    return null
+  }
+}
+
+function writeRecoveryJournal(journal: RecoveryJournal): void {
+  try {
+    localStorage.setItem(RECOVERY_JOURNAL_KEY, JSON.stringify(journal))
+  } catch {
+    // IndexedDB autosave remains the fallback when synchronous storage is unavailable.
+  }
+}
+
+function clearRecoveryJournal(): void {
+  try {
+    localStorage.removeItem(RECOVERY_JOURNAL_KEY)
+  } catch {
+    // Ignore unavailable synchronous storage.
+  }
+}
 
 // Debounced auto-save for file content changes.
 // Bound to a project id so switching projects cannot save the wrong one
@@ -91,6 +129,7 @@ export function resetProjectPersistStateForTests(): void {
   projectPersistEpoch.clear()
   projectSaveChains.clear()
   homeMetaWriteChain = Promise.resolve()
+  clearRecoveryJournal()
 }
 
 export interface CreateProjectOptions {
@@ -293,6 +332,28 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         console.warn('Failed to save default project to IDB:', err)
       }
       projects.push(defaultProject)
+    }
+
+    const recoveryJournal = readRecoveryJournal()
+    if (recoveryJournal) {
+      const project = projects.find((item) => item.id === recoveryJournal.projectId)
+      const file = project?.files.find((item) => (
+        item.path === recoveryJournal.path && !item.isBinary
+      ))
+      if (project && file) {
+        const recoveredAt = Date.now()
+        file.content = recoveryJournal.content
+        file.lastModified = recoveredAt
+        project.updatedAt = recoveredAt
+        try {
+          await idbSet(project.id, project, projectsStore)
+          clearRecoveryJournal()
+        } catch (err) {
+          console.warn('Failed to persist recovered editor content to IDB:', err)
+        }
+      } else {
+        clearRecoveryJournal()
+      }
     }
 
     // Migrate the legacy seeded `default` project when its main file was stored
@@ -674,6 +735,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   renameFile: async (oldPath, newPath) => {
+    const project = get().projects.find((p) => p.id === get().currentProjectId)
+    if (oldPath !== newPath && project?.files.some((f) => f.path === newPath)) {
+      throw new Error(`Cannot rename file: "${newPath}" already exists.`)
+    }
+
     set((s) => ({
       projects: s.projects.map((p) =>
         p.id === s.currentProjectId
@@ -724,6 +790,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return { projects: nextProjects }
     })
     if (!changed) return
+    writeRecoveryJournal({ projectId, path, content })
     scheduleAutoSave(projectId, (id) => get().saveProject(id))
   },
 
@@ -840,13 +907,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const project = s.projects.find((p) => p.id === s.currentProjectId)
       if (!project) return s
       const remainingFiles = project.files.filter((f) => !f.path.startsWith(prefix))
+      const fallbackFile = remainingFiles.find((f) => !f.isBinary) ?? remainingFiles[0]
+      const mainWasRemoved = project.mainFile.startsWith(prefix)
+      const nextMainFile = mainWasRemoved
+        ? (fallbackFile?.path ?? '')
+        : project.mainFile
       const newCurrentFile = s.currentFilePath && s.currentFilePath.startsWith(prefix)
-        ? project.mainFile
+        ? (fallbackFile?.path ?? null)
         : s.currentFilePath
       return {
         projects: s.projects.map((p) =>
           p.id === s.currentProjectId
-            ? { ...p, files: remainingFiles, updatedAt: Date.now() }
+            ? { ...p, files: remainingFiles, mainFile: nextMainFile, updatedAt: Date.now() }
             : p
         ),
         currentFilePath: newCurrentFile,
@@ -862,6 +934,27 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   renameFolder: async (oldPath, newPath) => {
     const oldPrefix = oldPath.endsWith('/') ? oldPath : `${oldPath}/`
     const newPrefix = newPath.endsWith('/') ? newPath : `${newPath}/`
+    if (oldPrefix === newPrefix) return
+
+    if (newPrefix.startsWith(oldPrefix)) {
+      throw new Error('Cannot rename a folder into one of its descendants.')
+    }
+
+    const project = get().projects.find((p) => p.id === get().currentProjectId)
+    if (project) {
+      const unaffectedPaths = new Set(
+        project.files.filter((f) => !f.path.startsWith(oldPrefix)).map((f) => f.path),
+      )
+      const collision = project.files
+        .filter((f) => f.path.startsWith(oldPrefix))
+        .map((f) => `${newPrefix}${f.path.slice(oldPrefix.length)}`)
+        .find((targetPath) => unaffectedPaths.has(targetPath))
+
+      if (collision) {
+        throw new Error(`Cannot rename folder: "${collision}" already exists.`)
+      }
+    }
+
     set((s) => ({
       projects: s.projects.map((p) =>
         p.id === s.currentProjectId
@@ -905,6 +998,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         if (!latest) return
 
         await idbSet(id, latest, projectsStore)
+
+        const recoveryJournal = readRecoveryJournal()
+        const persistedRecoveryFile = recoveryJournal?.projectId === id
+          ? latest.files.find((file) => file.path === recoveryJournal.path && !file.isBinary)
+          : undefined
+        if (recoveryJournal && persistedRecoveryFile?.content === recoveryJournal.content) {
+          clearRecoveryJournal()
+        }
 
         // Reconcile races that landed during idbSet:
         // - deleted and still gone → remove any resurrected IDB row

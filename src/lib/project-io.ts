@@ -32,6 +32,35 @@ interface BuiltProjectFiles {
 }
 
 const PREFERRED_MAIN_NAME = /\/(main|paper|thesis|article|report)\.typ$/i
+const PROJECT_MANIFEST_PATH = '.typsmthng/project.json'
+const PROJECT_MANIFEST_VERSION = 1
+
+function projectManifestBytes(mainFile: string): Uint8Array {
+  return encodeTextForZip(JSON.stringify({ version: PROJECT_MANIFEST_VERSION, mainFile }, null, 2))
+}
+
+function takeManifestMainFile(entries: ZipImportEntry[]): {
+  entries: ZipImportEntry[]
+  manifestMainFile: string | null
+} {
+  const manifest = entries.find((entry) => entry.path === PROJECT_MANIFEST_PATH)
+  const sourceEntries = entries.filter((entry) => entry.path !== PROJECT_MANIFEST_PATH)
+  if (!manifest) return { entries: sourceEntries, manifestMainFile: null }
+
+  try {
+    const value: unknown = JSON.parse(strFromU8(manifest.data))
+    if (!value || typeof value !== 'object') return { entries: sourceEntries, manifestMainFile: null }
+    const { version, mainFile } = value as { version?: unknown; mainFile?: unknown }
+    if (version !== PROJECT_MANIFEST_VERSION || typeof mainFile !== 'string' || !mainFile.startsWith('/')) {
+      return { entries: sourceEntries, manifestMainFile: null }
+    }
+    const normalized = normalizeZipPath(mainFile)
+    if (!normalized || `/${normalized}` !== mainFile) return { entries: sourceEntries, manifestMainFile: null }
+    return { entries: sourceEntries, manifestMainFile: mainFile }
+  } catch {
+    return { entries: sourceEntries, manifestMainFile: null }
+  }
+}
 
 function resolveImportedMainFile(projectFiles: ProjectFile[]): string {
   const typFiles = projectFiles.filter((f) => f.path.endsWith('.typ'))
@@ -75,6 +104,7 @@ export function looksLikeImportableProject(paths: string[]): boolean {
     return normalizedPath === 'main.typ'
       || normalizedPath === 'main.tex'
       || normalizedPath === '.typsmthng/template.json'
+      || normalizedPath === PROJECT_MANIFEST_PATH
       // Only root-level sources count. Nested ancillary .typ/.tex alone must
       // not unwrap an unrelated single top-level folder (e.g. photos + notes).
       || (isRootFile && normalizedPath.endsWith('.typ'))
@@ -320,7 +350,12 @@ async function createImportedProject(
   projectName: string,
   projectFiles: ProjectFile[],
   options?: { select?: boolean },
+  manifestMainFile?: string | null,
 ): Promise<string> {
+  const validManifestMainFile = manifestMainFile
+    && projectFiles.some((file) => file.path === manifestMainFile && !file.isBinary)
+    ? manifestMainFile
+    : null
   const scaffold: ProjectScaffold = {
     files: projectFiles.map((file) => ({
       path: file.path,
@@ -328,7 +363,7 @@ async function createImportedProject(
       isBinary: file.isBinary,
       binaryData: file.binaryData,
     })),
-    mainFile: resolveImportedMainFile(projectFiles),
+    mainFile: validManifestMainFile || resolveImportedMainFile(projectFiles),
   }
 
   if (options) {
@@ -408,6 +443,7 @@ export async function exportProject(): Promise<void> {
       files[zipPath] = encodeTextForZip(file.content)
     }
   }
+  files[PROJECT_MANIFEST_PATH] = projectManifestBytes(project.mainFile)
 
   let zipped: Uint8Array
   try {
@@ -451,6 +487,7 @@ export async function exportAllProjects(): Promise<void> {
         files[zipPath] = encodeTextForZip(file.content)
       }
     }
+    files[`${folderName}/${PROJECT_MANIFEST_PATH}`] = projectManifestBytes(project.mainFile)
   }
 
   let zipped: Uint8Array
@@ -500,10 +537,16 @@ export async function importAllProjects(file: File): Promise<number> {
   let imported = 0
 
   for (const [folderName, entries] of projectFolders) {
-    const { projectFiles } = await buildProjectFilesFromZipEntries(entries, { convertLatex: true })
+    const manifest = takeManifestMainFile(entries)
+    const { projectFiles } = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: true })
     if (projectFiles.length === 0) continue
 
-    const id = await createImportedProject(folderName, projectFiles, { select: false })
+    const id = await createImportedProject(
+      folderName,
+      projectFiles,
+      { select: false },
+      manifest.manifestMainFile,
+    )
     if (id) {
       imported++
     }
@@ -528,14 +571,15 @@ export async function importProject(file: File): Promise<ProjectImportResult | n
 
   const fallbackProjectName = file.name.replace(/\.zip$/i, '')
   const { projectName: folderName, entries } = normalizeSingleProjectZipEntries(unzipped, fallbackProjectName)
-  const built = await buildProjectFilesFromZipEntries(entries, { convertLatex: true })
+  const manifest = takeManifestMainFile(entries)
+  const built = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: true })
 
   if (built.projectFiles.length === 0) return null
 
   // Toolbar/generic zip import keeps the archive/folder name. Dedicated LaTeX
   // importers may prefer \\title metadata instead.
   const projectName = folderName
-  await createImportedProject(projectName, built.projectFiles)
+  await createImportedProject(projectName, built.projectFiles, undefined, manifest.manifestMainFile)
 
   return {
     projectName,

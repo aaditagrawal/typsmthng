@@ -412,7 +412,7 @@ describe('project-io export', () => {
     const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
     const buffer = new Uint8Array(await blob.arrayBuffer())
     const unzipped = unzipSync(buffer)
-    expect(Object.keys(unzipped).sort()).toEqual(['img.png', 'main.typ'])
+    expect(Object.keys(unzipped).sort()).toEqual(['.typsmthng/project.json', 'img.png', 'main.typ'])
   })
 
   it('dedupes colliding .tex/.typ paths on import', async () => {
@@ -465,7 +465,7 @@ describe('project-io export', () => {
     const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
     const buffer = new Uint8Array(await blob.arrayBuffer())
     const unzipped = unzipSync(buffer)
-    expect(Object.keys(unzipped).sort()).toEqual(['empty.bin', 'main.typ'])
+    expect(Object.keys(unzipped).sort()).toEqual(['.typsmthng/project.json', 'empty.bin', 'main.typ'])
     expect(window.alert).toHaveBeenCalledWith(expect.stringContaining('1 binary file'))
   })
 
@@ -539,7 +539,12 @@ describe('project-io export', () => {
     await exportAllProjects()
     const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
     const unzipped = unzipSync(new Uint8Array(await blob.arrayBuffer()))
-    expect(Object.keys(unzipped).sort()).toEqual(['A_B-2/main.typ', 'A_B/main.typ'])
+    expect(Object.keys(unzipped).sort()).toEqual([
+      'A_B-2/.typsmthng/project.json',
+      'A_B-2/main.typ',
+      'A_B/.typsmthng/project.json',
+      'A_B/main.typ',
+    ])
   })
 
   it('round-trips export then importProject', async () => {
@@ -550,7 +555,7 @@ describe('project-io export', () => {
         { path: '/main.typ', content: '= Round', isBinary: false, lastModified: 1 },
         { path: '/extra.typ', content: '== Extra', isBinary: false, lastModified: 1 },
       ],
-      mainFile: '/main.typ',
+      mainFile: '/extra.typ',
       createdAt: 1,
       updatedAt: 1,
     }]
@@ -568,7 +573,29 @@ describe('project-io export', () => {
     const project = mocked.state.projects[0]
     expect(project.name).toBe('RoundTrip')
     expect(project.files.map((f) => f.path).sort()).toEqual(['/extra.typ', '/main.typ'])
-    expect(project.mainFile).toBe('/main.typ')
+    expect(project.mainFile).toBe('/extra.typ')
+  })
+
+  it('hides malformed or invalid manifests and falls back to main.typ', async () => {
+    for (const manifest of [
+      '{not json',
+      JSON.stringify({ version: 1, mainFile: '/missing.typ' }),
+      JSON.stringify({ version: 1, mainFile: '/asset.bin' }),
+      JSON.stringify({ version: 1, mainFile: '/../main.typ' }),
+    ]) {
+      mocked.state.projects = []
+      const zipped = zipSync({
+        '.typsmthng/project.json': asciiBytes(manifest),
+        'main.typ': asciiBytes('= Main'),
+        'other.typ': asciiBytes('= Other'),
+        'asset.bin': new Uint8Array([1]),
+      })
+
+      await importProject(makeZipFileLike('Generic.zip', zipped))
+      const project = mocked.state.projects[0]
+      expect(project.mainFile).toBe('/main.typ')
+      expect(project.files.some((file) => file.path === '/.typsmthng/project.json')).toBe(false)
+    }
   })
 
   it('round-trips exportAllProjects through importAllProjects with collisions and binaries', async () => {
@@ -588,8 +615,11 @@ describe('project-io export', () => {
       {
         id: 'p2',
         name: 'A_B',
-        files: [{ path: '/main.typ', content: '= Two', isBinary: false, lastModified: 1 }],
-        mainFile: '/main.typ',
+        files: [
+          { path: '/main.typ', content: '= Helper', isBinary: false, lastModified: 1 },
+          { path: '/paper.typ', content: '= Two', isBinary: false, lastModified: 1 },
+        ],
+        mainFile: '/paper.typ',
         createdAt: 1,
         updatedAt: 1,
       },
@@ -613,8 +643,12 @@ describe('project-io export', () => {
     const zipped = new Uint8Array(await blob.arrayBuffer())
     const exportedKeys = Object.keys(unzipSync(zipped)).sort()
     expect(exportedKeys).toEqual([
+      'A-2/.typsmthng/project.json',
       'A-2/main.tex',
+      'A_B-2/.typsmthng/project.json',
       'A_B-2/main.typ',
+      'A_B-2/paper.typ',
+      'A_B/.typsmthng/project.json',
       'A_B/img.png',
       'A_B/main.typ',
     ])
@@ -632,6 +666,7 @@ describe('project-io export', () => {
     const byName = Object.fromEntries(mocked.state.projects.map((p) => [p.name, p]))
     expect(Object.keys(byName).sort()).toEqual(['A-2', 'A_B', 'A_B-2'])
     expect(byName['A_B'].files.find((f) => f.path === '/img.png')?.binaryData).toEqual(imageBytes)
+    expect(byName['A_B-2'].mainFile).toBe('/paper.typ')
     expect(byName['A-2'].files.map((f) => f.path)).toEqual(['/main.typ'])
     expect(byName['A-2'].mainFile).toBe('/main.typ')
   })
