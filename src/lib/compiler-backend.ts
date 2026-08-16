@@ -124,7 +124,7 @@ export async function initCompilerBackend(): Promise<void> {
         try {
           const nextCompiler = createTypstCompiler()
           await nextCompiler.init({
-            getModule: () => compilerWasmUrl,
+            getModule: () => ({ module_or_path: compilerWasmUrl }),
             beforeBuild: [
               loadFonts(fontsForInit, { assets: ['text'] }),
               initOptions.withAccessModel(packageAccessModel as never),
@@ -136,7 +136,7 @@ export async function initCompilerBackend(): Promise<void> {
 
           const nextRenderer = createTypstRenderer()
           await nextRenderer.init({
-            getModule: () => rendererWasmUrl,
+            getModule: () => ({ module_or_path: rendererWasmUrl }),
           })
 
           // Config changed while WASM was loading — discard this instance.

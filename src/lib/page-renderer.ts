@@ -19,7 +19,7 @@ async function getRenderer() {
     rendererPromise = (async () => {
       const renderer = createTypstRenderer()
       await renderer.init({
-        getModule: () => rendererWasmUrl,
+        getModule: () => ({ module_or_path: rendererWasmUrl }),
       })
       return renderer
     })().catch((err) => {
