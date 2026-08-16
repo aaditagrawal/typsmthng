@@ -2,6 +2,7 @@ import { expose } from 'comlink'
 import {
   compileToPdfBackend,
   compileTypstBackend,
+  compileTypstIncrementalBackend,
   configureCompilerBackend,
   ensurePackagesForCompileBackend,
   initCompilerBackend,
@@ -16,6 +17,7 @@ const api = {
     await initCompilerBackend()
   },
   compileTypst: compileTypstBackend,
+  compileTypstIncremental: compileTypstIncrementalBackend,
   resolveSourceLoc: resolveSourceLocBackend,
   resolveSourceLocBatch: resolveSourceLocBatchBackend,
   compileToPdf: compileToPdfBackend,

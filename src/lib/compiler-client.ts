@@ -3,6 +3,7 @@ import type { Remote } from 'comlink'
 import { useCompileStore } from '@/stores/compile-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { loadDeclaredFontData } from './declared-fonts'
+import { computeContentDigest } from './compile-inputs'
 import {
   compileToPdfBackend,
   compileTypstBackend,
@@ -12,8 +13,11 @@ import {
   isCompilerReadyBackend,
   resolveSourceLocBackend,
   resolveSourceLocBatchBackend,
+  type CompileManifestEntry,
   type CompileOptions,
   type CompileResult,
+  type IncrementalCompileRequest,
+  type IncrementalCompileResponse,
   type PdfCompileResult,
 } from './compiler-backend'
 
@@ -30,6 +34,7 @@ interface CompilerWorkerApi {
     extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
     options?: CompileOptions,
   ) => Promise<CompileResult>
+  compileTypstIncremental: (request: IncrementalCompileRequest) => Promise<IncrementalCompileResponse>
   resolveSourceLoc: (vectorData: Uint8Array, path: Uint32Array) => Promise<string | undefined>
   resolveSourceLocBatch: (vectorData: Uint8Array, paths: Uint32Array[]) => Promise<Array<string | undefined>>
   compileToPdf: (
@@ -61,6 +66,13 @@ interface WorkerTransport {
   rejectTerminated: (err: WorkerTransportError) => void
   /** In-worker compiler init for this worker instance; reset on failure so it can retry. */
   initPromise: Promise<void> | null
+  /**
+   * path -> digest of what this worker instance is believed to have shadowed
+   * (last successful incremental sync). Worker restarts create a fresh
+   * transport, so a compiler generation bump automatically forces a full
+   * resync of the new worker's empty VFS.
+   */
+  syncedDigests: Map<string, string>
 }
 
 const MAX_CONSECUTIVE_TRANSPORT_FAILURES = 3
@@ -164,6 +176,7 @@ function getWorkerTransport(): WorkerTransport | null {
       terminated,
       rejectTerminated,
       initPromise: null,
+      syncedDigests: new Map(),
     }
 
     const onTransportFailure = (event: Event): void => {
@@ -322,6 +335,111 @@ async function ensurePackagesOnMainForFallback(
   await ensurePackagesForCompileBackend([...specs])
 }
 
+/**
+ * Stable identity tokens for binary buffers. Binary content never needs
+ * hashing: project buffers are immutable in practice — a changed asset is a
+ * new Uint8Array, which gets a new token.
+ */
+const binaryIdentityTokens = new WeakMap<Uint8Array, number>()
+let nextBinaryIdentityToken = 1
+
+function binaryDigest(data: Uint8Array): string {
+  let token = binaryIdentityTokens.get(data)
+  if (token === undefined) {
+    token = nextBinaryIdentityToken
+    nextBinaryIdentityToken += 1
+    binaryIdentityTokens.set(data, token)
+  }
+  return `bin:${token}:${data.byteLength}`
+}
+
+/**
+ * Incremental worker compile: send the full path -> digest manifest but only
+ * the payloads this transport hasn't successfully synced yet. If the worker's
+ * actual VFS state disagrees with our belief it answers `needs-sync` without
+ * applying anything, and we retry with the requested payloads (attempt 2) or
+ * everything (attempt 3, which by construction cannot be refused).
+ */
+async function compileIncrementalOnWorker(
+  active: WorkerTransport,
+  source: string,
+  extraFiles: Array<{ path: string; content: string }> | undefined,
+  mainFilePath: string,
+  extraBinaryFiles: Array<{ path: string; data: Uint8Array }> | undefined,
+  options?: CompileOptions,
+): Promise<CompileResult> {
+  // Later entries win on duplicate paths, matching the legacy add order
+  // (main, then extra text files, then binaries).
+  const textByPath = new Map<string, string>()
+  textByPath.set(mainFilePath, source)
+  for (const file of extraFiles ?? []) {
+    textByPath.set(file.path, file.content)
+  }
+  const binaryByPath = new Map<string, Uint8Array>()
+  for (const file of extraBinaryFiles ?? []) {
+    binaryByPath.set(file.path, file.data)
+    textByPath.delete(file.path)
+  }
+
+  const manifest: CompileManifestEntry[] = []
+  for (const [path, content] of textByPath) {
+    manifest.push({ path, digest: computeContentDigest(content) })
+  }
+  for (const [path, data] of binaryByPath) {
+    manifest.push({ path, digest: binaryDigest(data) })
+  }
+
+  const forcedPaths = new Set<string>()
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const sendEverything = attempt === 2
+    const textPayloads: IncrementalCompileRequest['textPayloads'] = []
+    const binaryPayloads: IncrementalCompileRequest['binaryPayloads'] = []
+
+    for (const entry of manifest) {
+      const synced = active.syncedDigests.get(entry.path)
+      if (!sendEverything && synced === entry.digest && !forcedPaths.has(entry.path)) continue
+      const content = textByPath.get(entry.path)
+      if (content !== undefined) {
+        textPayloads.push({ path: entry.path, content })
+      } else {
+        const data = binaryByPath.get(entry.path)
+        if (data !== undefined) {
+          binaryPayloads.push({ path: entry.path, data })
+        }
+      }
+    }
+
+    const response = await active.api.compileTypstIncremental({
+      mainFilePath,
+      manifest,
+      textPayloads,
+      binaryPayloads,
+      options,
+    })
+
+    if (response.kind === 'needs-sync') {
+      // Our belief was stale (e.g. a wholesale PDF export reset the worker
+      // shadow between compiles). Nothing was applied; retry with payloads
+      // for everything the worker asked for.
+      for (const path of response.missingPaths) {
+        forcedPaths.add(path)
+      }
+      continue
+    }
+
+    // The worker's VFS now matches the manifest exactly.
+    active.syncedDigests.clear()
+    for (const entry of manifest) {
+      active.syncedDigests.set(entry.path, entry.digest)
+    }
+    return response.result
+  }
+
+  // Unreachable: the send-everything attempt provides a payload for every
+  // manifest entry, so the worker cannot report anything missing.
+  throw new Error('Compiler worker refused a full VFS resync')
+}
+
 export async function compileTypstClient(
   source: string,
   extraFiles?: Array<{ path: string; content: string }>,
@@ -331,9 +449,20 @@ export async function compileTypstClient(
 ): Promise<CompileResult> {
   await initCompilerClient(source, extraFiles)
 
-  return callWithCompilerFallback(
-    (api) => api.compileTypst(source, extraFiles, mainFilePath, extraBinaryFiles, options),
+  return callWithFallback(
+    async (active) => {
+      await initWorkerTransport(active)
+      return compileIncrementalOnWorker(
+        active,
+        source,
+        extraFiles,
+        mainFilePath,
+        extraBinaryFiles,
+        options,
+      )
+    },
     async () => {
+      await ensureBackendInitialized()
       await ensurePackagesOnMainForFallback(source, extraFiles)
       return compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles, options)
     },
@@ -368,9 +497,17 @@ export async function compileToPdfClient(
 ): Promise<PdfCompileResult> {
   await initCompilerClient(source, extraFiles)
 
-  return callWithCompilerFallback(
-    (api) => api.compileToPdf(source, extraFiles, mainFilePath, extraBinaryFiles),
+  return callWithFallback(
+    async (active) => {
+      await initWorkerTransport(active)
+      const result = await active.api.compileToPdf(source, extraFiles, mainFilePath, extraBinaryFiles)
+      // PDF export rewrites the worker shadow wholesale (no digests), so our
+      // incremental belief is stale; force a proactive full sync next compile.
+      active.syncedDigests.clear()
+      return result
+    },
     async () => {
+      await ensureBackendInitialized()
       await ensurePackagesOnMainForFallback(source, extraFiles)
       return compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
     },

@@ -52,6 +52,7 @@ export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }):
   additionalFontData = nextFontData
   compiler = null
   renderer = null
+  shadowDigests.clear()
   initGeneration += 1
   // Leave initPromise set so waiters observe the in-flight attempt; generation
   // gating discards stale publishes and callers retry until current config is ready.
@@ -149,6 +150,8 @@ export async function initCompilerBackend(): Promise<void> {
 
           compiler = nextCompiler
           renderer = nextRenderer
+          // Fresh WASM instance starts with an empty shadow VFS.
+          shadowDigests.clear()
         } catch (err) {
           console.error('Failed to initialize compiler:', err)
           if (generation === initGeneration) {
@@ -213,6 +216,48 @@ export interface CompileOptions {
   wantSvg?: boolean
 }
 
+export interface CompileManifestEntry {
+  path: string
+  /**
+   * Opaque identity for the file's content. Text files use a content digest;
+   * binaries use a caller-assigned identity token (buffers are immutable in
+   * practice — a changed asset is a new Uint8Array). The backend only ever
+   * compares digests for equality.
+   */
+  digest: string
+}
+
+/**
+ * Incremental compile request: the manifest describes the complete set of
+ * files the compiler VFS must contain (including the main file); payloads are
+ * included only for entries the caller believes this compiler context has not
+ * seen yet. The backend keeps its own path -> digest map of what is currently
+ * shadowed, unmaps paths missing from the manifest, applies only mismatched
+ * payloads, and never resets the shadow wholesale.
+ */
+export interface IncrementalCompileRequest {
+  mainFilePath: string
+  manifest: CompileManifestEntry[]
+  textPayloads: Array<{ path: string; content: string }>
+  binaryPayloads: Array<{ path: string; data: Uint8Array }>
+  options?: CompileOptions
+}
+
+export type IncrementalCompileResponse =
+  | { kind: 'result'; result: CompileResult }
+  /**
+   * The caller's belief about this context's VFS was stale: these manifest
+   * entries mismatch the shadowed state and no payload was provided. Nothing
+   * was applied; the caller should resend with the missing payloads included.
+   */
+  | { kind: 'needs-sync'; missingPaths: string[] }
+
+/**
+ * path -> digest of what is currently shadowed in the live compiler instance.
+ * Module state is per-JS-context, so the worker build gets its own copy.
+ */
+const shadowDigests = new Map<string, string>()
+
 function normalizeDiagnostics(rawDiags: unknown[] | undefined): Diagnostic[] {
   return (rawDiags ?? []).map((d: unknown) => {
     const diag = d as Record<string, unknown>
@@ -256,6 +301,8 @@ async function compileTypstBackendUnlocked(
   const totalStart = performance.now()
 
   compiler.resetShadow()
+  // Wholesale rewrite without digests: incremental state is now unknown.
+  shadowDigests.clear()
   compiler.addSource(mainFilePath, source)
 
   if (extraFiles) {
@@ -267,6 +314,22 @@ async function compileTypstBackendUnlocked(
     for (const file of extraBinaryFiles) {
       compiler.mapShadow(file.path, file.data)
     }
+  }
+
+  return compileAndRenderVectorLocked(mainFilePath, options, totalStart)
+}
+
+/**
+ * Compile the currently shadowed VFS and render page info. Callers must hold
+ * the operation queue and have verified compiler/renderer are initialized.
+ */
+async function compileAndRenderVectorLocked(
+  mainFilePath: string,
+  options: CompileOptions | undefined,
+  totalStart: number,
+): Promise<CompileResult> {
+  if (!compiler || !renderer) {
+    throw new Error('Compiler not initialized')
   }
 
   const compileStart = performance.now()
@@ -329,6 +392,71 @@ async function compileTypstBackendUnlocked(
   }
 }
 
+export async function compileTypstIncrementalBackend(
+  request: IncrementalCompileRequest,
+): Promise<IncrementalCompileResponse> {
+  return enqueueCompilerOperation(async () => {
+    if (!compiler || !renderer) {
+      throw new Error('Compiler not initialized')
+    }
+
+    const totalStart = performance.now()
+
+    const textPayloads = new Map<string, string>()
+    for (const file of request.textPayloads) {
+      textPayloads.set(file.path, file.content)
+    }
+    const binaryPayloads = new Map<string, Uint8Array>()
+    for (const file of request.binaryPayloads) {
+      binaryPayloads.set(file.path, file.data)
+    }
+
+    // Defensive resync path: refuse (without applying anything) when the
+    // caller believed we had content that we don't.
+    const missingPaths: string[] = []
+    for (const entry of request.manifest) {
+      if (shadowDigests.get(entry.path) === entry.digest) continue
+      if (textPayloads.has(entry.path) || binaryPayloads.has(entry.path)) continue
+      missingPaths.push(entry.path)
+    }
+    if (missingPaths.length > 0) {
+      return { kind: 'needs-sync' as const, missingPaths }
+    }
+
+    // Unmap files that no longer exist in the project.
+    const manifestPaths = new Set<string>()
+    for (const entry of request.manifest) {
+      manifestPaths.add(entry.path)
+    }
+    for (const path of [...shadowDigests.keys()]) {
+      if (manifestPaths.has(path)) continue
+      compiler.unmapShadow(path)
+      shadowDigests.delete(path)
+    }
+
+    // Apply only new/changed files; unchanged digests are left untouched.
+    for (const entry of request.manifest) {
+      if (shadowDigests.get(entry.path) === entry.digest) continue
+      const content = textPayloads.get(entry.path)
+      if (content !== undefined) {
+        compiler.addSource(entry.path, content)
+      } else {
+        const data = binaryPayloads.get(entry.path)
+        if (data === undefined) continue // unreachable: gated by the missing-paths check
+        compiler.mapShadow(entry.path, data)
+      }
+      shadowDigests.set(entry.path, entry.digest)
+    }
+
+    const result = await compileAndRenderVectorLocked(
+      request.mainFilePath,
+      request.options,
+      totalStart,
+    )
+    return { kind: 'result' as const, result }
+  })
+}
+
 export async function resolveSourceLocBackend(
   vectorData: Uint8Array,
   path: Uint32Array,
@@ -383,6 +511,8 @@ export async function compileToPdfBackend(
     }
 
     compiler.resetShadow()
+    // Wholesale rewrite without digests: incremental state is now unknown.
+    shadowDigests.clear()
     compiler.addSource(mainFilePath, source)
     if (extraFiles) {
       for (const file of extraFiles) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCompileInputs } from '@/lib/compile-inputs'
+import { buildCompileInputs, computeContentDigest } from '@/lib/compile-inputs'
 import type { Project } from '@/stores/project-store'
 
 function project(partial: Partial<Project> & Pick<Project, 'files' | 'mainFile'>): Project {
@@ -74,5 +74,27 @@ describe('buildCompileInputs', () => {
     })
 
     expect(inputs.mainSource).toBe('= Live Main')
+  })
+})
+
+describe('computeContentDigest', () => {
+  it('is deterministic and prefixed with the content length', () => {
+    const digest = computeContentDigest('= Hello')
+    expect(computeContentDigest('= Hello')).toBe(digest)
+    expect(digest.startsWith('7:')).toBe(true)
+  })
+
+  it('distinguishes same-length content and single-character edits', () => {
+    expect(computeContentDigest('= Hello')).not.toBe(computeContentDigest('= Hallo'))
+    expect(computeContentDigest('= Hello')).not.toBe(computeContentDigest('= Hello!'))
+    expect(computeContentDigest('ab')).not.toBe(computeContentDigest('ba'))
+    expect(computeContentDigest('')).not.toBe(computeContentDigest(' '))
+  })
+
+  it('carries two independent hash passes', () => {
+    const [, h1, h2] = computeContentDigest('= Doc').split(':')
+    expect(h1).toBeTruthy()
+    expect(h2).toBeTruthy()
+    expect(h1).not.toBe(h2)
   })
 })

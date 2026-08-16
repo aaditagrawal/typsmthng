@@ -18,6 +18,22 @@ export interface CompileInputs {
   extraBinaryFiles: CompileBinaryFile[]
 }
 
+/**
+ * Content digest used to gate incremental VFS sync with the compiler worker.
+ * Length plus two independent 32-bit FNV-1a passes (~64 bits of state): a
+ * single 32-bit FNV hash is too collision-prone to gate correctness on.
+ */
+export function computeContentDigest(content: string): string {
+  let h1 = 0x811c9dc5
+  let h2 = 0x9e3779b9
+  for (let i = 0; i < content.length; i++) {
+    const code = content.charCodeAt(i)
+    h1 = Math.imul(h1 ^ code, 0x01000193)
+    h2 = Math.imul(h2 ^ code, 0xcc9e2d51)
+  }
+  return `${content.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`
+}
+
 interface BuildCompileInputsOptions {
   project?: Project
   currentFilePath?: string | null
