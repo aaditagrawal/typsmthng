@@ -6,6 +6,7 @@ import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-men
 import { shouldTreatUploadAsText, isLatexPath, isImagePath } from '@/lib/file-classification'
 import { convertUploadedLatexFile } from '@/lib/project-io'
 import { getProjectFileIndex, isHiddenInternalPath } from '@/lib/file-index'
+import { basename, dirname } from '@/lib/paths'
 import {
   File,
   Upload,
@@ -24,6 +25,27 @@ import {
   Check,
 } from 'lucide-react'
 import { useEditorStore } from '@/stores/editor-store'
+
+const INVALID_NAME_PATTERN = /[/\\\0]/
+const INVALID_NAME_MESSAGE = 'Name cannot contain /, \\, or null characters.'
+
+/**
+ * Push the live editor buffer into the store before a rename/move touches the
+ * current file (or an ancestor folder). The editor's debounced sync is keyed
+ * to the old path, so without this flush any typing from the last ~800ms
+ * would be dropped and the buffer reverted to stale content.
+ */
+function flushEditorBufferBeforePathChange(affectedPath: string, isFolder: boolean) {
+  const { currentFilePath } = useProjectStore.getState()
+  if (!currentFilePath) return
+  const affected = isFolder
+    ? currentFilePath === affectedPath || currentFilePath.startsWith(`${affectedPath}/`)
+    : currentFilePath === affectedPath
+  if (!affected) return
+  const editor = useEditorStore.getState()
+  if (!editor.isDirty) return
+  useProjectStore.getState().updateFileContent(currentFilePath, editor.source)
+}
 
 // ── Indent guides ──
 
@@ -89,10 +111,10 @@ function buildTree(files: ProjectFile[]): TreeNode[] {
     }
 
     // Skip .folder placeholders from display
-    const fileName = file.path.split('/').pop() ?? ''
+    const fileName = basename(file.path)
     if (fileName === '.folder') {
       // But still ensure the folder exists in the tree
-      const folderPath = file.path.substring(0, file.path.lastIndexOf('/'))
+      const folderPath = dirname(file.path)
       if (folderPath && folderPath !== '/') {
         ensureFolder(folderPath)
       }
@@ -398,13 +420,14 @@ function FolderItem({
   }
 
   const handleRename = async (newName: string) => {
-    if (/[/\\\0]/.test(newName)) {
-      alert('Name cannot contain /, \\, or null characters.')
+    if (INVALID_NAME_PATTERN.test(newName)) {
+      alert(INVALID_NAME_MESSAGE)
       return
     }
-    const parentPath = node.path.substring(0, node.path.lastIndexOf('/'))
+    const parentPath = dirname(node.path)
     const newPath = parentPath ? `${parentPath}/${newName}` : `/${newName}`
     try {
+      flushEditorBufferBeforePathChange(node.path, true)
       await renameFolder(node.path, newPath)
       setRenaming(false)
     } catch (error) {
@@ -548,9 +571,8 @@ function FolderItem({
 
 function buildDuplicatePath(existingPaths: Iterable<string>, path: string): string {
   const taken = new Set(existingPaths)
-  const slashIndex = path.lastIndexOf('/')
-  const directory = slashIndex >= 0 ? path.slice(0, slashIndex) : ''
-  const fileName = slashIndex >= 0 ? path.slice(slashIndex + 1) : path
+  const directory = dirname(path)
+  const fileName = basename(path)
   const dotIndex = fileName.lastIndexOf('.')
   const hasExtension = dotIndex > 0
   const baseName = hasExtension ? fileName.slice(0, dotIndex) : fileName
@@ -581,16 +603,16 @@ function FileItem({
   isActive: boolean
   depth: number
 }) {
-  const editorSource = useEditorStore((s) => s.source)
-  const { selectFile, createFile, addBinaryFile, deleteFile, renameFile, currentProject, currentFilePath } = useProjectStore(
+  // Intentionally no subscriptions to the editor source or project identity
+  // here — they change on every keystroke/sync and would re-render every row.
+  // handleDuplicate reads both from getState() at call time instead.
+  const { selectFile, createFile, addBinaryFile, deleteFile, renameFile } = useProjectStore(
     useShallow((s) => ({
       selectFile: s.selectFile,
       createFile: s.createFile,
       addBinaryFile: s.addBinaryFile,
       deleteFile: s.deleteFile,
       renameFile: s.renameFile,
-      currentProject: s.getCurrentProject(),
-      currentFilePath: s.currentFilePath,
     }))
   )
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
@@ -603,12 +625,13 @@ function FileItem({
   }
 
   const handleRename = async (newName: string) => {
-    if (/[/\\\0]/.test(newName)) {
-      alert('Name cannot contain /, \\, or null characters.')
+    if (INVALID_NAME_PATTERN.test(newName)) {
+      alert(INVALID_NAME_MESSAGE)
       return
     }
-    const dir = path.substring(0, path.lastIndexOf('/'))
+    const dir = dirname(path)
     try {
+      flushEditorBufferBeforePathChange(path, false)
       await renameFile(path, `${dir}/${newName}`)
       setRenaming(false)
     } catch (error) {
@@ -617,6 +640,8 @@ function FileItem({
   }
 
   const handleDuplicate = async () => {
+    const { currentFilePath, getCurrentProject } = useProjectStore.getState()
+    const currentProject = getCurrentProject()
     const file = currentProject?.files.find((entry) => entry.path === path)
     if (!file || !currentProject) return
 
@@ -634,7 +659,7 @@ function FileItem({
       return
     }
 
-    const content = currentFilePath === path ? editorSource : file.content
+    const content = currentFilePath === path ? useEditorStore.getState().source : file.content
     await createFile(duplicatePath, content)
   }
 
@@ -761,7 +786,21 @@ function NewItemInput({
 
   const handleSubmit = () => {
     const trimmed = value.trim()
-    if (trimmed) {
+    if (!trimmed) {
+      onCancel()
+      return
+    }
+    if (INVALID_NAME_PATTERN.test(trimmed)) {
+      alert(INVALID_NAME_MESSAGE)
+      return
+    }
+    onSubmit(trimmed)
+  }
+
+  const handleBlur = () => {
+    // Blur must not force-submit: only accept a valid non-empty name.
+    const trimmed = value.trim()
+    if (trimmed && !INVALID_NAME_PATTERN.test(trimmed)) {
       onSubmit(trimmed)
     } else {
       onCancel()
@@ -789,7 +828,7 @@ function NewItemInput({
         value={value}
         placeholder={type === 'folder' ? 'folder name' : 'file name'}
         onChange={(e) => setValue(e.target.value)}
-        onBlur={handleSubmit}
+        onBlur={handleBlur}
         onKeyDown={(e) => {
           if (e.key === 'Enter') handleSubmit()
           if (e.key === 'Escape') onCancel()
@@ -902,6 +941,7 @@ interface FileEntry {
 async function readEntryRecursive(
   entry: FileSystemEntry,
   basePath: string,
+  skipped: string[],
 ): Promise<FileEntry[]> {
   if (entry.isFile) {
     const fileEntry = entry as FileSystemFileEntry
@@ -912,6 +952,7 @@ async function readEntryRecursive(
         },
         (err) => {
           console.warn(`Failed to read file ${entry.name}:`, err)
+          skipped.push(`${basePath}/${entry.name}`)
           resolve([])
         },
       )
@@ -930,13 +971,14 @@ async function readEntryRecursive(
               return
             }
             for (const child of entries) {
-              const childResults = await readEntryRecursive(child, `${basePath}/${entry.name}`)
+              const childResults = await readEntryRecursive(child, `${basePath}/${entry.name}`, skipped)
               results.push(...childResults)
             }
             readBatch()
           },
           (err) => {
             console.warn(`Failed to read directory ${entry.name}:`, err)
+            skipped.push(`${basePath}/${entry.name}`)
             resolve(results)
           },
         )
@@ -945,6 +987,15 @@ async function readEntryRecursive(
     })
   }
   return []
+}
+
+function alertSkippedEntries(skipped: string[]) {
+  const preview = skipped
+    .slice(0, 5)
+    .map((name) => `• ${name}`)
+    .join('\n')
+  const extra = skipped.length > 5 ? `\n…and ${skipped.length - 5} more` : ''
+  alert(`Skipped ${skipped.length} unreadable item(s) during import:\n\n${preview}${extra}`)
 }
 
 // ── Main FileTree component ──
@@ -974,7 +1025,9 @@ export function FileTree() {
   const newButtonRef = useRef<HTMLButtonElement>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set())
-  const [initialExpansionDone, setInitialExpansionDone] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const importingRef = useRef(false)
+  const dragDepthRef = useRef(0)
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
   const [renamingProject, setRenamingProject] = useState(false)
   const [projectNameValue, setProjectNameValue] = useState('')
@@ -1016,13 +1069,14 @@ export function FileTree() {
     return buildTree(fileIndex.treeFiles)
   }, [currentProject, fileIndex.treeFiles])
 
-  // Expand all folders by default on first load
-  // We use a ref to track whether initial expansion has already happened
-  // to avoid calling setState directly in the effect after first render
-  const initialExpansionRef = useRef(false)
+  // Expand all folders when a project's tree first renders, and again after
+  // switching projects — the previous project's expansion state must not
+  // carry over. The ref tracks which project the expansion was built for,
+  // avoiding a setState loop in the effect after first render.
+  const initialExpansionRef = useRef<string | null>(null)
   useEffect(() => {
-    if (!initialExpansionRef.current && !initialExpansionDone && tree.length > 0) {
-      initialExpansionRef.current = true
+    if (currentProjectId && initialExpansionRef.current !== currentProjectId && tree.length > 0) {
+      initialExpansionRef.current = currentProjectId
       const allFolders = new Set<string>()
       function collectFolders(nodes: TreeNode[]) {
         for (const node of nodes) {
@@ -1036,10 +1090,9 @@ export function FileTree() {
       // Use requestAnimationFrame to avoid setState in effect synchronously
       requestAnimationFrame(() => {
         setExpandedFolders(allFolders)
-        setInitialExpansionDone(true)
       })
     }
-  }, [tree, initialExpansionDone])
+  }, [tree, currentProjectId])
 
   const toggleFolder = useCallback((path: string) => {
     setExpandedFolders((prev) => {
@@ -1119,37 +1172,56 @@ export function FileTree() {
   }, [])
 
   const ingestFiles = useCallback(async (entries: Array<{ path: string; file: File }>) => {
-    const textEntries: Array<{ path: string; content: string }> = []
-    const binaryEntries: Array<{ path: string; data: Uint8Array }> = []
-    const latexWarnings: string[] = []
+    // Guard against overlapping ingests (e.g. a second drop mid-import).
+    if (importingRef.current) return
+    importingRef.current = true
+    setImporting(true)
+    try {
+      const textEntries: Array<{ path: string; content: string }> = []
+      const binaryEntries: Array<{ path: string; data: Uint8Array }> = []
+      const latexWarnings: string[] = []
 
-    for (const entry of entries) {
-      if (shouldTreatUploadAsText(entry.file)) {
-        const text = await entry.file.text()
-        if (isLatexPath(entry.file.name)) {
-          const result = await convertUploadedLatexFile(text, entry.file.name)
-          const typPath = entry.path.replace(/\.tex$/i, '.typ')
-          textEntries.push({ path: typPath, content: result.content })
-          for (const warning of result.warnings) {
-            latexWarnings.push(warning.message)
+      for (const entry of entries) {
+        if (shouldTreatUploadAsText(entry.file)) {
+          const text = await entry.file.text()
+          if (isLatexPath(entry.file.name)) {
+            const result = await convertUploadedLatexFile(text, entry.file.name)
+            const typPath = entry.path.replace(/\.tex$/i, '.typ')
+            textEntries.push({ path: typPath, content: result.content })
+            for (const warning of result.warnings) {
+              latexWarnings.push(warning.message)
+            }
+          } else {
+            textEntries.push({ path: entry.path, content: text })
           }
         } else {
-          textEntries.push({ path: entry.path, content: text })
+          const buffer = await entry.file.arrayBuffer()
+          binaryEntries.push({ path: entry.path, data: new Uint8Array(buffer) })
         }
-      } else {
-        const buffer = await entry.file.arrayBuffer()
-        binaryEntries.push({ path: entry.path, data: new Uint8Array(buffer) })
       }
-    }
 
-    if (textEntries.length > 0) {
-      await createFilesBatch(textEntries)
-    }
-    if (binaryEntries.length > 0) {
-      await addBinaryFilesBatch(binaryEntries)
-    }
-    if (latexWarnings.length > 0) {
-      console.warn('LaTeX conversion warnings during file ingest:', latexWarnings)
+      if (textEntries.length > 0) {
+        await createFilesBatch(textEntries)
+      }
+      if (binaryEntries.length > 0) {
+        await addBinaryFilesBatch(binaryEntries)
+      }
+      if (latexWarnings.length > 0) {
+        console.warn('LaTeX conversion warnings during file ingest:', latexWarnings)
+        const preview = latexWarnings
+          .slice(0, 5)
+          .map((message) => `• ${message}`)
+          .join('\n')
+        const extra = latexWarnings.length > 5
+          ? `\n…and ${latexWarnings.length - 5} more`
+          : ''
+        alert(
+          `Imported with ${latexWarnings.length} LaTeX conversion warning(s):\n\n${preview}${extra}`,
+        )
+      }
+    } finally {
+      importingRef.current = false
+      setImporting(false)
     }
   }, [createFilesBatch, addBinaryFilesBatch])
 
@@ -1171,24 +1243,36 @@ export function FileTree() {
     await ingestFiles(entries)
   }, [ingestFiles])
 
-  // Drag and drop with folder detection
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+  // Drag and drop with folder detection. dragenter/dragleave bubble up from
+  // every child row, so a depth counter keeps the highlight from flickering.
+  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    dragDepthRef.current += 1
     e.currentTarget.style.outline = '2px dashed var(--accent)'
     e.currentTarget.style.outlineOffset = '-2px'
   }
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+  }
+
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.currentTarget.style.outline = ''
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+    if (dragDepthRef.current === 0) {
+      e.currentTarget.style.outline = ''
+    }
   }
 
   const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
+    dragDepthRef.current = 0
     e.currentTarget.style.outline = ''
+    if (importingRef.current) return
 
     try {
       // Try webkitGetAsEntry for folder support
       const items = e.dataTransfer.items
+      const skipped: string[] = []
       if (items && items.length > 0) {
         const entries: FileEntry[] = []
         let hasEntries = false
@@ -1197,7 +1281,7 @@ export function FileTree() {
           const entry = items[i].webkitGetAsEntry?.()
           if (entry) {
             hasEntries = true
-            const results = await readEntryRecursive(entry, '')
+            const results = await readEntryRecursive(entry, '', skipped)
             entries.push(...results)
           }
         }
@@ -1209,6 +1293,9 @@ export function FileTree() {
               file,
             })),
           )
+          if (skipped.length > 0) {
+            alertSkippedEntries(skipped)
+          }
           return
         }
       }
@@ -1217,8 +1304,12 @@ export function FileTree() {
       if (e.dataTransfer.files.length > 0) {
         await handleUploadFiles(e.dataTransfer.files)
       }
+      if (skipped.length > 0) {
+        alertSkippedEntries(skipped)
+      }
     } catch (err) {
       console.error('File drop failed:', err)
+      alert('Failed to import dropped files. Please try again.')
     }
   }, [handleUploadFiles, ingestFiles])
 
@@ -1276,6 +1367,7 @@ export function FileTree() {
     <div
       className="h-full flex flex-col"
       style={{ background: 'var(--bg-surface)' }}
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -1404,6 +1496,7 @@ export function FileTree() {
           <input
             type="text"
             placeholder="SEARCH FILES..."
+            aria-label="Search files"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="bg-transparent border-none outline-none w-full"
@@ -1420,7 +1513,7 @@ export function FileTree() {
           style={{ width: '28px', height: '28px' }}
           onClick={() => fileInputRef.current?.click()}
           title="Upload file"
-          disabled={!currentProjectId}
+          disabled={!currentProjectId || importing}
         >
           <Upload size={13} />
         </button>
@@ -1429,7 +1522,7 @@ export function FileTree() {
           style={{ width: '28px', height: '28px' }}
           onClick={() => folderInputRef.current?.click()}
           title="Upload folder"
-          disabled={!currentProjectId}
+          disabled={!currentProjectId || importing}
         >
           <FolderUp size={13} />
         </button>
@@ -1467,7 +1560,29 @@ export function FileTree() {
       )}
 
       {/* File tree */}
-      <div className="flex-1 overflow-auto" style={{ paddingTop: '4px', paddingBottom: '4px' }}>
+      <div
+        className="flex-1 overflow-auto"
+        style={{
+          paddingTop: '4px',
+          paddingBottom: '4px',
+          opacity: importing ? 0.5 : 1,
+          pointerEvents: importing ? 'none' : 'auto',
+        }}
+      >
+        {importing && (
+          <div
+            style={{
+              padding: '8px 12px',
+              fontFamily: 'var(--font-mono)',
+              fontSize: '11px',
+              color: 'var(--text-tertiary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            IMPORTING…
+          </div>
+        )}
         {renderNodes(filteredTree, 0)}
 
         {/* New item at root level */}
@@ -1522,7 +1637,12 @@ export function FileTree() {
         multiple
         className="hidden"
         onChange={(e) => {
-          if (e.target.files) handleUploadFiles(e.target.files)
+          if (e.target.files) {
+            handleUploadFiles(e.target.files).catch((err) => {
+              console.error('File upload failed:', err)
+              alert('Failed to import files. Please try again.')
+            })
+          }
           e.target.value = ''
         }}
       />
@@ -1533,7 +1653,12 @@ export function FileTree() {
         className="hidden"
         {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
         onChange={(e) => {
-          if (e.target.files) handleUploadFiles(e.target.files)
+          if (e.target.files) {
+            handleUploadFiles(e.target.files).catch((err) => {
+              console.error('File upload failed:', err)
+              alert('Failed to import files. Please try again.')
+            })
+          }
           e.target.value = ''
         }}
       />

@@ -56,6 +56,17 @@ export default function App() {
         }
         void projectStore.saveCurrentProject()
       }
+      if ((e.metaKey || e.ctrlKey) && e.key === 'j') {
+        // The editor keymap binds Mod-j too and marks the event consumed;
+        // this fallback only fires when focus is outside CodeMirror. The
+        // cycle logic is inlined (not imported from keybindings.ts) so the
+        // eager App chunk stays free of CodeMirror/compiler modules.
+        if (e.defaultPrevented) return
+        e.preventDefault()
+        const { theme, setTheme } = useSettingsStore.getState()
+        const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
+        setTheme(next)
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         // CommandSearch only mounts in the workspace; toggling on home
         // would leak an open palette into the next project selection.

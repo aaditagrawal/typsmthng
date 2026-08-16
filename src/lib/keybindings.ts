@@ -32,13 +32,20 @@ export const typstKeymap: KeyBinding[] = [
       return true
     },
   },
+  // Mod-j also has a window-level fallback in App.tsx so the theme toggle
+  // works when focus is outside CodeMirror; that handler skips events this
+  // binding already consumed.
   {
     key: 'Mod-j',
     run: () => {
-      const { theme, setTheme } = useSettingsStore.getState()
-      const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
-      setTheme(next)
+      cycleTheme()
       return true
     },
   },
 ]
+
+export function cycleTheme(): void {
+  const { theme, setTheme } = useSettingsStore.getState()
+  const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
+  setTheme(next)
+}
