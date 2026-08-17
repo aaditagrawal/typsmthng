@@ -336,8 +336,17 @@ function emitNodes(
   inMath: boolean,
 ): string {
   const parts: string[] = []
+  let prevWasMathLetter = false
   for (let i = 0; i < nodes.length; i++) {
-    parts.push(emitNode(nodes[i], warnings, inMath))
+    const emitted = emitNode(nodes[i], warnings, inMath)
+    const isStringNode = nodes[i].type === 'string'
+    // Typst math reads adjacent letters as one identifier; the LaTeX parser
+    // hands us math letters as separate string nodes, so keep them separate.
+    if (inMath && isStringNode && prevWasMathLetter && /^[A-Za-z]/.test(emitted)) {
+      parts.push(' ')
+    }
+    parts.push(emitted)
+    prevWasMathLetter = inMath && isStringNode && /[A-Za-z]$/.test(emitted)
   }
   return parts.join('')
 }
@@ -348,8 +357,13 @@ function emitNode(
   inMath: boolean,
 ): string {
   switch (node.type) {
-    case 'string':
-      return (node as Ast.String).content
+    case 'string': {
+      const content = (node as Ast.String).content
+      if (!inMath) return content
+      // Typst math reads a multi-letter run as one identifier, so LaTeX `mc`
+      // must become `m c` to render as adjacent variables.
+      return content.replace(/[A-Za-z]{2,}/g, (run) => run.split('').join(' '))
+    }
 
     case 'whitespace':
       return ' '

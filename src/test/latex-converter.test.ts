@@ -498,3 +498,21 @@ describe('math escapes and scripts (regression: infinite recursion)', () => {
     expect(result.typst).toMatch(/\\\s*\n\s*c/)
   })
 })
+
+describe('math identifier splitting', () => {
+  it('splits multi-letter runs in math so Typst reads adjacent variables', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}$E = mc^2$ and $\\int x\\,dx$\\end{document}',
+    )
+    expect(result.typst).toContain('m c^(2)')
+    expect(result.typst).toContain('d x')
+    expect(result.typst).not.toMatch(/[^a-z]mc[^a-z]/)
+  })
+
+  it('leaves prose text runs outside math untouched', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}Plain words stay intact.\\end{document}',
+    )
+    expect(result.typst).toContain('Plain words stay intact.')
+  })
+})
