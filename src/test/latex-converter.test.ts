@@ -171,7 +171,7 @@ A & B \\
 \end{document}`)
 
     expect(result.typst).toContain('#figure(')
-    expect(result.typst).toContain('#table(')
+    expect(result.typst).toMatch(/#figure\(\s*table\(/)
     expect(result.typst).toContain('caption: [Results]')
     expect(result.typst).toContain('<tab:results>')
   })
@@ -514,5 +514,25 @@ describe('math identifier splitting', () => {
       '\\begin{document}Plain words stay intact.\\end{document}',
     )
     expect(result.typst).toContain('Plain words stay intact.')
+  })
+})
+
+describe('table environment output', () => {
+  it('wraps tabular in a compilable figure without a nested # prefix', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}\\begin{table}\\begin{tabular}{|l|c|}\\hline A & B \\\\ C & D \\\\ \\hline\\end{tabular}\\caption{Data}\\label{tab:x}\\end{table}\\end{document}',
+    )
+    expect(result.typst).toContain('#figure(')
+    expect(result.typst).toMatch(/#figure\(\s*table\(/)
+    expect(result.typst).not.toMatch(/#figure\(\s*#table\(/)
+    expect(result.typst).toContain('columns: 2,')
+    expect(result.typst).toContain('<tab:x>')
+  })
+
+  it('counts only column specifiers in the colspec', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}\\begin{tabular}{|l|p{3cm}|r|}A & B & C\\end{tabular}\\end{document}',
+    )
+    expect(result.typst).toContain('columns: 3,')
   })
 })

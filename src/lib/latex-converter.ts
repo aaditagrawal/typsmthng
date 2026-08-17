@@ -821,7 +821,12 @@ function emitTable(
 ): string {
   // Parse column spec from args
   const colSpec = getOptionalOrMandatoryArg(env)
-  const numCols = colSpec ? colSpec.replace(/[^lcr|p]/gi, '').length || 3 : 3
+  // Count column specifiers only — separators like | and p-column widths
+  // (braces may already be stripped by the parser) must not inflate it.
+  const cleanedSpec = colSpec
+    ? colSpec.replace(/\{[^}]*\}/g, '').replace(/[\d.]+[a-z]*/g, '')
+    : ''
+  const numCols = (cleanedSpec.match(/[lcrp]/g) || []).length || 3
 
   // Parse rows by splitting on \\
   const rows = splitTableRows(env.content, warnings)
@@ -948,7 +953,9 @@ function emitTableEnv(
   if (caption || label) {
     const parts: string[] = []
     parts.push('#figure(')
-    parts.push(`  ${tableContent.trim()},`)
+    // Inside #figure's argument list we are in code context, so the nested
+    // table call must not carry its own # prefix.
+    parts.push(`  ${tableContent.trim().replace(/^#/, '')},`)
     if (caption) {
       parts.push(`  caption: [${caption}],`)
     }
