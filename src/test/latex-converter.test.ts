@@ -536,3 +536,30 @@ describe('table environment output', () => {
     expect(result.typst).toContain('columns: 3,')
   })
 })
+
+describe('references and manual bibliography', () => {
+  it('numbers headings so section references resolve', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}\\section{Intro}\\label{sec:i}See \\ref{sec:i}.\\end{document}',
+    )
+    expect(result.typst).toContain('#set heading(numbering: "1.1")')
+    expect(result.typst).toContain('@sec:i')
+  })
+
+  it('converts thebibliography to labeled blocks and cites to links', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}Citing \\cite{knuth}.\\begin{thebibliography}{9}\\bibitem{knuth} Donald Knuth. The TeXbook. 1984.\\end{thebibliography}\\end{document}',
+    )
+    expect(result.typst).toContain('#link(label("knuth"))')
+    expect(result.typst).toContain('#block[\\[knuth\\] Donald Knuth. The TeXbook. 1984.] <knuth>')
+    expect(result.typst).toContain('#heading(numbering: none)[Bibliography]')
+  })
+
+  it('keeps @key cites when no manual bibliography exists', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}Citing \\cite{doe2020}.\\end{document}',
+    )
+    expect(result.typst).toContain('@doe2020')
+    expect(result.typst).not.toContain('#link(label(')
+  })
+})

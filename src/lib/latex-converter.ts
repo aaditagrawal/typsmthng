@@ -29,6 +29,9 @@ async function ensureParser() {
   return parseLatex
 }
 
+/** Whether the document being converted carries a manual thebibliography. */
+let hasManualBibliography = false
+
 export async function convertLatexToTypst(source: string): Promise<ConversionResult> {
   const parse = await ensureParser()
   const ast = parse(source)
@@ -36,6 +39,7 @@ export async function convertLatexToTypst(source: string): Promise<ConversionRes
   const warnings: ConversionWarning[] = []
   const metadata: ConversionResult['metadata'] = { packages: [] }
 
+  hasManualBibliography = /\\begin\{thebibliography\}/.test(source)
   const typst = emitRoot(ast, warnings, metadata)
   return { typst, warnings, metadata }
 }
@@ -291,6 +295,12 @@ function emitRoot(
   }
 
   const body = emitNodes(bodyNodes, warnings, false).trim()
+  // LaTeX numbers sectioning commands by default, and converted @sec:*
+  // references only resolve against numbered headings.
+  if (/^=+ /m.test(body)) {
+    parts.push('#set heading(numbering: "1.1")')
+    parts.push('')
+  }
   if (body) parts.push(body)
 
   return parts.join('\n') + '\n'
@@ -493,6 +503,12 @@ function emitMacro(
         .split(',')
         .map((key) => key.trim())
         .filter((key) => key.length > 0)
+      // With a manual thebibliography the keys label plain blocks, which can
+      // be linked but not @-referenced; without one, keep @key for real
+      // #bibliography() setups.
+      if (hasManualBibliography) {
+        return keys.map((key) => `#link(label("${key}"))[\\[${key}\\]]`).join(' ')
+      }
       return keys.map((key) => `@${key}`).join(' ')
     }
 
@@ -983,25 +999,29 @@ function emitBibliography(
   for (const node of env.content) {
     if (node.type === 'macro' && (node as Ast.Macro).content === 'bibitem') {
       if (currentKey) {
-        items.push(`// [${currentKey}] ${currentText.trim()}`)
+        items.push(`#block[\\[${currentKey}\\] ${currentText.trim()}] <${currentKey}>`)
       }
-      currentKey = getArgs(node as Ast.Macro)[0] || ''
-      currentText = ''
+      const macro = node as Ast.Macro
+      currentKey = getArgs(macro)[0] || ''
+      // The parser can absorb the trailing item text into an empty-mark arg,
+      // exactly as it does for \item.
+      const bodyArg = macro.args?.find((a) => a.openMark === '' && a.closeMark === '' && a.content.length > 0)
+      currentText = bodyArg ? emitNodes(bodyArg.content, warnings, false) : ''
     } else {
       currentText += emitNode(node, warnings, false)
     }
   }
 
   if (currentKey) {
-    items.push(`// [${currentKey}] ${currentText.trim()}`)
+    items.push(`#block[\\[${currentKey}\\] ${currentText.trim()}] <${currentKey}>`)
   }
 
   warnings.push({
-    message: 'Manual bibliography converted to comments. Consider using a .bib file with #bibliography().',
+    message: 'Manual bibliography converted to labeled blocks; citations link to them. Consider a .bib file with #bibliography().',
     construct: '\\begin{thebibliography}',
   })
 
-  return '\n// Bibliography\n' + items.join('\n') + '\n'
+  return '\n#heading(numbering: none)[Bibliography]\n' + items.join('\n') + '\n'
 }
 
 // ── Argument extraction helpers ──
