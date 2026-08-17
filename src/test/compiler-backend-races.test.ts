@@ -53,7 +53,12 @@ vi.mock('@myriaddreamin/typst.ts', () => {
           compileGates.push(gate)
           await gate.promise
           if (call === 0) {
-            return { result: null, diagnostics: [] }
+            return {
+              result: null,
+              diagnostics: [
+                { severity: 'error', path: '/main.typ', range: '2:13-2:15', message: 'expected expression' },
+              ],
+            }
           }
           return { result: new Uint8Array([37, 80, 68, 70]), diagnostics: [] }
         }),
@@ -288,5 +293,20 @@ describe('compiler-backend races', () => {
       binaryPayloads: [],
     })
     expect(stale).toEqual({ kind: 'needs-sync', missingPaths: ['/main.typ'] })
+  })
+
+  it('rebases 0-based typst ranges to the 1-based positions the app expects', async () => {
+    const backend = await import('@/lib/compiler-backend')
+    const ready = backend.initCompilerBackend()
+    await vi.waitFor(() => expect(initGates.length).toBe(1))
+    initGates[0].resolve()
+    await ready
+
+    // The first mocked compile returns a diagnostic with a raw 0-based range.
+    const compile = backend.compileTypstBackend('= broken')
+    await vi.waitFor(() => expect(compileGates.length).toBe(1))
+    compileGates[0].resolve()
+    const result = await compile
+    expect(result.diagnostics[0].range).toBe('3:14-3:16')
   })
 })

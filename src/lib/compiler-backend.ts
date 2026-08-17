@@ -258,13 +258,31 @@ export type IncrementalCompileResponse =
  */
 const shadowDigests = new Map<string, string>()
 
+/**
+ * typst.ts emits 0-based line:column positions; everything downstream
+ * (display, editor jumps, decorations) expects 1-based. Rebase once here.
+ */
+function rebaseDiagnosticRange(range: string): string {
+  if (!range) return range
+  const rebasePart = (part: string): string => {
+    const [line, col] = part.split(':')
+    const lineNum = Number.parseInt(line, 10)
+    const colNum = Number.parseInt(col, 10)
+    if (!Number.isFinite(lineNum) || !Number.isFinite(colNum)) return part
+    return `${lineNum + 1}:${colNum + 1}`
+  }
+  const dashIdx = range.indexOf('-')
+  if (dashIdx < 0) return rebasePart(range)
+  return `${rebasePart(range.slice(0, dashIdx))}-${rebasePart(range.slice(dashIdx + 1))}`
+}
+
 function normalizeDiagnostics(rawDiags: unknown[] | undefined): Diagnostic[] {
   return (rawDiags ?? []).map((d: unknown) => {
     const diag = d as Record<string, unknown>
     return {
       severity: String(diag.severity || 'error') as Diagnostic['severity'],
       path: String(diag.path || ''),
-      range: String(diag.range || ''),
+      range: rebaseDiagnosticRange(String(diag.range || '')),
       message: String(diag.message || ''),
       package: diag.package ? String(diag.package) : undefined,
     }
