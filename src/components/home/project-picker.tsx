@@ -618,7 +618,10 @@ export function ProjectPicker({
     })
   }
 
-  const handleLatexFiles = async (files: FileList) => {
+  const handleLatexFiles = async (fileList: FileList) => {
+    // Snapshot before any await: resetting the input's value (done right after
+    // this handler is invoked) empties the live FileList it passed us.
+    const files = Array.from(fileList)
     if (files.length === 0 || latexBusy) return
     setLatexBusy(true)
     setLatexResult(null)
@@ -635,11 +638,11 @@ export function ProjectPicker({
       }
 
       const entries: Array<{ relativePath: string; file: File }> = []
-      const hasRelativePaths = Array.from(files).some(
+      const hasRelativePaths = files.some(
         (f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath,
       )
 
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
         const path = hasRelativePaths && relPath ? relPath : file.name
         entries.push({ relativePath: path, file })
