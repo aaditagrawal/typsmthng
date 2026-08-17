@@ -470,3 +470,31 @@ Centered text.
     expect(result.typst).toContain('#align(center)')
   })
 })
+
+describe('math escapes and scripts (regression: infinite recursion)', () => {
+  it('converts sub/superscripts and frac in display math without overflowing', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}\\begin{equation}\\int_0^1 x^2 dx = \\frac{1}{3}\\end{equation}\\end{document}',
+    )
+    expect(result.typst).toContain('integral_(0)^(1)')
+    expect(result.typst).toContain('frac(1, 3)')
+  })
+
+  it('emits escaped special characters in math directly', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}$100\\% \\_ \\$ \\# a\\,b$\\end{document}',
+    )
+    expect(result.typst).toContain('100%')
+    expect(result.typst).toContain('\\_')
+    expect(result.typst).toContain('\\$')
+    expect(result.typst).toContain('\\#')
+  })
+
+  it('converts align rows with alignment markers and line breaks', async () => {
+    const result = await convertLatexToTypst(
+      '\\begin{document}\\begin{align}a &= b \\\\ c &= d\\end{align}\\end{document}',
+    )
+    expect(result.typst).toContain('&= b')
+    expect(result.typst).toMatch(/\\\s*\n\s*c/)
+  })
+})

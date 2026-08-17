@@ -609,15 +609,29 @@ function emitMathMacro(
     return `"${args[0] || ''}"`
   }
 
-  // Escaped special chars in math
-  if (['&', '%', '$', '#', '_', '{', '}', ' ', ',', ';', '!', '\\'].includes(name)) {
-    return emitMacro(macro, warnings, true)
+  // Escaped special chars in math, emitted directly — routing through the
+  // text emitter would bounce straight back here and recurse forever.
+  const mathEscapes: Record<string, string> = {
+    '&': '&',
+    '%': '%',
+    '$': '\\$',
+    '#': '\\#',
+    '{': '{',
+    '}': '}',
+    ' ': ' ',
+    ',': ' ',
+    ';': ' ',
+    '!': '',
+    '\\': '\\\n',
   }
+  if (name in mathEscapes) return mathEscapes[name]
 
-  // Subscript/superscript handled by parser as _ and ^
+  // Subscript/superscript handled by parser as _ and ^; a bare \_ or \^ with
+  // no arguments is an escaped literal instead.
   if (name === '_' || name === '^') {
     const args = getMandatoryArgNodes(macro)
-    const sub = args.length > 0 ? emitNodes(args[0], warnings, true) : ''
+    if (args.length === 0) return `\\${name}`
+    const sub = emitNodes(args[0], warnings, true)
     return `${name}(${sub})`
   }
 
