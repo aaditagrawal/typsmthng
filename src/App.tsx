@@ -41,6 +41,7 @@ export default function App() {
   useEffect(() => {
     loadProjects()
     useSettingsStore.getState().loadSettings()
+    void import('@/stores/ai-store').then((m) => m.useAiStore.getState().loadAiSettings())
   }, [loadProjects])
 
   useEffect(() => {
