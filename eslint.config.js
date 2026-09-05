@@ -1,3 +1,4 @@
+import stylex from '@stylexjs/eslint-plugin'
 import js from '@eslint/js'
 import globals from 'globals'
 import reactHooks from 'eslint-plugin-react-hooks'
@@ -9,6 +10,8 @@ export default defineConfig([
   globalIgnores(['dist']),
   {
     files: ['**/*.{ts,tsx}'],
+    plugins: { '@stylexjs': stylex },
+    rules: { '@stylexjs/valid-styles': 'error', '@stylexjs/valid-shorthands': 'error' },
     extends: [
       js.configs.recommended,
       tseslint.configs.recommended,

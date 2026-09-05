@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useEffect, lazy, Suspense } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useProjectStore } from '@/stores/project-store'
@@ -13,11 +14,11 @@ const WorkspaceShell = lazy(() => import('@/components/workspace/workspace-shell
 function FullscreenLoading({ label }: { label: string }) {
   return (
     <div
-      className="flex items-center justify-center h-full w-full"
+      {...stylex.props(styles.element1)}
       style={{ background: 'var(--bg-app)' }}
     >
-      <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
-        <Loader2 size={20} className="animate-spin" />
+      <div {...stylex.props(styles.element2)} style={{ color: 'var(--text-tertiary)' }}>
+        <Loader2 size={20} {...stylex.props(styles.element3)} />
         <span
           style={{
             fontFamily: 'var(--font-mono)',
@@ -107,3 +108,26 @@ export default function App() {
     </>
   )
 }
+
+const spin = stylex.keyframes({ to: { transform: 'rotate(360deg)' } })
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "height": "100%",
+    "width": "100%",
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "element2": {
+    "display": "flex",
+    "flexDirection": "column",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)"
+  },
+  "element3": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  }
+})

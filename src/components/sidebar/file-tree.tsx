@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useProjectStore, type ProjectFile } from '@/stores/project-store'
@@ -209,9 +210,9 @@ function ProjectDropdown({
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div {...stylex.props(styles.element1)} onClick={onClose} />
       <div
-        className="absolute left-0 right-0 z-50 py-1"
+        {...stylex.props(styles.element2)}
         style={{
           top: '40px',
           background: 'var(--bg-elevated)',
@@ -226,7 +227,7 @@ function ProjectDropdown({
         {projects.map((p) => (
           <button
             key={p.id}
-            className="flex items-center gap-2 w-full px-3 py-1.5"
+            {...stylex.props(styles.element3)}
             style={{
               ...menuStyle,
               color: p.id === currentProjectId ? 'var(--accent)' : 'var(--text-secondary)',
@@ -239,9 +240,9 @@ function ProjectDropdown({
             }}
             onClick={() => handleSelectProject(p.id)}
           >
-            {p.id === currentProjectId && <Check size={11} className="shrink-0" />}
-            {p.id !== currentProjectId && <span style={{ width: '11px' }} className="shrink-0" />}
-            <span className="truncate" style={{ textTransform: 'none' }}>{p.name}</span>
+            {p.id === currentProjectId && <Check size={11} {...stylex.props(styles.element4)} />}
+            {p.id !== currentProjectId && <span style={{ width: '11px' }} {...stylex.props(styles.element5)} />}
+            <span {...stylex.props(styles.element6)} style={{ textTransform: 'none' }}>{p.name}</span>
           </button>
         ))}
 
@@ -249,7 +250,7 @@ function ProjectDropdown({
 
         {/* Rename */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          {...stylex.props(styles.element7)}
           style={{ ...menuStyle, color: 'var(--text-secondary)' }}
           onMouseEnter={(e) => itemHover(e, true)}
           onMouseLeave={(e) => itemHover(e, false)}
@@ -264,7 +265,7 @@ function ProjectDropdown({
 
         {/* New project */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          {...stylex.props(styles.element8)}
           style={{ ...menuStyle, color: 'var(--text-secondary)' }}
           onMouseEnter={(e) => itemHover(e, true)}
           onMouseLeave={(e) => itemHover(e, false)}
@@ -278,7 +279,7 @@ function ProjectDropdown({
 
         {/* Delete */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          {...stylex.props(styles.element9)}
           style={{
             ...menuStyle,
             color: projects.length <= 1 ? 'var(--text-tertiary)' : 'var(--status-error)',
@@ -348,7 +349,7 @@ function InlineNameInput({
 
   return (
     <div
-      className="flex items-center"
+      {...stylex.props(styles.element10)}
       style={{
         position: 'relative',
         height: '32px',
@@ -359,8 +360,8 @@ function InlineNameInput({
     >
       <IndentGuides depth={depth} />
       {isFolder
-        ? <FolderOpen size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-        : <File size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+        ? <FolderOpen size={14} {...stylex.props(styles.element11)} style={{ color: 'var(--accent)' }} />
+        : <File size={14} {...stylex.props(styles.element12)} style={{ color: 'var(--text-tertiary)' }} />
       }
       <input
         ref={inputRef}
@@ -371,7 +372,7 @@ function InlineNameInput({
           if (e.key === 'Enter') handleSubmit()
           if (e.key === 'Escape') onCancel()
         }}
-        className="bg-transparent outline-none w-full"
+        {...stylex.props(styles.element13)}
         style={{
           color: 'var(--text-primary)',
           fontFamily: 'var(--font-mono)',
@@ -478,7 +479,7 @@ function FolderItem({
   return (
     <div style={{ contentVisibility: 'auto', containIntrinsicSize: '32px' }}>
       <button
-        className="flex items-center w-full text-left"
+        {...stylex.props(styles.element14)}
         style={{
           position: 'relative',
           height: '32px',
@@ -514,7 +515,7 @@ function FolderItem({
         <IndentGuides depth={depth} />
         <ChevronRight
           size={12}
-          className="shrink-0"
+          {...stylex.props(styles.element15)}
           style={{
             color: 'var(--text-tertiary)',
             transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
@@ -522,10 +523,10 @@ function FolderItem({
           }}
         />
         {isOpen
-          ? <FolderOpen size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-          : <Folder size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+          ? <FolderOpen size={14} {...stylex.props(styles.element16)} style={{ color: 'var(--accent)' }} />
+          : <Folder size={14} {...stylex.props(styles.element17)} style={{ color: 'var(--text-tertiary)' }} />
         }
-        <span className="truncate" style={{ textTransform: 'none' }}>{node.name}</span>
+        <span {...stylex.props(styles.element18)} style={{ textTransform: 'none' }}>{node.name}</span>
       </button>
 
       {isOpen && node.children && (
@@ -701,9 +702,9 @@ function FileItem({
   ]
 
   return (
-    <div className="relative" style={{ contentVisibility: 'auto', containIntrinsicSize: '32px' }}>
+    <div {...stylex.props(styles.element19)} style={{ contentVisibility: 'auto', containIntrinsicSize: '32px' }}>
       <button
-        className="flex items-center w-full text-left"
+        {...stylex.props(styles.element20)}
         style={{
           position: 'relative',
           height: '32px',
@@ -747,8 +748,8 @@ function FileItem({
         }}
       >
         <IndentGuides depth={depth} />
-        <File size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
-        <span className="truncate">{name}</span>
+        <File size={14} {...stylex.props(styles.element21)} style={{ color: 'var(--text-tertiary)' }} />
+        <span {...stylex.props(styles.element22)}>{name}</span>
       </button>
 
       {contextMenu && (
@@ -809,7 +810,7 @@ function NewItemInput({
 
   return (
     <div
-      className="flex items-center"
+      {...stylex.props(styles.element23)}
       style={{
         position: 'relative',
         height: '32px',
@@ -820,8 +821,8 @@ function NewItemInput({
     >
       <IndentGuides depth={depth} />
       {type === 'folder'
-        ? <FolderPlus size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-        : <FilePlus size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+        ? <FolderPlus size={14} {...stylex.props(styles.element24)} style={{ color: 'var(--accent)' }} />
+        : <FilePlus size={14} {...stylex.props(styles.element25)} style={{ color: 'var(--text-tertiary)' }} />
       }
       <input
         ref={inputRef}
@@ -833,7 +834,7 @@ function NewItemInput({
           if (e.key === 'Enter') handleSubmit()
           if (e.key === 'Escape') onCancel()
         }}
-        className="bg-transparent outline-none w-full"
+        {...stylex.props(styles.element26)}
         style={{
           color: 'var(--text-primary)',
           fontFamily: 'var(--font-mono)',
@@ -865,9 +866,9 @@ function NewDropdown({
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div {...stylex.props(styles.element27)} onClick={onClose} />
       <div
-        className="fixed z-50 py-1 min-w-[140px]"
+        {...stylex.props(styles.element28)}
         style={{
           left: anchorRect.left,
           top: anchorRect.bottom + 4,
@@ -878,7 +879,7 @@ function NewDropdown({
         }}
       >
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          {...stylex.props(styles.element29)}
           style={{
             color: 'var(--text-secondary)',
             fontSize: '11px',
@@ -903,7 +904,7 @@ function NewDropdown({
         </button>
         <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          {...stylex.props(styles.element30)}
           style={{
             color: 'var(--text-secondary)',
             fontSize: '11px',
@@ -1365,7 +1366,7 @@ export function FileTree() {
 
   return (
     <div
-      className="h-full flex flex-col"
+      {...stylex.props(styles.element31)}
       style={{ background: 'var(--bg-surface)' }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
@@ -1373,10 +1374,10 @@ export function FileTree() {
       onDrop={handleDrop}
     >
       {/* Project header */}
-      <div className="relative shrink-0" style={{ borderBottom: '1px solid var(--border-default)' }}>
+      <div {...stylex.props(styles.element32)} style={{ borderBottom: '1px solid var(--border-default)' }}>
         {renamingProject ? (
           <div
-            className="flex items-center"
+            {...stylex.props(styles.element33)}
             style={{
               height: '40px',
               padding: '0 12px',
@@ -1391,7 +1392,7 @@ export function FileTree() {
                 if (e.key === 'Enter') handleProjectRenameSubmit()
                 if (e.key === 'Escape') setRenamingProject(false)
               }}
-              className="bg-transparent outline-none w-full"
+              {...stylex.props(styles.element34)}
               style={{
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-mono)',
@@ -1406,7 +1407,7 @@ export function FileTree() {
           </div>
         ) : (
           <button
-            className="flex items-center justify-between w-full"
+            {...stylex.props(styles.element35)}
             style={{
               height: '40px',
               padding: '0 12px',
@@ -1425,7 +1426,7 @@ export function FileTree() {
               if (!projectDropdownOpen) e.currentTarget.style.background = 'transparent'
             }}
           >
-            <span className="truncate">
+            <span {...stylex.props(styles.element36)}>
               {currentProject?.name ?? 'Project'}
             </span>
             <ChevronDown
@@ -1450,7 +1451,7 @@ export function FileTree() {
 
       {/* Files tab indicator */}
       <div
-        className="shrink-0"
+        {...stylex.props(styles.element37)}
         style={{
           borderBottom: '1px solid var(--border-default)',
         }}
@@ -1476,14 +1477,14 @@ export function FileTree() {
 
       {/* Search + actions row */}
       <div
-        className="shrink-0 flex items-center gap-1"
+        {...stylex.props(styles.element38)}
         style={{
           padding: '8px 8px 8px 8px',
           borderBottom: '1px solid var(--border-subtle)',
         }}
       >
         <div
-          className="flex items-center gap-1.5 flex-1"
+          {...stylex.props(styles.element39)}
           style={{
             height: '28px',
             padding: '0 8px',
@@ -1499,7 +1500,7 @@ export function FileTree() {
             aria-label="Search files"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none outline-none w-full"
+            {...stylex.props(styles.element40)}
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '11px',
@@ -1561,7 +1562,7 @@ export function FileTree() {
 
       {/* File tree */}
       <div
-        className="flex-1 overflow-auto"
+        {...stylex.props(styles.element41)}
         style={{
           paddingTop: '4px',
           paddingBottom: '4px',
@@ -1635,7 +1636,7 @@ export function FileTree() {
         ref={fileInputRef}
         type="file"
         multiple
-        className="hidden"
+        {...stylex.props(styles.element42)}
         onChange={(e) => {
           if (e.target.files) {
             handleUploadFiles(e.target.files).catch((err) => {
@@ -1650,7 +1651,7 @@ export function FileTree() {
         ref={folderInputRef}
         type="file"
         multiple
-        className="hidden"
+        {...stylex.props(styles.element43)}
         {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
         onChange={(e) => {
           if (e.target.files) {
@@ -1665,3 +1666,220 @@ export function FileTree() {
     </div>
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "position": "fixed",
+    "inset": "calc(var(--spacing) * 0)",
+    "zIndex": 40
+  },
+  "element2": {
+    "position": "absolute",
+    "right": "calc(var(--spacing) * 0)",
+    "left": "calc(var(--spacing) * 0)",
+    "zIndex": 50,
+    "paddingBlock": "calc(var(--spacing) * 1)"
+  },
+  "element3": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element4": {
+    "flexShrink": 0
+  },
+  "element5": {
+    "flexShrink": 0
+  },
+  "element6": {
+    "textOverflow": "ellipsis",
+    "whiteSpace": "nowrap",
+    "overflow": "hidden"
+  },
+  "element7": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element8": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element9": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element10": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element11": {
+    "flexShrink": 0
+  },
+  "element12": {
+    "flexShrink": 0
+  },
+  "element13": {
+    "width": "100%",
+    "backgroundColor": "#0000",
+    "--tw-outline-style": "none",
+    "outlineStyle": "none"
+  },
+  "element14": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "textAlign": "left"
+  },
+  "element15": {
+    "flexShrink": 0
+  },
+  "element16": {
+    "flexShrink": 0
+  },
+  "element17": {
+    "flexShrink": 0
+  },
+  "element18": {
+    "textOverflow": "ellipsis",
+    "whiteSpace": "nowrap",
+    "overflow": "hidden"
+  },
+  "element19": {
+    "position": "relative"
+  },
+  "element20": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "textAlign": "left"
+  },
+  "element21": {
+    "flexShrink": 0
+  },
+  "element22": {
+    "textOverflow": "ellipsis",
+    "whiteSpace": "nowrap",
+    "overflow": "hidden"
+  },
+  "element23": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element24": {
+    "flexShrink": 0
+  },
+  "element25": {
+    "flexShrink": 0
+  },
+  "element26": {
+    "width": "100%",
+    "backgroundColor": "#0000",
+    "--tw-outline-style": "none",
+    "outlineStyle": "none"
+  },
+  "element27": {
+    "position": "fixed",
+    "inset": "calc(var(--spacing) * 0)",
+    "zIndex": 40
+  },
+  "element28": {
+    "position": "fixed",
+    "zIndex": 50,
+    "minWidth": "140px",
+    "paddingBlock": "calc(var(--spacing) * 1)"
+  },
+  "element29": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element30": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)"
+  },
+  "element31": {
+    "display": "flex",
+    "height": "100%",
+    "flexDirection": "column"
+  },
+  "element32": {
+    "position": "relative",
+    "flexShrink": 0
+  },
+  "element33": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element34": {
+    "width": "100%",
+    "backgroundColor": "#0000",
+    "--tw-outline-style": "none",
+    "outlineStyle": "none"
+  },
+  "element35": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "justifyContent": "space-between"
+  },
+  "element36": {
+    "textOverflow": "ellipsis",
+    "whiteSpace": "nowrap",
+    "overflow": "hidden"
+  },
+  "element37": {
+    "flexShrink": 0
+  },
+  "element38": {
+    "display": "flex",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1)"
+  },
+  "element39": {
+    "display": "flex",
+    "flex": "1",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1.5)"
+  },
+  "element40": {
+    "width": "100%",
+    "--tw-border-style": "none",
+    "borderStyle": "none",
+    "backgroundColor": "#0000",
+    "--tw-outline-style": "none",
+    "outlineStyle": "none"
+  },
+  "element41": {
+    "flex": "1",
+    "overflow": "auto"
+  },
+  "element42": {
+    "display": "none"
+  },
+  "element43": {
+    "display": "none"
+  }
+})

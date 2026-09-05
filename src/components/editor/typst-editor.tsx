@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useEffect, useRef, useCallback } from 'react'
 import { EditorView, lineNumbers, highlightActiveLine, highlightActiveLineGutter, keymap } from '@codemirror/view'
 import { EditorState, Compartment, Transaction } from '@codemirror/state'
@@ -475,8 +476,16 @@ export function TypstEditor() {
   return (
     <div
       ref={editorRef}
-      className="h-full w-full overflow-hidden"
+      {...stylex.props(styles.element1)}
       style={{ background: 'var(--bg-surface)' }}
     />
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "height": "100%",
+    "width": "100%",
+    "overflow": "hidden"
+  }
+})

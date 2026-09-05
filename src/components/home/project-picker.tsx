@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useState, useRef, useEffect } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
@@ -1061,7 +1062,7 @@ export function ProjectPicker({
               disabled={latexBusy}
               style={{ ...linkBtnBase, opacity: latexBusy ? 0.6 : 1 }}
             >
-              {latexBusy ? <Loader2 size={12} className="animate-spin" /> : <FileUp size={12} />}
+              {latexBusy ? <Loader2 size={12} {...stylex.props(styles.element1)} /> : <FileUp size={12} />}
               {latexBusy ? 'Converting...' : 'Import LaTeX'}
             </LinkBtn>
             {latexMenuOpen && !latexBusy && (
@@ -1252,7 +1253,7 @@ export function ProjectPicker({
                   opacity: initBusy || !initCommand.trim() ? 0.6 : 1,
                 }}
               >
-                {initBusy ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
+                {initBusy ? <Loader2 size={12} {...stylex.props(styles.element2)} /> : <Terminal size={12} />}
                 {initBusy ? 'Init...' : 'Run'}
               </button>
             </div>
@@ -1532,7 +1533,7 @@ export function ProjectPicker({
             disabled={importAllBusy}
             style={{ ...linkBtnBase, opacity: importAllBusy ? 0.6 : 1 }}
           >
-            {importAllBusy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+            {importAllBusy ? <Loader2 size={12} {...stylex.props(styles.element3)} /> : <Upload size={12} />}
             {importAllBusy ? 'Importing...' : 'Import all'}
           </LinkBtn>
         </div>
@@ -1855,7 +1856,7 @@ export function ProjectPicker({
 
                 {marketplaceBusy && (
                   <div style={{ border: '1px solid var(--border-default)', borderRadius: '2px', padding: '10px', color: 'var(--text-secondary)', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                    <Loader2 size={12} className="animate-spin" />
+                    <Loader2 size={12} {...stylex.props(styles.element4)} />
                     Searching...
                   </div>
                 )}
@@ -1954,3 +1955,31 @@ export function ProjectPicker({
     </div>
   )
 }
+
+const spin = stylex.keyframes({ to: { transform: 'rotate(360deg)' } })
+const styles = stylex.create({
+  "element1": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element2": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element3": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element4": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  }
+})
