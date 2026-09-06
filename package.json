@@ -70,5 +70,6 @@
     "typescript-eslint": "^8.57.0",
     "vite": "^8.0.0",
     "vitest": "^4.1.0"
-  }
+  },
+  "packageManager": "bun@1.4.2"
 }
