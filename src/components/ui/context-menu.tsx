@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronRight } from 'lucide-react'
 
@@ -179,7 +180,7 @@ function ContextMenuPanel({
       <div
         ref={panelRef}
         role="menu"
-        className="fixed z-50 min-w-[220px]"
+        {...stylex.props(styles.element1)}
         style={{
           left: position.left,
           top: position.top,
@@ -236,7 +237,7 @@ function ContextMenuPanel({
               aria-disabled={action.disabled || undefined}
               aria-haspopup={action.children?.length ? 'menu' : undefined}
               aria-expanded={action.children?.length ? openSubmenuIndex === index : undefined}
-              className="flex items-center gap-3 w-full px-4 py-2"
+              {...stylex.props(styles.element2)}
               style={{
                 color: action.disabled
                   ? 'var(--text-tertiary)'
@@ -362,7 +363,7 @@ export function ContextMenu({
   return (
     <>
       <div
-        className="fixed inset-0 z-40"
+        {...stylex.props(styles.element3)}
         onMouseDown={(event) => {
           event.preventDefault()
         }}
@@ -376,3 +377,24 @@ export function ContextMenu({
     </>
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "position": "fixed",
+    "zIndex": 50,
+    "minWidth": "220px"
+  },
+  "element2": {
+    "display": "flex",
+    "width": "100%",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)",
+    "paddingInline": "calc(var(--spacing) * 4)",
+    "paddingBlock": "calc(var(--spacing) * 2)"
+  },
+  "element3": {
+    "position": "fixed",
+    "inset": "calc(var(--spacing) * 0)",
+    "zIndex": 40
+  }
+})

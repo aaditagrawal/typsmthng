@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { Panel, Group, Separator } from 'react-resizable-panels'
 import { Toolbar } from '@/components/layout/toolbar'
 import { StatusBar } from '@/components/layout/status-bar'
@@ -36,10 +37,10 @@ export default function WorkspaceShell() {
 
   return (
     <ErrorBoundary fallbackMessage="The application encountered an unexpected error.">
-      <div className="flex flex-col h-full w-full" style={{ background: 'var(--bg-app)' }}>
+      <div {...stylex.props(styles.element1)} style={{ background: 'var(--bg-app)' }}>
         <SafariBanner />
         <Toolbar />
-        <div className="workspace-main flex flex-1 min-h-0 relative">
+        <div className={["workspace-main", stylex.props(styles.element2).className].join(' ')}>
           {narrow && sidebarOpen && (
             <div
               className="workspace-scrim"
@@ -50,7 +51,7 @@ export default function WorkspaceShell() {
           )}
           {/* Keep mounted so expand/search/rename state survives hide/show. */}
           <div
-            className="workspace-sidebar shrink-0 overflow-hidden"
+            className={["workspace-sidebar", stylex.props(styles.element3).className].join(' ')}
             hidden={!sidebarOpen}
             inert={!sidebarOpen ? true : undefined}
             style={{
@@ -64,7 +65,7 @@ export default function WorkspaceShell() {
           <Group
             key={narrow ? 'vertical' : 'horizontal'}
             orientation={narrow ? 'vertical' : 'horizontal'}
-            className="workspace-panels flex-1"
+            className={["workspace-panels", stylex.props(styles.element4).className].join(' ')}
           >
             <Panel defaultSize={50} minSize={25}>
               <ErrorBoundary fallbackMessage="Editor crashed.">
@@ -87,3 +88,25 @@ export default function WorkspaceShell() {
     </ErrorBoundary>
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "height": "100%",
+    "width": "100%",
+    "flexDirection": "column"
+  },
+  "element2": {
+    "position": "relative",
+    "display": "flex",
+    "minHeight": "calc(var(--spacing) * 0)",
+    "flex": "1"
+  },
+  "element3": {
+    "flexShrink": 0,
+    "overflow": "hidden"
+  },
+  "element4": {
+    "flex": "1"
+  }
+})

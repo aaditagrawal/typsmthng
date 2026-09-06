@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useState } from 'react'
 import { X, AlertTriangle } from 'lucide-react'
 
@@ -50,20 +51,20 @@ export function SafariBanner() {
 
   return (
     <div
-      className="flex items-center gap-2 px-3 py-1.5 text-xs shrink-0"
+      {...stylex.props(styles.element1)}
       style={{
         background: '#FFF3ED',
         color: '#932B00',
         borderBottom: '1px solid #FFE3D1',
       }}
     >
-      <AlertTriangle size={14} className="shrink-0" />
-      <span className="flex-1">{message}</span>
+      <AlertTriangle size={14} {...stylex.props(styles.element2)} />
+      <span {...stylex.props(styles.element3)}>{message}</span>
       {storageStatus === 'idle' && (
         <button
           type="button"
           onClick={handleAllowStorage}
-          className="shrink-0 px-2 py-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
+          {...stylex.props(styles.element4)}
           style={{
             fontFamily: 'var(--font-mono)',
             fontSize: '10px',
@@ -78,7 +79,7 @@ export function SafariBanner() {
       <button
         type="button"
         onClick={dismiss}
-        className="shrink-0 p-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
+        {...stylex.props(styles.element5)}
         aria-label="Dismiss"
       >
         <X size={14} />
@@ -86,3 +87,51 @@ export function SafariBanner() {
     </div>
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2)",
+    "paddingInline": "calc(var(--spacing) * 3)",
+    "paddingBlock": "calc(var(--spacing) * 1.5)",
+    "fontSize": "var(--text-xs)",
+    "lineHeight": "var(--tw-leading, var(--text-xs--line-height))"
+  },
+  "element2": {
+    "flexShrink": 0
+  },
+  "element3": {
+    "flex": "1"
+  },
+  "element4": {
+    "flexShrink": 0,
+    "borderRadius": ".25rem",
+    "paddingInline": "calc(var(--spacing) * 2)",
+    "paddingBlock": "calc(var(--spacing) * .5)",
+    "transitionProperty": "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+    "transitionTimingFunction": "var(--tw-ease, var(--default-transition-timing-function))",
+    "transitionDuration": "var(--tw-duration, var(--default-transition-duration))",
+    "backgroundColor": {
+      "default": null,
+      "@media (hover: hover)": {
+        ":hover": "#ffe3d1"
+      }
+    }
+  },
+  "element5": {
+    "flexShrink": 0,
+    "borderRadius": ".25rem",
+    "padding": "calc(var(--spacing) * .5)",
+    "transitionProperty": "color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to",
+    "transitionTimingFunction": "var(--tw-ease, var(--default-transition-timing-function))",
+    "transitionDuration": "var(--tw-duration, var(--default-transition-duration))",
+    "backgroundColor": {
+      "default": null,
+      "@media (hover: hover)": {
+        ":hover": "#ffe3d1"
+      }
+    }
+  }
+})

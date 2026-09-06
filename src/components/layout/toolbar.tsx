@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useRef, useState } from 'react'
 import { Sun, Moon, Monitor, Download, FolderInput, FolderOutput, Loader2, Settings, PanelLeft, PanelLeftClose } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
@@ -58,16 +59,16 @@ export function Toolbar() {
 
   return (
     <header
-      className="flex items-center h-10 shrink-0 select-none"
+      {...stylex.props(styles.element1)}
       style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-default)',
       }}
     >
       {/* Left section */}
-      <div className="flex items-center gap-1 px-3">
+      <div {...stylex.props(styles.element2)}>
         <button
-          className="inline-flex items-center justify-center shrink-0"
+          {...stylex.props(styles.element3)}
           onClick={() => {
             const projectStore = useProjectStore.getState()
             const currentPath = projectStore.currentFilePath
@@ -113,9 +114,9 @@ export function Toolbar() {
       </div>
 
       {/* Center -- file tab */}
-      <div className="flex-1 flex justify-center">
+      <div {...stylex.props(styles.element4)}>
         <div
-          className="flex items-center"
+          {...stylex.props(styles.element5)}
           style={{
             padding: '4px 12px',
             background: 'var(--bg-elevated)',
@@ -133,12 +134,12 @@ export function Toolbar() {
       </div>
 
       {/* Right section */}
-      <div className="flex items-center gap-1 pl-3 pr-5">
+      <div {...stylex.props(styles.element6)}>
         <input
           ref={importInputRef}
           type="file"
           accept=".zip"
-          className="hidden"
+          {...stylex.props(styles.element7)}
           onChange={async (e) => {
             const file = e.target.files?.[0]
             if (!file || importBusy) return
@@ -173,7 +174,7 @@ export function Toolbar() {
           disabled={importBusy}
           onClick={() => importInputRef.current?.click()}
         >
-          {importBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderInput size={16} />}
+          {importBusy ? <Loader2 size={16} {...stylex.props(styles.element8)} /> : <FolderInput size={16} />}
         </button>
         <button
           className="toolbar-button"
@@ -181,7 +182,7 @@ export function Toolbar() {
           disabled={exportBusy}
           onClick={() => { void handleExport() }}
         >
-          {exportBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOutput size={16} />}
+          {exportBusy ? <Loader2 size={16} {...stylex.props(styles.element9)} /> : <FolderOutput size={16} />}
         </button>
         <button
           className="toolbar-button"
@@ -190,9 +191,69 @@ export function Toolbar() {
           disabled={pdfBusy}
           onClick={() => { void handlePdfExport() }}
         >
-          {pdfBusy ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          {pdfBusy ? <Loader2 size={16} {...stylex.props(styles.element10)} /> : <Download size={16} />}
         </button>
       </div>
     </header>
   )
 }
+
+const spin = stylex.keyframes({ to: { transform: 'rotate(360deg)' } })
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "height": "calc(var(--spacing) * 10)",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "userSelect": "none"
+  },
+  "element2": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1)",
+    "paddingInline": "calc(var(--spacing) * 3)"
+  },
+  "element3": {
+    "display": "inline-flex",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "element4": {
+    "display": "flex",
+    "flex": "1",
+    "justifyContent": "center"
+  },
+  "element5": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element6": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1)",
+    "paddingRight": "calc(var(--spacing) * 5)",
+    "paddingLeft": "calc(var(--spacing) * 3)"
+  },
+  "element7": {
+    "display": "none"
+  },
+  "element8": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element9": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element10": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  }
+})

@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import { stylexOptions } from './stylex.config.mjs'
 import wasm from 'vite-plugin-wasm'
 import topLevelAwait from 'vite-plugin-top-level-await'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -9,8 +9,7 @@ import { HOME_PRELOAD_FILTER_PATTERNS } from './scripts/check-bundle-budget.mjs'
 
 export default defineConfig({
   plugins: [
-    react(),
-    tailwindcss(),
+    react({ babel: { plugins: [['@stylexjs/babel-plugin', stylexOptions]] } }),
     wasm(),
     topLevelAwait(),
     VitePWA({

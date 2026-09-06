@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useUIStore } from '@/stores/ui-store'
 import { useCompileStore } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
@@ -30,7 +31,7 @@ export function StatusBar() {
 
   return (
     <footer
-      className="flex items-center justify-between shrink-0 select-none"
+      {...stylex.props(styles.element1)}
       style={{
         height: '28px',
         background: 'var(--bg-surface)',
@@ -44,7 +45,7 @@ export function StatusBar() {
         padding: '0 10px',
       }}
     >
-      <div className="flex items-center gap-3" role="status">
+      <div {...stylex.props(styles.element2)} role="status">
         <span>{compilerLabel}</span>
         {saveError ? (
           <span style={{ color: 'var(--status-error)', fontWeight: 700 }} title={saveError.message}>
@@ -62,7 +63,7 @@ export function StatusBar() {
         )}
       </div>
 
-      <div className="flex items-center gap-2.5">
+      <div {...stylex.props(styles.element3)}>
         {errors > 0 && (
           <>
             <span style={{ color: 'var(--status-error)' }}>[{errors}] Error{errors !== 1 ? 's' : ''}</span>
@@ -94,3 +95,23 @@ export function StatusBar() {
     </footer>
   )
 }
+
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "justifyContent": "space-between",
+    "userSelect": "none"
+  },
+  "element2": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)"
+  },
+  "element3": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 2.5)"
+  }
+})

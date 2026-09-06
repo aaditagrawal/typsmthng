@@ -1,3 +1,4 @@
+import * as stylex from '@stylexjs/stylex'
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { EditorView } from '@codemirror/view'
@@ -461,7 +462,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
 
   return (
     <div
-      className="preview-toolbar flex items-center justify-between h-10 pl-3 pr-5 shrink-0 select-none overflow-x-auto"
+      className={["preview-toolbar", stylex.props(styles.element1).className].join(' ')}
       style={{
         background: 'var(--bg-surface)',
         borderBottom: '1px solid var(--border-default)',
@@ -470,10 +471,10 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
       }}
     >
       {/* Left -- Compile button + toast + errors */}
-      <div className="flex items-center" style={{ gap: '8px', paddingLeft: '8px' }}>
+      <div {...stylex.props(styles.element2)} style={{ gap: '8px', paddingLeft: '8px' }}>
         <button
           onClick={handleCompile}
-          className="preview-compile-button flex items-center gap-1.5"
+          className={["preview-compile-button", stylex.props(styles.element3).className].join(' ')}
           style={{
             height: '28px',
             padding: '0 12px',
@@ -511,7 +512,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
           <>
             <div style={dividerStyle} />
             <span
-              className="flex items-center gap-1"
+              {...stylex.props(styles.element4)}
               style={{ color: 'var(--status-error)', ...BRUTALIST_FONT }}
             >
               <AlertCircle size={12} />
@@ -522,7 +523,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
       </div>
 
       {/* Right -- page counter, nav, zoom */}
-      <div className="flex items-center" style={{ gap: '8px' }}>
+      <div {...stylex.props(styles.element5)} style={{ gap: '8px' }}>
         {/* Page counter */}
         {totalPages > 0 && (
           <>
@@ -1714,12 +1715,12 @@ export function PreviewPanel() {
   }, [resolvedRenderMode])
 
   return (
-    <div className="h-full flex flex-col">
+    <div {...stylex.props(styles.element6)}>
       <PreviewToolbar onNavigate={scrollToPage} />
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-auto relative"
+        {...stylex.props(styles.element7)}
         onPointerDown={handlePanStart}
         onPointerMove={handlePanMove}
         onPointerUp={handlePanEnd}
@@ -1734,11 +1735,11 @@ export function PreviewPanel() {
         {/* Loading state */}
         {!hasPreview && (status === 'idle' || status === 'compiling') && (
           <div
-            className="h-full flex items-center justify-center"
+            {...stylex.props(styles.element8)}
             style={{ minHeight: '200px' }}
           >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
-              <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} />
+            <div {...stylex.props(styles.element9)} style={{ color: 'var(--text-tertiary)' }}>
+              <Loader2 size={20} {...stylex.props(styles.element10)} style={{ color: 'var(--accent)' }} />
               <span style={BRUTALIST_FONT}>
                 {status === 'idle' ? 'Initializing compiler...' : 'Compiling...'}
               </span>
@@ -1749,7 +1750,7 @@ export function PreviewPanel() {
         {/* Preview surface */}
         {hasPreview && (
           <div
-            className="flex flex-col"
+            {...stylex.props(styles.element11)}
             style={{
               padding: '32px 24px',
               alignItems: fitMode === 'custom' ? 'flex-start' : 'center',
@@ -1798,10 +1799,10 @@ export function PreviewPanel() {
         {/* Error state with no preview */}
         {!hasPreview && status === 'error' && errors.length > 0 && (
           <div
-            className="h-full flex items-center justify-center"
+            {...stylex.props(styles.element12)}
             style={{ minHeight: '200px' }}
           >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
+            <div {...stylex.props(styles.element13)} style={{ color: 'var(--text-tertiary)' }}>
               <AlertCircle size={20} style={{ color: 'var(--status-error)' }} />
               <span style={BRUTALIST_FONT}>
                 Compilation failed with {errors.length} error{errors.length !== 1 ? 's' : ''}
@@ -1833,10 +1834,10 @@ export function PreviewPanel() {
         {/* Empty state */}
         {!hasPreview && (status === 'success' || (status === 'error' && errors.length === 0)) && (
           <div
-            className="h-full flex items-center justify-center"
+            {...stylex.props(styles.element14)}
             style={{ minHeight: '200px' }}
           >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
+            <div {...stylex.props(styles.element15)} style={{ color: 'var(--text-tertiary)' }}>
               <FileText size={20} />
               <span style={BRUTALIST_FONT}>
                 No preview available
@@ -1881,7 +1882,7 @@ export function PreviewPanel() {
       {/* Error panel */}
       {errors.length > 0 && (
         <div
-          className="shrink-0 overflow-auto"
+          {...stylex.props(styles.element16)}
           style={{
             maxHeight: '200px',
             padding: '12px 16px',
@@ -1903,12 +1904,12 @@ export function PreviewPanel() {
           >
             Errors [{errors.length}]
           </div>
-          <div className="flex flex-col" style={{ gap: '4px' }}>
+          <div {...stylex.props(styles.element17)} style={{ gap: '4px' }}>
             {errors.map((d, i) => (
               <button
                 key={i}
                 type="button"
-                className="flex items-start gap-2"
+                {...stylex.props(styles.element18)}
                 disabled={!d.range}
                 style={{
                   ...BRUTALIST_FONT,
@@ -1933,7 +1934,7 @@ export function PreviewPanel() {
                   e.currentTarget.style.backgroundColor = ''
                 }}
               >
-                <AlertCircle size={12} className="shrink-0 mt-0.5" style={{ color: 'var(--status-error)' }} />
+                <AlertCircle size={12} {...stylex.props(styles.element19)} style={{ color: 'var(--status-error)' }} />
                 <span style={{ color: 'var(--text-secondary)' }}>
                   {d.path && <span style={{ color: 'var(--text-tertiary)' }}>{d.path}:{d.range} </span>}
                   {d.message}
@@ -1946,3 +1947,109 @@ export function PreviewPanel() {
     </div>
   )
 }
+
+const spin = stylex.keyframes({ to: { transform: 'rotate(360deg)' } })
+const styles = stylex.create({
+  "element1": {
+    "display": "flex",
+    "height": "calc(var(--spacing) * 10)",
+    "flexShrink": 0,
+    "alignItems": "center",
+    "justifyContent": "space-between",
+    "overflowX": "auto",
+    "paddingRight": "calc(var(--spacing) * 5)",
+    "paddingLeft": "calc(var(--spacing) * 3)",
+    "userSelect": "none"
+  },
+  "element2": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element3": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1.5)"
+  },
+  "element4": {
+    "display": "flex",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 1)"
+  },
+  "element5": {
+    "display": "flex",
+    "alignItems": "center"
+  },
+  "element6": {
+    "display": "flex",
+    "height": "100%",
+    "flexDirection": "column"
+  },
+  "element7": {
+    "position": "relative",
+    "flex": "1",
+    "overflow": "auto"
+  },
+  "element8": {
+    "display": "flex",
+    "height": "100%",
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "element9": {
+    "display": "flex",
+    "flexDirection": "column",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)"
+  },
+  "element10": {
+    "animationName": spin,
+    "animationDuration": "1s",
+    "animationTimingFunction": "linear",
+    "animationIterationCount": "infinite"
+  },
+  "element11": {
+    "display": "flex",
+    "flexDirection": "column"
+  },
+  "element12": {
+    "display": "flex",
+    "height": "100%",
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "element13": {
+    "display": "flex",
+    "flexDirection": "column",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)"
+  },
+  "element14": {
+    "display": "flex",
+    "height": "100%",
+    "alignItems": "center",
+    "justifyContent": "center"
+  },
+  "element15": {
+    "display": "flex",
+    "flexDirection": "column",
+    "alignItems": "center",
+    "gap": "calc(var(--spacing) * 3)"
+  },
+  "element16": {
+    "flexShrink": 0,
+    "overflow": "auto"
+  },
+  "element17": {
+    "display": "flex",
+    "flexDirection": "column"
+  },
+  "element18": {
+    "display": "flex",
+    "alignItems": "flex-start",
+    "gap": "calc(var(--spacing) * 2)"
+  },
+  "element19": {
+    "marginTop": "calc(var(--spacing) * .5)",
+    "flexShrink": 0
+  }
+})
