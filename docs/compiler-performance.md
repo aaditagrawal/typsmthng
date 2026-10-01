@@ -162,6 +162,29 @@ exported a PDF, and rendered an SVG through the main-thread backend.
 Raw second-round reports have `cache-` filenames in the benchmark directory.
 The source patch and its SHA-256 are tracked and verified by normal app builds.
 
+## Comparison with the PR base
+
+A fresh submission-time run compares the published compiler used by
+`origin/main` at `177ca28` with the final PR module. Both run in fresh Bun
+processes with 60 samples, five warmups, and middle-document edits. The baseline
+runs first. Compiler calls exclude rendering, network, and worker transport.
+
+| Metric | `main` | PR |
+| --- | ---: | ---: |
+| Uncompressed compiler bytes | 28,377,376 | 24,574,197 |
+| Small-document edit median | 0.818 ms | 0.621 ms |
+| Math/table edit median | 0.837 ms | 0.486 ms |
+| Imports edit median | 0.422 ms | 0.196 ms |
+| Multiple-font edit median | 1.069 ms | 0.539 ms |
+| Long-document edit median | 35.006 ms | 35.440 ms |
+
+All seven fixture PDFs, normalized SVGs, page dimensions, diagnostics, and
+edited previews match. This single round also illustrates timing variation:
+small edits improve 24%, while the earlier cache-only rounds improve 38–47%.
+Long edits regress 1.2% here. The PR claims a size reduction and faster small
+workloads, without claiming a consistent long-document editing improvement.
+Raw samples are in `pr-main-baseline.json` and `pr-candidate.json`.
+
 ## Correctness and app checks
 
 The initial six-fixture suite covers text, long documents, math/tables, imports, SVG
