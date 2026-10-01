@@ -9,7 +9,12 @@
   "scripts": {
     "dev": "vite",
     "dev:portless": "portless run",
-    "build": "tsc -b && vite build",
+    "build": "bun run compiler:check && tsc -b && vite build && bun scripts/check-compiler.mjs --dist",
+    "compiler:build": "bun scripts/build-compiler.mjs",
+    "compiler:check": "bun scripts/check-compiler.mjs",
+    "compiler:bench": "bun scripts/bench-compiler.mjs",
+    "compiler:fonts": "bun scripts/fetch-compiler-fonts.mjs",
+    "compiler:test": "bun scripts/test-compiler.mjs",
     "build:budget": "bun run build && node scripts/check-bundle-budget.mjs",
     "lint": "eslint .",
     "test": "vitest run",

@@ -12,6 +12,8 @@ export const HOME_PRELOAD_FILTER_PATTERNS = [
   'editor-',
   'latex-',
   'typst',
+  'compiler-',
+  'compiler_bg',
   'workspace-',
   'project-io',
 ]
@@ -27,6 +29,8 @@ export function isBlockedHomeChunk(file) {
     || file.includes('editor-vim')
     || file.includes('typst-engine')
     || file.includes('typst_ts_')
+    || file.includes('compiler-')
+    || file.includes('compiler_bg')
     || file.includes('typst-worker')
     || file.includes('latex-')
     || file.includes('workspace-')

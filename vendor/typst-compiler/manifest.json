@@ -1,0 +1,46 @@
+{
+  "version": "0.7.0-rc2",
+  "source": "https://github.com/Myriad-Dreamin/typst.ts",
+  "commit": "af2047eb986155ca5171a2370db359e5f4aa1404",
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "bindings": "wasm-bindgen 0.2.106",
+  "features": [
+    "web",
+    "misc"
+  ],
+  "profile": {
+    "optLevel": "3",
+    "lto": "fat",
+    "codegenUnits": 1,
+    "panic": "abort"
+  },
+  "optimizer": "wasm-opt version 133 (version_133)",
+  "optimizerFlags": [
+    "-Oz",
+    "--enable-bulk-memory",
+    "--enable-nontrapping-float-to-int",
+    "--enable-sign-ext",
+    "--enable-reference-types",
+    "--enable-multivalue",
+    "--strip-debug",
+    "--strip-producers"
+  ],
+  "sizeLimitBytes": 25000000,
+  "wasmBytes": 24567390,
+  "wasmSha256": "496f61e9bf660530209f8c22b91966c8206ce358236b9e1fcd633595ae431476",
+  "wrapperSha256": "01391bf2310c426d933d71edb2e506bcda3df3fd7372198b380b827cfe05ec1a",
+  "packageBytes": 24654595,
+  "cargoCommand": [
+    "cargo",
+    "build",
+    "--locked",
+    "-p",
+    "typst-ts-web-compiler",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--release",
+    "--no-default-features",
+    "--features",
+    "web,misc"
+  ]
+}

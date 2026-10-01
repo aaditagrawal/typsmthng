@@ -1,6 +1,6 @@
 import react from '@vitejs/plugin-react'
 import { stylexOptions } from './stylex.config.mjs'
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 import path from 'path'
 
 export default defineConfig({
@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   test: {
+    exclude: [...configDefaults.exclude, '**/.compiler-perf/**'],
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],

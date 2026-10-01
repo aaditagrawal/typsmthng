@@ -6,7 +6,7 @@ import {
   MemoryAccessModel,
 } from '@myriaddreamin/typst.ts'
 import rendererWasmUrl from '@myriaddreamin/typst-ts-renderer/pkg/typst_ts_renderer_bg.wasm?url'
-import { version as compilerPackageVersion } from '@myriaddreamin/typst-ts-web-compiler/package.json'
+import compilerWasmUrl from '../../vendor/typst-compiler/compiler_bg.wasm?url'
 import type { Diagnostic } from '@/stores/compile-store'
 import { getPreparedPackageForResolver, ensurePackagesForCompile as ensurePackagesForCompileRegistry } from './universe-registry'
 
@@ -15,11 +15,8 @@ let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
 let initPromise: Promise<void> | null = null
 /** Bumped on font/config teardown so in-flight WASM inits cannot publish stale instances. */
 let initGeneration = 0
-// The compiler WASM (~28MB) intentionally stays on the CDN: bundling it locally
-// exceeds the deploy target's 25MiB per-asset limit and would bloat the service
-// worker precache. Pinning the version to the installed package keeps the JS
-// wrapper and the WASM from drifting apart.
-const compilerWasmUrl = `https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@${compilerPackageVersion}/pkg/typst_ts_web_compiler_bg.wasm`
+// The matched local bindings and optimized WASM are checked against a strict
+// 25,000,000-byte budget before every build. The PWA caches WASM on first use.
 
 /** Serializes compile/render ops that mutate shared compiler/renderer session state. */
 let operationChain: Promise<unknown> = Promise.resolve()
@@ -129,7 +126,9 @@ export async function initCompilerBackend(): Promise<void> {
       pendingRef.current = (async () => {
         try {
           const nextCompiler = createTypstCompiler()
-          await nextCompiler.init({
+          const nextRenderer = createTypstRenderer()
+          await Promise.all([nextCompiler.init({
+            getWrapper: () => import('../../vendor/typst-compiler/compiler.js'),
             getModule: () => ({ module_or_path: compilerWasmUrl }),
             beforeBuild: [
               loadFonts(fontsForInit, { assets: ['text'] }),
@@ -138,12 +137,9 @@ export async function initCompilerBackend(): Promise<void> {
                 resolve: (spec: unknown) => ensurePackageInAccessModel(spec),
               }),
             ],
-          })
-
-          const nextRenderer = createTypstRenderer()
-          await nextRenderer.init({
+          }), nextRenderer.init({
             getModule: () => ({ module_or_path: rendererWasmUrl }),
-          })
+          })])
 
           // Config changed while WASM was loading — discard this instance.
           if (generation !== initGeneration) return

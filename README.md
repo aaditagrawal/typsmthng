@@ -79,6 +79,10 @@ Open the URL printed by Vite (typically `http://localhost:5173`).
 
 The app bundles Typst WASM artifacts, so production output includes large `.wasm` assets. This is expected for in-browser compilation.
 
+The local compiler is 24.57 MB uncompressed. Every production build checks its
+size, bindings, and hash, and keeps it out of the home service worker precache.
+See [compiler measurements and rebuild instructions](docs/compiler-performance.md).
+
 ## Contributing
 
 1. Create a feature branch.
