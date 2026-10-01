@@ -5,6 +5,7 @@ const [baselinePath, candidatePath] = process.argv.slice(2)
 assert(baselinePath && candidatePath, 'Usage: bun scripts/compare-compiler.mjs baseline/report.json candidate/report.json')
 const baseline = JSON.parse(readFileSync(baselinePath, 'utf8'))
 const candidate = JSON.parse(readFileSync(candidatePath, 'utf8'))
+assert.equal(candidate.edit_location ?? 'append', baseline.edit_location ?? 'append', 'Incomparable edit locations')
 assert(candidate.wasm_bytes < 25_000_000, 'Compiler must be strictly under 25 MB uncompressed')
 for (const key of ['runtime', 'platform', 'arch', 'samples', 'warmup', 'font_hashes']) {
   assert.deepEqual(candidate[key], baseline[key], `Incomparable benchmark configuration: ${key}`)

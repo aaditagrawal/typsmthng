@@ -13,10 +13,12 @@ const { values } = parseArgs({ options: {
   fonts: { type: 'string' }, out: { type: 'string' },
   samples: { type: 'string', default: '30' },
   'release-worlds': { type: 'boolean', default: false },
+  'edit-location': { type: 'string', default: 'append' },
 } })
 assert(values.module && values.fonts && values.out, 'Required: --module --fonts --out')
 const samples = Number(values.samples)
 assert(Number.isInteger(samples) && samples > 0)
+assert(['append', 'middle'].includes(values['edit-location']))
 const hash = data => createHash('sha256').update(data).digest('hex')
 const moduleBytes = readFileSync(values.module)
 const fonts = readdirSync(values.fonts).sort().filter(name => /\.(otf|ttf)$/.test(name))
@@ -57,6 +59,7 @@ const fixtures = [
   { name: 'bibliography', source: '= Sources\nCited @sample.\n#bibliography("refs.yml")', files: {
     '/refs.yml': 'sample:\n  type: Article\n  title: A sample article\n  author: Smith, Jane\n  date: 2024\n',
   } },
+  { name: 'fonts', source: '#set text(font: "DejaVu Sans Mono")\nRegular, *bold*, _italic_, and *_both_*.\nGreek: αβγδ. Cyrillic: Привет. Accents: café naïve.\n#text(font: "Libertinus Serif")[Serif, *bold*, _italic_.]\n#text(font: "New Computer Modern")[Modern, *bold*, _italic_.]\n$ integral_0^1 sqrt(x) dif x = 2/3 $' },
 ]
 mkdirSync(values.out, { recursive: true })
 const stats = times => {
@@ -69,6 +72,13 @@ const compile = () => values['release-worlds']
   : compiler.compile({ mainFilePath: '/main.typ', root: '/', diagnostics: 'full' })
 const artifacts = []
 const results = []
+function editedSource(source, index) {
+  const edit = `\n\nUnique edit ${index}.\n`
+  if (values['edit-location'] === 'append') return source + edit
+  const newline = source.indexOf('\n', Math.floor(source.length / 2))
+  const offset = newline < 0 ? source.length : newline + 1
+  return source.slice(0, offset) + edit + source.slice(offset)
+}
 for (const fixture of fixtures) {
   compiler.resetShadow()
   compiler.addSource('/main.typ', fixture.source)
@@ -98,7 +108,7 @@ for (const fixture of fixtures) {
   }
   for (let i = 0; i < samples + 5; i++) {
     const start = performance.now()
-    compiler.addSource('/main.typ', `${fixture.source}\n\nUnique edit ${i}.`)
+    compiler.addSource('/main.typ', editedSource(fixture.source, i))
     const result = await compile()
     const elapsed = performance.now() - start
     assert(result.result?.length, JSON.stringify(result.diagnostics))
@@ -121,6 +131,7 @@ artifacts.push({ fixture: 'invalid', diagnostics: invalid.diagnostics })
 compiler.addSource('/main.typ', 'Recovered')
 assert((await compile()).result?.length)
 const report = { runtime: process.versions, platform: process.platform, arch: process.arch,
+  edit_location: values['edit-location'],
   release_worlds: values['release-worlds'], initial_memory_bytes: initialMemory,
   final_memory_bytes: wasm.memory.buffer.byteLength,
   wasm_bytes: moduleBytes.length, wasm_sha256: hash(moduleBytes), init_ms: initMs,

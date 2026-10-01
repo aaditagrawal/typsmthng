@@ -1,0 +1,10 @@
+{
+  "wasmSha256": "8e4b52bb66f7330cfc14a7f4eaf640e355c2bb8f210763fc2c9f9f7bb8f1661b",
+  "workerCount": 1,
+  "workerErrors": [],
+  "success": true,
+  "vectorBytes": 17432,
+  "pages": 1,
+  "pdfBytes": 16650,
+  "mainThreadSvgBytes": 33102
+}

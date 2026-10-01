@@ -1,0 +1,45 @@
+{
+  "hashes": [
+    {
+      "name": "package",
+      "sha256": "7b459fa3b0f744de151f4772cd64d856f405ad6bdefd314e1b35058ffcd60b5e"
+    },
+    {
+      "name": "import",
+      "sha256": "5a94cc425f9411c22d2c17cbf4f2f4a56854c43131854b25d8e860672092055a"
+    },
+    {
+      "name": "changed-import",
+      "sha256": "3cae9d45c7a183eb138c3ce4cede80c5808bc763eaf0143b7e1af304ebdda11b"
+    },
+    {
+      "name": "restored-import",
+      "sha256": "10f525ae9b74c2afde9f0f92b698db05c9d59556a05805b14ef054f18a761ed3"
+    },
+    {
+      "name": "red-image",
+      "sha256": "33a9f58c4d1cfa132bd871085a33eefeb219f78a4ea7065e0690f3e9552fd2f0"
+    },
+    {
+      "name": "blue-image",
+      "sha256": "2ae00fadb6f55116a50b4ff3fbac8396874962fab60262edd9c9b674725c9f75"
+    },
+    {
+      "name": "first-input",
+      "sha256": "98c292b8f0e08e585488e42d5d0c6968e748457d952b479b2e4175166e0fdd9f"
+    },
+    {
+      "name": "second-input",
+      "sha256": "4854673b06dd8f6c18e21e481cd340ef51c80391e83df10a7681f38477373108"
+    }
+  ],
+  "missing_file_diagnostics": [
+    {
+      "package": "",
+      "path": "/main.typ",
+      "range": "1:9-1:19",
+      "severity": "error",
+      "message": "failed to load file (access denied), hints: cannot read file outside of project root, you can adjust the project root with the --root argument"
+    }
+  ]
+}

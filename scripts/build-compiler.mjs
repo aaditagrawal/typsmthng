@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 
@@ -19,6 +19,12 @@ assert(['-O3', '-Os', '-Oz', 'none'].includes(values.optimizer))
 const source = path.join(root, '.compiler-perf/typst-ts')
 const target = path.join(root, '.compiler-perf', `build-${values['opt-level']}`)
 const output = path.resolve(root, values.out)
+const sha256 = data => createHash('sha256').update(data).digest('hex')
+const patchFolder = path.join(root, 'scripts/compiler-patches')
+const patches = readdirSync(patchFolder).filter(name => name.endsWith('.patch')).sort()
+  .map(name => ({ name, sha256: sha256(readFileSync(path.join(patchFolder, name))) }))
+const patchPaths = patches.map(patch => path.join(patchFolder, patch.name))
+assert(patchPaths.length > 0, 'Missing compiler source patches')
 const env = { ...process.env, RUSTUP_TOOLCHAIN: process.env.COMPILER_RUST_TOOLCHAIN ?? 'stable', RUSTFLAGS: '',
   CARGO_PROFILE_RELEASE_OPT_LEVEL: values['opt-level'], CARGO_PROFILE_RELEASE_LTO: 'fat',
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '1', CARGO_PROFILE_RELEASE_PANIC: 'abort',
@@ -46,7 +52,14 @@ assert.equal(run('git', ['rev-parse', 'HEAD'], source, true), commit)
 assert.equal(run('git', ['status', '--porcelain', '--untracked-files=no'], source, true), '', 'Compiler source has changes')
 const command = ['build', '--locked', '-p', 'typst-ts-web-compiler', '--target', 'wasm32-unknown-unknown',
   '--release', '--no-default-features', '--features', 'web,misc']
-run('cargo', command, source)
+run('git', ['apply', '--check', ...patchPaths], source)
+run('git', ['apply', ...patchPaths], source)
+try {
+  run('cargo', command, source)
+} finally {
+  // Restore only our patches, even after a failed build. Never reset the checkout.
+  run('git', ['apply', '--reverse', ...[...patchPaths].reverse()], source)
+}
 // Bindings and WASM always ship as one matched pair.
 const staged = path.join(target, 'bindings')
 run(bindgen, [path.join(target, 'wasm32-unknown-unknown/release/typst_ts_web_compiler.wasm'),
@@ -65,10 +78,10 @@ mkdirSync(output, { recursive: true })
 const files = ['compiler.js', 'compiler.d.ts', 'compiler_bg.wasm', 'compiler_bg.wasm.d.ts']
 for (const name of files) copyFileSync(path.join(staged, name), path.join(output, name))
 copyFileSync(path.join(source, 'LICENSE'), path.join(output, 'LICENSE'))
-const sha256 = data => createHash('sha256').update(data).digest('hex')
 const packageBytes = [...files, 'LICENSE'].reduce((total, name) => total + readFileSync(path.join(output, name)).length, 0)
 assert(packageBytes < 25_000_000, `Compiler and bindings exceed 25 MB: ${packageBytes} bytes`)
 const manifest = { version, source: 'https://github.com/Myriad-Dreamin/typst.ts', commit,
+  patches,
   rustc, bindings: 'wasm-bindgen 0.2.106', features: ['web', 'misc'],
   profile: { optLevel: values['opt-level'], lto: 'fat', codegenUnits: 1, panic: 'abort' },
   optimizer: optimizerVersion, optimizerFlags: values.optimizer === 'none' ? [] : [values.optimizer, ...optimizerFlags],

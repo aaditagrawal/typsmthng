@@ -1,0 +1,35 @@
+{
+  "mapped_characters": 3049,
+  "hashes": [
+    {
+      "name": "before-churn",
+      "sha256": "018fd30f96e908ab9c7f809387b53a469033900b2e2f71f5bcf1d24bb5134a65",
+      "diagnostics": []
+    },
+    {
+      "name": "cache-churn",
+      "sha256": "1dfcc9077d73dcaef794e3019e7d829b3a0cceb4e71c3878a3e3d7d7b4f124b2",
+      "diagnostics": []
+    },
+    {
+      "name": "after-churn",
+      "sha256": "018fd30f96e908ab9c7f809387b53a469033900b2e2f71f5bcf1d24bb5134a65",
+      "diagnostics": []
+    },
+    {
+      "name": "original-font",
+      "sha256": "1f4790f6fcbf2a31cb92a9442b14ddc482b79ec3aa29bcbc83761a1532b67980",
+      "diagnostics": []
+    },
+    {
+      "name": "changed-outline",
+      "sha256": "668ecce8f92888e51abd2a4220fbce6a5fb7337504b2cdda868108726602d3ff",
+      "diagnostics": []
+    },
+    {
+      "name": "restored-font",
+      "sha256": "1f4790f6fcbf2a31cb92a9442b14ddc482b79ec3aa29bcbc83761a1532b67980",
+      "diagnostics": []
+    }
+  ]
+}

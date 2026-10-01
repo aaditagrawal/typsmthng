@@ -2,6 +2,12 @@
   "version": "0.7.0-rc2",
   "source": "https://github.com/Myriad-Dreamin/typst.ts",
   "commit": "af2047eb986155ca5171a2370db359e5f4aa1404",
+  "patches": [
+    {
+      "name": "0001-cache-glyph-outlines.patch",
+      "sha256": "d4a11a4093d95719e372716e5555eb3c73621bee50a8443ad9c881f883cc53c6"
+    }
+  ],
   "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
   "bindings": "wasm-bindgen 0.2.106",
   "features": [
@@ -26,10 +32,10 @@
     "--strip-producers"
   ],
   "sizeLimitBytes": 25000000,
-  "wasmBytes": 24567390,
-  "wasmSha256": "496f61e9bf660530209f8c22b91966c8206ce358236b9e1fcd633595ae431476",
-  "wrapperSha256": "01391bf2310c426d933d71edb2e506bcda3df3fd7372198b380b827cfe05ec1a",
-  "packageBytes": 24654595,
+  "wasmBytes": 24574197,
+  "wasmSha256": "8e4b52bb66f7330cfc14a7f4eaf640e355c2bb8f210763fc2c9f9f7bb8f1661b",
+  "wrapperSha256": "e6bba2666822090b3e5313f6f340ff946a6296f45979cf3492c981b69895f83e",
+  "packageBytes": 24661402,
   "cargoCommand": [
     "cargo",
     "build",

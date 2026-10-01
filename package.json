@@ -15,6 +15,7 @@
     "compiler:bench": "bun scripts/bench-compiler.mjs",
     "compiler:fonts": "bun scripts/fetch-compiler-fonts.mjs",
     "compiler:test": "bun scripts/test-compiler.mjs",
+    "compiler:test:cache": "uv run --no-project --with fonttools==4.66.1 scripts/prepare-compiler-cache-fixtures.py && bun scripts/test-compiler-font-cache.mjs",
     "build:budget": "bun run build && node scripts/check-bundle-budget.mjs",
     "lint": "eslint .",
     "test": "vitest run",
