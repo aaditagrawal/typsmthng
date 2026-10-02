@@ -35,7 +35,8 @@ import { useCompileStore } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { usePreviewStore } from '@/stores/preview-store'
 import { useProjectStore } from '@/stores/project-store'
-import { ensureCompilerReady, forceCompile } from '@/lib/compile-manager'
+import { cancelPendingDiagnosticApply, ensureCompilerReady, forceCompile, requestCompile } from '@/lib/compile-manager'
+import { useSettingsStore } from '@/stores/settings-store'
 import { compileTypst, ensurePackagesForCompile, isCompilerReady } from '@/lib/compiler'
 
 describe('Compile Manager', () => {
@@ -66,6 +67,8 @@ describe('Compile Manager', () => {
       saveStatus: 'saved',
       lastUserEditAt: 0,
     })
+    useSettingsStore.setState({ autoCompile: true })
+    cancelPendingDiagnosticApply()
   })
 
   it('ensureCompilerReady should resolve when compiler is ready', async () => {
@@ -324,5 +327,61 @@ describe('Compile Manager', () => {
     await vi.advanceTimersByTimeAsync(80)
     await compilePromise
     expect(useCompileStore.getState().svg).toContain('<svg>')
+  })
+
+  it('holds error diagnostics until typing has been idle for 900ms', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    useEditorStore.setState({ lastUserEditAt: Date.now() })
+    vi.mocked(compileTypst).mockResolvedValueOnce({
+      svg: '<svg>err</svg>',
+      vectorData: new Uint8Array([4]),
+      pageDimensions: [{ width: 1, height: 1 }],
+      diagnostics: [{ severity: 'error', path: '/main.typ', range: '1:1-1:4', message: 'nope' }],
+      success: true,
+    })
+
+    const pending = forceCompile('= Err')
+    await vi.advanceTimersByTimeAsync(200)
+    await pending
+
+    expect(useCompileStore.getState().svg).toContain('err')
+    expect(useCompileStore.getState().diagnostics).toEqual([])
+    expect(useCompileStore.getState().status).not.toBe('error')
+
+    await vi.advanceTimersByTimeAsync(699)
+    expect(useCompileStore.getState().diagnostics).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(useCompileStore.getState().status).toBe('error')
+    expect(useCompileStore.getState().diagnostics[0]?.message).toBe('nope')
+    expect(useCompileStore.getState().errorCount).toBe(1)
+  })
+
+  it('cancels a pending diagnostic apply when the editor receives another keystroke', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+    useEditorStore.setState({ lastUserEditAt: Date.now() })
+    vi.mocked(compileTypst).mockResolvedValueOnce({
+      svg: '<svg>err</svg>',
+      vectorData: new Uint8Array([4]),
+      pageDimensions: [{ width: 1, height: 1 }],
+      diagnostics: [{ severity: 'error', path: '/main.typ', range: '1:1-1:4', message: 'nope' }],
+      success: true,
+    })
+
+    const pending = forceCompile('= Err')
+    await vi.advanceTimersByTimeAsync(200)
+    await pending
+    expect(useCompileStore.getState().diagnostics).toEqual([])
+
+    useSettingsStore.setState({ autoCompile: false })
+    useEditorStore.setState({ lastUserEditAt: Date.now() })
+    requestCompile('= Err typed')
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(useCompileStore.getState().diagnostics).toEqual([])
+    expect(useCompileStore.getState().status).not.toBe('error')
+    expect(useCompileStore.getState().svg).toContain('err')
   })
 })
