@@ -13,6 +13,8 @@ describe('bundle budget guardrails', () => {
     expect(isBlockedHomeChunk('latex-converter-1.js')).toBe(true)
     expect(isBlockedHomeChunk('typst-worker-1.js')).toBe(true)
     expect(isBlockedHomeChunk('typst-engine-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('compiler-1.js')).toBe(true)
+    expect(isBlockedHomeChunk('compiler_bg-1.wasm')).toBe(true)
     expect(isBlockedHomeChunk('workspace-shell-1.js')).toBe(true)
     expect(isBlockedHomeChunk('project-io-1.js')).toBe(true)
     // editor-store is intentionally on the home path for sync Cmd+S.

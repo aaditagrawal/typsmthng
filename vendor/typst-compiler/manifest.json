@@ -1,0 +1,52 @@
+{
+  "version": "0.7.0-rc2",
+  "source": "https://github.com/Myriad-Dreamin/typst.ts",
+  "commit": "af2047eb986155ca5171a2370db359e5f4aa1404",
+  "patches": [
+    {
+      "name": "0001-cache-glyph-outlines.patch",
+      "sha256": "d4a11a4093d95719e372716e5555eb3c73621bee50a8443ad9c881f883cc53c6"
+    }
+  ],
+  "rustc": "rustc 1.98.1 (48a229cea 2026-09-01)",
+  "bindings": "wasm-bindgen 0.2.106",
+  "features": [
+    "web",
+    "misc"
+  ],
+  "profile": {
+    "optLevel": "3",
+    "lto": "fat",
+    "codegenUnits": 1,
+    "panic": "abort"
+  },
+  "optimizer": "wasm-opt version 133 (version_133)",
+  "optimizerFlags": [
+    "-Oz",
+    "--enable-bulk-memory",
+    "--enable-nontrapping-float-to-int",
+    "--enable-sign-ext",
+    "--enable-reference-types",
+    "--enable-multivalue",
+    "--strip-debug",
+    "--strip-producers"
+  ],
+  "sizeLimitBytes": 25000000,
+  "wasmBytes": 24574197,
+  "wasmSha256": "8e4b52bb66f7330cfc14a7f4eaf640e355c2bb8f210763fc2c9f9f7bb8f1661b",
+  "wrapperSha256": "e6bba2666822090b3e5313f6f340ff946a6296f45979cf3492c981b69895f83e",
+  "packageBytes": 24661402,
+  "cargoCommand": [
+    "cargo",
+    "build",
+    "--locked",
+    "-p",
+    "typst-ts-web-compiler",
+    "--target",
+    "wasm32-unknown-unknown",
+    "--release",
+    "--no-default-features",
+    "--features",
+    "web,misc"
+  ]
+}

@@ -1,0 +1,77 @@
+diff --git a/crates/conversion/typst2vec/src/font/glyph.rs b/crates/conversion/typst2vec/src/font/glyph.rs
+index 69c98aa..d318414 100644
+--- a/crates/conversion/typst2vec/src/font/glyph.rs
++++ b/crates/conversion/typst2vec/src/font/glyph.rs
+@@ -1,6 +1,12 @@
++use std::collections::{HashMap, HashSet};
+ use std::fmt::Write;
+ use std::hash::{Hash, Hasher};
+-use std::{ops::Deref, sync::Arc};
++use std::{
++    ops::Deref,
++    sync::{Arc, LazyLock},
++};
++
++use parking_lot::Mutex;
+ 
+ use reflexo::hash::{item_hash128, HashedTrait, StaticHash128};
+ use reflexo::ImmutStr;
+@@ -127,13 +133,53 @@ impl IGlyphProvider for FontGlyphProvider {
+ 
+     /// See [`IGlyphProvider::outline_glyph`] for more information.
+     fn outline_glyph(&self, font: &Font, id: GlyphId) -> Option<String> {
+-        let font_face = font.ttf();
++        cached_outline_glyph(font, id.0)
++    }
++}
++
++// Outline extraction depends only on immutable font data and the glyph ID.
++// Keep this cache separate from document/layout state and bound retained fonts,
++// entries, and outline strings, including when the host never evicts comemo.
++#[derive(Default)]
++struct OutlineCache {
++    outlines: HashMap<(Font, u16), Option<String>>,
++    fonts: HashSet<Font>,
++    bytes: usize,
++}
+ 
+-        // todo: handling no such glyph
+-        let mut builder = SvgOutlineBuilder(String::new());
+-        font_face.outline_glyph(id, &mut builder)?;
+-        Some(builder.0)
++static OUTLINE_CACHE: LazyLock<Mutex<OutlineCache>> = LazyLock::new(Default::default);
++
++fn cached_outline_glyph(font: &Font, id: u16) -> Option<String> {
++    let key = (font.clone(), id);
++    if let Some(outline) = OUTLINE_CACHE.lock().outlines.get(&key) {
++        return outline.clone();
++    }
++
++    let mut builder = SvgOutlineBuilder(String::new());
++    let outline = font
++        .ttf()
++        .outline_glyph(GlyphId(id), &mut builder)
++        .map(|_| builder.0);
++    let bytes = outline.as_ref().map_or(0, String::len);
++    const MAX_BYTES: usize = 2 * 1024 * 1024;
++    if bytes > MAX_BYTES {
++        return outline;
++    }
++
++    let mut cache = OUTLINE_CACHE.lock();
++    if cache.outlines.len() >= 2048
++        || cache.bytes + bytes > MAX_BYTES
++        || (cache.fonts.len() >= 32 && !cache.fonts.contains(font))
++    {
++        *cache = OutlineCache::default();
++    }
++    // Another exporter may have inserted this key while we built the outline.
++    if !cache.outlines.contains_key(&key) {
++        cache.bytes += bytes;
++        cache.fonts.insert(font.clone());
++        cache.outlines.insert(key, outline.clone());
+     }
++    outline
+ }
+ 
+ /// The dummy [`IGlyphProvider`] implementation.

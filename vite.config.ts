@@ -21,17 +21,18 @@ export default defineConfig({
         clientsClaim: true,
         cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm}'],
+        // Load the compiler when a project opens, then retain it for offline use.
+        globIgnores: ['**/compiler_bg-*.wasm'],
         maximumFileSizeToCacheInBytes: 50 * 1024 * 1024, // 50MB for WASM
         runtimeCaching: [
           {
-            urlPattern: ({ url }) => (
-              url.hostname === 'cdn.jsdelivr.net'
-              && url.pathname.includes('/@myriaddreamin/typst-ts-web-compiler@')
-              && url.pathname.endsWith('/pkg/typst_ts_web_compiler_bg.wasm')
+            urlPattern: ({ url, sameOrigin }) => (
+              sameOrigin
+              && /\/assets\/compiler_bg-[\w-]+\.wasm$/.test(url.pathname)
             ),
             handler: 'CacheFirst',
             options: {
-              cacheName: 'typst-compiler-wasm',
+              cacheName: 'typst-compiler-local-wasm',
               expiration: {
                 maxEntries: 4,
                 maxAgeSeconds: 60 * 60 * 24 * 30,
