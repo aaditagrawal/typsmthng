@@ -36,6 +36,7 @@ interface Settings {
   compileDelay: number
   lineWrapping: boolean
   lineNumbers: boolean
+  centeredScrolling: boolean
   theme: Theme
   vimMode: boolean
   pageSize: PageSize
@@ -50,6 +51,7 @@ interface SettingsState extends Settings {
   setCompileDelay: (ms: number) => void
   setLineWrapping: (enabled: boolean) => void
   setLineNumbers: (enabled: boolean) => void
+  setCenteredScrolling: (enabled: boolean) => void
   setTheme: (theme: Theme) => void
   setVimMode: (enabled: boolean) => void
   setPageSize: (size: PageSize) => void
@@ -65,6 +67,7 @@ const defaults: Settings = {
   compileDelay: 100,
   lineWrapping: true,
   lineNumbers: true,
+  centeredScrolling: false,
   theme: 'dark',
   vimMode: false,
   pageSize: 'auto',
@@ -109,6 +112,7 @@ function getPersistedFields(state: SettingsState): Settings {
     compileDelay: state.compileDelay,
     lineWrapping: state.lineWrapping,
     lineNumbers: state.lineNumbers,
+    centeredScrolling: state.centeredScrolling,
     theme: state.theme,
     vimMode: state.vimMode,
     pageSize: state.pageSize,
@@ -146,6 +150,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setLineNumbers: (lineNumbers) => {
     set({ lineNumbers })
     persistSettings(getPersistedFields({ ...get(), lineNumbers }))
+  },
+
+  setCenteredScrolling: (centeredScrolling) => {
+    set({ centeredScrolling })
+    persistSettings(getPersistedFields({ ...get(), centeredScrolling }))
   },
 
   setTheme: (theme) => {
@@ -190,6 +199,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           compileDelay: saved.compileDelay ?? defaults.compileDelay,
           lineWrapping: saved.lineWrapping ?? defaults.lineWrapping,
           lineNumbers: saved.lineNumbers ?? defaults.lineNumbers,
+          centeredScrolling: saved.centeredScrolling ?? defaults.centeredScrolling,
           theme: saved.theme ?? defaults.theme,
           vimMode: saved.vimMode ?? defaults.vimMode,
           pageSize: saved.pageSize ?? defaults.pageSize,
