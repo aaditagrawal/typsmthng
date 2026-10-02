@@ -687,6 +687,8 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
               {[
                 [`${mod}+S`, 'Save project'],
                 [`${mod}+K`, 'Open command palette'],
+                [`${mod}+,`, 'Open settings'],
+                [`${mod}+\\`, 'Toggle the file tree'],
                 [`${mod}+/`, 'Toggle comment'],
                 [`${mod}+D`, 'Duplicate line'],
                 [`${mod}+scroll`, 'Zoom the editor font'],
@@ -725,6 +727,8 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
                 [':', 'Open command line'],
                 [':w', 'Save (also triggers project save)'],
                 [`${mod}+K`, 'Open command palette (works in any mode)'],
+                [`${mod}+,`, 'Open settings'],
+                [`${mod}+\\`, 'Toggle the file tree'],
               ].map(([shortcut, desc]) => (
                 <Fragment key={shortcut}>
                   <span style={kbd}>{shortcut}</span>
