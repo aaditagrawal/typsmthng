@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Download, File, MoonStar, Play, Save, Settings } from 'lucide-react'
+import { Download, File, MoonStar, Play, Save, Search, Settings } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { getProjectFileIndex } from '@/lib/file-index'
 import { isImagePath } from '@/lib/file-classification'
+import { searchProjectContent } from '@/lib/content-search'
+import { jumpToFileLocation } from '@/lib/editor-jump'
 import { useModalA11y } from '@/components/ui/context-menu'
 
 const ROW_HEIGHT = 34
@@ -18,13 +20,16 @@ function resultOptionId(index: number) {
 }
 
 type ActionResult = { type: 'action'; id: string; label: string; keywords: string; icon: typeof Play; run: () => void }
-type SearchResult = ActionResult | { type: 'file'; path: string }
+type ContentResult = { type: 'content'; path: string; line: number; column: number; preview: string }
+type SearchResult = ActionResult | { type: 'file'; path: string } | ContentResult
 
 export function CommandSearch() {
   const open = useUIStore((s) => s.commandSearchOpen)
   const setOpen = useUIStore((s) => s.setCommandSearchOpen)
   const projects = useProjectStore((s) => s.projects)
   const currentProjectId = useProjectStore((s) => s.currentProjectId)
+  const currentFilePath = useProjectStore((s) => s.currentFilePath)
+  const liveSource = useEditorStore((s) => s.source)
 
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -92,8 +97,12 @@ export function CommandSearch() {
     const matchingFiles = fileIndex.searchablePathEntries
       .filter((entry) => entry.lowerPath.includes(lowerQuery))
       .map<SearchResult>((entry) => ({ type: 'file', path: entry.path }))
-    return [...matchingActions, ...matchingFiles]
-  }, [actions, fileIndex, query])
+    const contentHits = searchProjectContent(currentProject?.files ?? [], query, {
+      currentPath: currentFilePath,
+      currentSource: liveSource,
+    }).map<ContentResult>((hit) => ({ type: 'content', ...hit }))
+    return [...matchingActions, ...matchingFiles, ...contentHits]
+  }, [actions, currentFilePath, currentProject, fileIndex, liveSource, query])
 
   const close = useCallback(() => {
     setOpen(false)
@@ -118,6 +127,11 @@ export function CommandSearch() {
   )
 
   const selectResult = useCallback((result: SearchResult) => {
+    if (result.type === 'content') {
+      jumpToFileLocation(result.path, result.line, result.column)
+      close()
+      return
+    }
     if (result.type === 'file') {
       openFile(result.path)
       return
@@ -258,7 +272,7 @@ export function CommandSearch() {
             aria-activedescendant={filtered.length > 0
               ? resultOptionId(effectiveSelectedIndex)
               : undefined}
-            placeholder="SEARCH FILES AND COMMANDS..."
+            placeholder="SEARCH FILES, CONTENT, AND COMMANDS..."
             value={query}
             onChange={(e) => {
               setQuery(e.target.value)
@@ -308,11 +322,21 @@ export function CommandSearch() {
               {visibleRows.map((result, rowIndex) => {
                 const index = windowStart + rowIndex
                 const isSelected = index === effectiveSelectedIndex
-                const Icon = result.type === 'action' ? result.icon : File
+                const Icon = result.type === 'action' ? result.icon : result.type === 'content' ? Search : File
+                const label = result.type === 'action'
+                  ? result.label
+                  : result.type === 'content'
+                    ? `${result.path}:${result.line}:${result.column} ${result.preview}`
+                    : result.path
+                const key = result.type === 'action'
+                  ? `action:${result.id}`
+                  : result.type === 'content'
+                    ? `content:${result.path}:${result.line}:${result.column}`
+                    : `file:${result.path}`
                 return (
                   <div
                     id={resultOptionId(index)}
-                    key={result.type === 'action' ? `action:${result.id}` : `file:${result.path}`}
+                    key={key}
                     role="option"
                     aria-selected={isSelected}
                     onClick={() => selectResult(result)}
@@ -351,7 +375,7 @@ export function CommandSearch() {
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {result.type === 'action' ? result.label : result.path}
+                      {label}
                     </span>
                   </div>
                 )
