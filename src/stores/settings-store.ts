@@ -5,6 +5,15 @@ import { useUIStore } from './ui-store'
 const settingsDb = createStore('typsmthng-settings', 'settings')
 const SETTINGS_KEY = 'user-settings'
 
+export const MIN_EDITOR_FONT_SIZE = 8
+export const MAX_EDITOR_FONT_SIZE = 40
+export const DEFAULT_EDITOR_FONT_SIZE = 15
+
+export function clampEditorFontSize(size: number): number {
+  if (!Number.isFinite(size)) return DEFAULT_EDITOR_FONT_SIZE
+  return Math.min(MAX_EDITOR_FONT_SIZE, Math.max(MIN_EDITOR_FONT_SIZE, Math.round(size)))
+}
+
 type Theme = 'light' | 'dark' | 'system'
 
 export type PageSize = 'a3' | 'a4' | 'a5' | 'a6' | 'us-letter' | 'us-legal' | 'iso-b5' | 'presentation-16-9' | 'auto'
@@ -51,7 +60,7 @@ interface SettingsState extends Settings {
 }
 
 const defaults: Settings = {
-  fontSize: 15,
+  fontSize: DEFAULT_EDITOR_FONT_SIZE,
   autoCompile: true,
   compileDelay: 100,
   lineWrapping: true,
@@ -111,7 +120,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   settingsOpen: false,
 
   setFontSize: (fontSize) => {
-    const clamped = Math.min(24, Math.max(12, fontSize))
+    const clamped = clampEditorFontSize(fontSize)
     set({ fontSize: clamped })
     persistSettings(getPersistedFields({ ...get(), fontSize: clamped }))
   },
@@ -173,7 +182,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const saved = await idbGet<Settings>(SETTINGS_KEY, settingsDb)
       if (saved) {
         set({
-          fontSize: saved.fontSize ?? defaults.fontSize,
+          fontSize: clampEditorFontSize(saved.fontSize ?? defaults.fontSize),
           autoCompile: saved.autoCompile ?? defaults.autoCompile,
           compileDelay: saved.compileDelay ?? defaults.compileDelay,
           lineWrapping: saved.lineWrapping ?? defaults.lineWrapping,

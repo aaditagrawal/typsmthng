@@ -689,6 +689,9 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
                 [`${mod}+K`, 'Open command palette'],
                 [`${mod}+/`, 'Toggle comment'],
                 [`${mod}+D`, 'Duplicate line'],
+                [`${mod}+scroll`, 'Zoom the editor font'],
+                [`${mod}+= / ${mod}+-`, 'Zoom the editor font in or out'],
+                [`${mod}+0`, 'Reset the editor font size'],
               ].map(([shortcut, desc]) => (
                 <Fragment key={shortcut}>
                   <span style={kbd}>{shortcut}</span>

@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex'
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { EditorView, lineNumbers, highlightActiveLine, highlightActiveLineGutter, keymap } from '@codemirror/view'
 import { EditorState, Compartment, Transaction } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
@@ -19,6 +19,12 @@ import { typstKeymap } from '@/lib/keybindings'
 import { sourceHighlightField } from '@/lib/editor-highlight'
 import { diagnosticField, setDiagnostics } from '@/lib/editor-diagnostics'
 import { useCompileStore } from '@/stores/compile-store'
+import {
+  applyEditorZoom,
+  createWheelZoomAccumulator,
+  editorZoomFromKey,
+  subscribeZoomBadge,
+} from '@/lib/editor-zoom'
 
 // Compartments for live reconfiguration
 const themeCompartment = new Compartment()
@@ -83,6 +89,7 @@ export function TypstEditor() {
   const fontSize = useSettingsStore((s) => s.fontSize)
   const lineWrapping = useSettingsStore((s) => s.lineWrapping)
   const showLineNumbers = useSettingsStore((s) => s.lineNumbers)
+  const [zoomBadge, setZoomBadge] = useState<string | null>(null)
 
   const deliverPendingProjectSync = useCallback(() => {
     const pending = pendingProjectSyncRef.current
@@ -149,6 +156,39 @@ export function TypstEditor() {
       deliverPendingProjectSync()
     }, PROJECT_SYNC_DELAY_MS)
   }, [deliverPendingProjectSync])
+
+  useEffect(() => subscribeZoomBadge(setZoomBadge), [])
+
+  // Ctrl+scroll and Ctrl+=/-/0 zoom the editor font. Capture so the browser
+  // page zoom and CodeMirror do not consume the gesture first.
+  useEffect(() => {
+    const node = editorRef.current
+    if (!node) return
+    const wheel = createWheelZoomAccumulator()
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) {
+        wheel.reset()
+        return
+      }
+      event.preventDefault()
+      event.stopPropagation()
+      const steps = wheel.push(event.deltaY, event.deltaMode)
+      if (steps !== 0) applyEditorZoom(steps)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const zoom = editorZoomFromKey(event)
+      if (zoom === null) return
+      event.preventDefault()
+      event.stopPropagation()
+      applyEditorZoom(zoom)
+    }
+    node.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    node.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      node.removeEventListener('wheel', onWheel, { capture: true })
+      node.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [])
 
   // Initialize editor once
   useEffect(() => {
@@ -477,8 +517,31 @@ export function TypstEditor() {
     <div
       ref={editorRef}
       {...stylex.props(styles.element1)}
-      style={{ background: 'var(--bg-surface)' }}
-    />
+      style={{ background: 'var(--bg-surface)', position: 'relative' }}
+    >
+      {zoomBadge && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            right: '18px',
+            bottom: '14px',
+            zIndex: 5,
+            pointerEvents: 'none',
+            padding: '4px 8px',
+            borderRadius: '2px',
+            border: '1px solid var(--border-strong)',
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '12px',
+            letterSpacing: '0.04em',
+          }}
+        >
+          {zoomBadge}
+        </div>
+      )}
+    </div>
   )
 }
 

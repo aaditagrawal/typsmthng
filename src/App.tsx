@@ -5,6 +5,7 @@ import { useProjectStore } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
+import { applyEditorZoom, editorZoomFromKey } from '@/lib/editor-zoom'
 import { preloadWorkspaceShell } from '@/components/workspace/preload'
 import { UpdateToast } from '@/components/layout/update-toast'
 
@@ -67,6 +68,14 @@ export default function App() {
         const { theme, setTheme } = useSettingsStore.getState()
         const next = theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system'
         setTheme(next)
+      }
+      if (!e.defaultPrevented && useProjectStore.getState().hasSelectedProject) {
+        const zoom = editorZoomFromKey(e)
+        if (zoom !== null) {
+          // The editor captures these keys while it is focused.
+          e.preventDefault()
+          applyEditorZoom(zoom)
+        }
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         // CommandSearch only mounts in the workspace; toggling on home
