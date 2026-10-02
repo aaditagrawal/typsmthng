@@ -42,6 +42,7 @@ export function createWheelZoomAccumulator() {
       const delta = deltaMode === 0 ? deltaY / SURFACE_PIXELS_PER_STEP : deltaY
       accumulated -= delta
       const steps = Math.trunc(accumulated)
+      if (steps === 0) return 0
       accumulated -= steps
       return steps
     },
