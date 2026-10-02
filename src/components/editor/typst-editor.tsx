@@ -19,6 +19,7 @@ import { typstKeymap } from '@/lib/keybindings'
 import { sourceHighlightField } from '@/lib/editor-highlight'
 import { centeredCaretScrollTop } from '@/lib/centered-scrolling'
 import { revealPosition } from '@/lib/editor-jump'
+import { formatEditorDocument } from '@/lib/format-document'
 import { diagnosticField, setDiagnostics } from '@/lib/editor-diagnostics'
 import { useCompileStore } from '@/stores/compile-store'
 import {
@@ -173,6 +174,16 @@ export function TypstEditor() {
   }, [deliverPendingProjectSync])
 
   useEffect(() => subscribeZoomBadge(setZoomBadge), [])
+
+  useEffect(() => {
+    const onFormat = () => {
+      const view = viewRef.current
+      if (!view) return
+      void formatEditorDocument(view)
+    }
+    window.addEventListener('typsmthng:format-document', onFormat)
+    return () => window.removeEventListener('typsmthng:format-document', onFormat)
+  }, [])
 
   // Ctrl+scroll and Ctrl+=/-/0 zoom the editor font. Capture so the browser
   // page zoom and CodeMirror do not consume the gesture first.

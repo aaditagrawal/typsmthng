@@ -38,6 +38,7 @@
     "@replit/codemirror-indentation-markers": "^6.5.3",
     "@replit/codemirror-vim": "^6.3.0",
     "@stylexjs/stylex": "^0.19.0",
+    "@typstyle/typstyle-wasm-bundler": "0.15.1",
     "@unified-latex/unified-latex-util-parse": "^1.8.3",
     "codemirror": "^6.0.2",
     "codemirror-lang-typst": "^0.4.0",

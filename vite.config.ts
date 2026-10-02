@@ -61,6 +61,9 @@ export default defineConfig({
       },
     }),
   ],
+  optimizeDeps: {
+    exclude: ['@typstyle/typstyle-wasm-bundler'],
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

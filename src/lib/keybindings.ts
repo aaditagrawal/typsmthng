@@ -5,6 +5,7 @@ import { forceCompile } from './compile-manager'
 import { useSettingsStore } from '@/stores/settings-store'
 import { exportCurrentProjectPdf } from './pdf-export'
 import { toggleTypstLineComment } from './commenting'
+import { formatEditorDocument } from './format-document'
 
 export const typstKeymap: KeyBinding[] = [
   {
@@ -35,6 +36,13 @@ export const typstKeymap: KeyBinding[] = [
   // Mod-j also has a window-level fallback in App.tsx so the theme toggle
   // works when focus is outside CodeMirror; that handler skips events this
   // binding already consumed.
+  {
+    key: 'Mod-Shift-i',
+    run: (view) => {
+      void formatEditorDocument(view)
+      return true
+    },
+  },
   {
     key: 'Mod-j',
     run: () => {

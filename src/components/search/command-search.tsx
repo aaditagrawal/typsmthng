@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Download, File, MoonStar, Play, Save, Search, Settings } from 'lucide-react'
+import { AlignLeft, Download, File, MoonStar, Play, Save, Search, Settings } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
 import { useEditorStore } from '@/stores/editor-store'
@@ -8,6 +8,7 @@ import { getProjectFileIndex } from '@/lib/file-index'
 import { isImagePath } from '@/lib/file-classification'
 import { searchProjectContent } from '@/lib/content-search'
 import { jumpToFileLocation } from '@/lib/editor-jump'
+import { formatEditorDocument } from '@/lib/format-document'
 import { useModalA11y } from '@/components/ui/context-menu'
 
 const ROW_HEIGHT = 34
@@ -48,6 +49,14 @@ export function CommandSearch() {
   const fileIndex = useMemo(() => getProjectFileIndex(currentProject), [currentProject])
 
   const actions = useMemo<ActionResult[]>(() => [
+    {
+      type: 'action', id: 'format', label: 'Format document', keywords: 'typstyle pretty indent', icon: AlignLeft,
+      run: () => {
+        const view = useEditorStore.getState().editorView
+        if (!view) return
+        void formatEditorDocument(view)
+      },
+    },
     {
       type: 'action', id: 'compile', label: 'Compile document', keywords: 'build render preview', icon: Play,
       run: () => {
