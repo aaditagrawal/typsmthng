@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { applyEditorZoom, editorZoomFromKey } from '@/lib/editor-zoom'
+import { isSettingsShortcut, isSidebarShortcut } from '@/lib/workspace-shortcuts'
 import { preloadWorkspaceShell } from '@/components/workspace/preload'
 import { UpdateToast } from '@/components/layout/update-toast'
 
@@ -76,6 +77,17 @@ export default function App() {
           e.preventDefault()
           applyEditorZoom(zoom)
         }
+      }
+      if (isSettingsShortcut(e) && useProjectStore.getState().hasSelectedProject) {
+        e.preventDefault()
+        useSettingsStore.getState().setSettingsOpen(true)
+      }
+      if (isSidebarShortcut(e) && useProjectStore.getState().hasSelectedProject) {
+        // Vim does not bind Ctrl+\ in this editor, matching the desktop app,
+        // so the window handler toggles the file tree in every mode.
+        e.preventDefault()
+        const { sidebarOpen, setSidebarOpen } = useProjectStore.getState()
+        setSidebarOpen(!sidebarOpen)
       }
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         // CommandSearch only mounts in the workspace; toggling on home

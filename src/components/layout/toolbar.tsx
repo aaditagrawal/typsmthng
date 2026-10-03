@@ -98,14 +98,14 @@ export function Toolbar() {
         <div style={{ width: '4px' }} />
         <button
           className="toolbar-button"
-          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+          title={sidebarOpen ? 'Hide sidebar (Ctrl+\\)' : 'Show sidebar (Ctrl+\\)'}
           onClick={() => setSidebarOpen(!sidebarOpen)}
         >
           {sidebarOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
         </button>
         <button
           className="toolbar-button"
-          title="Settings"
+          title="Settings (Ctrl+,)"
           onClick={() => useSettingsStore.getState().setSettingsOpen(true)}
         >
           <Settings size={16} />
