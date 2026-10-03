@@ -17,6 +17,7 @@ import { createEditorTheme } from './theme'
 import { requestCompile, forceCompile, ensureCompilerReady } from '@/lib/compile-manager'
 import { typstKeymap } from '@/lib/keybindings'
 import { sourceHighlightField } from '@/lib/editor-highlight'
+import { centeredCaretScrollTop } from '@/lib/centered-scrolling'
 import { diagnosticField, setDiagnostics } from '@/lib/editor-diagnostics'
 import { useCompileStore } from '@/stores/compile-store'
 import {
@@ -39,6 +40,18 @@ function fontSizeExtension(fontSize: number) {
   return EditorView.theme({
     '&': { fontSize: `${fontSize}px` },
   })
+}
+
+function centerEditorCaret(view: EditorView) {
+  if (!useSettingsStore.getState().centeredScrolling) return
+  const head = view.state.selection.main.head
+  const block = view.lineBlockAt(head)
+  const viewport = view.scrollDOM.clientHeight
+  if (viewport <= 0) return
+  const maxScroll = Math.max(0, view.scrollDOM.scrollHeight - viewport)
+  const next = Math.min(maxScroll, centeredCaretScrollTop(block.top, block.height, viewport))
+  if (Math.abs(view.scrollDOM.scrollTop - next) < 1) return
+  view.scrollDOM.scrollTop = next
 }
 
 // Per-file cursor/scroll state, keyed by `${projectId}\n${path}` so equal
@@ -89,6 +102,7 @@ export function TypstEditor() {
   const fontSize = useSettingsStore((s) => s.fontSize)
   const lineWrapping = useSettingsStore((s) => s.lineWrapping)
   const showLineNumbers = useSettingsStore((s) => s.lineNumbers)
+  const centeredScrolling = useSettingsStore((s) => s.centeredScrolling)
   const [zoomBadge, setZoomBadge] = useState<string | null>(null)
 
   const deliverPendingProjectSync = useCallback(() => {
@@ -269,6 +283,18 @@ export function TypstEditor() {
             }
             requestCompile(source, path)
           }
+          // Caret movement recenters. A user scroll does not move the caret,
+          // so it leaves the viewport where the reader put it.
+          if (
+            (update.selectionSet || update.docChanged)
+            && useSettingsStore.getState().centeredScrolling
+          ) {
+            const editor = update.view
+            requestAnimationFrame(() => {
+              if (viewRef.current !== editor) return
+              centerEditorCaret(editor)
+            })
+          }
         }),
       ],
     })
@@ -410,6 +436,12 @@ export function TypstEditor() {
       effects: fontSizeCompartment.reconfigure(fontSizeExtension(fontSize)),
     })
   }, [fontSize])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !centeredScrolling) return
+    centerEditorCaret(view)
+  }, [centeredScrolling])
 
   // React to file/project changes — swap document content
   useEffect(() => {

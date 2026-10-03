@@ -183,6 +183,7 @@ export function SettingsModal() {
     compileDelay, setCompileDelay,
     lineWrapping, setLineWrapping,
     lineNumbers, setLineNumbers,
+    centeredScrolling, setCenteredScrolling,
     theme, setTheme,
     vimMode, setVimMode,
     pageSize, setPageSize,
@@ -195,6 +196,7 @@ export function SettingsModal() {
     compileDelay: s.compileDelay, setCompileDelay: s.setCompileDelay,
     lineWrapping: s.lineWrapping, setLineWrapping: s.setLineWrapping,
     lineNumbers: s.lineNumbers, setLineNumbers: s.setLineNumbers,
+    centeredScrolling: s.centeredScrolling, setCenteredScrolling: s.setCenteredScrolling,
     theme: s.theme, setTheme: s.setTheme,
     vimMode: s.vimMode, setVimMode: s.setVimMode,
     pageSize: s.pageSize, setPageSize: s.setPageSize,
@@ -360,6 +362,10 @@ export function SettingsModal() {
 
           <SettingRow label="Line Numbers" description="Show line numbers in the gutter">
             {(labelId) => <Toggle checked={lineNumbers} onChange={setLineNumbers} labelId={labelId} />}
+          </SettingRow>
+
+          <SettingRow label="Centered Scrolling" description="Keep the caret line centered while editing">
+            {(labelId) => <Toggle checked={centeredScrolling} onChange={setCenteredScrolling} labelId={labelId} />}
           </SettingRow>
 
           <SettingRow label="Vim Mode" description="Experimental vim keybindings">
