@@ -694,6 +694,7 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
                 [`${mod}+scroll`, 'Zoom the editor font'],
                 [`${mod}+= / ${mod}+-`, 'Zoom the editor font in or out'],
                 [`${mod}+0`, 'Reset the editor font size'],
+                [`${mod}+Shift+I`, 'Format document'],
               ].map(([shortcut, desc]) => (
                 <Fragment key={shortcut}>
                   <span style={kbd}>{shortcut}</span>

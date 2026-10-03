@@ -20,6 +20,10 @@ describe('editor keybindings', () => {
     expect(typstKeymap.some(({ key }) => key?.toLowerCase() === 'mod-s')).toBe(false)
   })
 
+  it('formats the document with Mod-Shift-I', () => {
+    expect(typstKeymap.some(({ key }) => key === 'Mod-Shift-i')).toBe(true)
+  })
+
   it('cycles the theme with Mod-J', () => {
     const binding = typstKeymap.find(({ key }) => key === 'Mod-j')
     const view = new EditorView({

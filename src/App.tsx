@@ -6,7 +6,7 @@ import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { applyEditorZoom, editorZoomFromKey } from '@/lib/editor-zoom'
-import { isSettingsShortcut, isSidebarShortcut } from '@/lib/workspace-shortcuts'
+import { isFormatShortcut, isSettingsShortcut, isSidebarShortcut } from '@/lib/workspace-shortcuts'
 import { preloadWorkspaceShell } from '@/components/workspace/preload'
 import { UpdateToast } from '@/components/layout/update-toast'
 
@@ -81,6 +81,17 @@ export default function App() {
       if (isSettingsShortcut(e) && useProjectStore.getState().hasSelectedProject) {
         e.preventDefault()
         useSettingsStore.getState().setSettingsOpen(true)
+      }
+      if (
+        isFormatShortcut(e)
+        && !e.defaultPrevented
+        && useProjectStore.getState().hasSelectedProject
+      ) {
+        // The editor keymap handles this while CodeMirror is focused. The
+        // event reaches the mounted editor without pulling the formatter
+        // into the home bundle.
+        e.preventDefault()
+        window.dispatchEvent(new Event('typsmthng:format-document'))
       }
       if (isSidebarShortcut(e) && useProjectStore.getState().hasSelectedProject) {
         // Vim does not bind Ctrl+\ in this editor, matching the desktop app,

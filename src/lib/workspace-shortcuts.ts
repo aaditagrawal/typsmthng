@@ -17,3 +17,10 @@ export function isSettingsShortcut(event: ShortcutEvent): boolean {
 export function isSidebarShortcut(event: ShortcutEvent): boolean {
   return isPrimaryShortcut(event, '\\')
 }
+
+export function isFormatShortcut(event: ShortcutEvent): boolean {
+  return (event.ctrlKey || event.metaKey)
+    && event.shiftKey
+    && !event.altKey
+    && (event.key === 'I' || event.key === 'i')
+}

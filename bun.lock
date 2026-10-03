@@ -18,6 +18,7 @@
         "@replit/codemirror-indentation-markers": "^6.5.3",
         "@replit/codemirror-vim": "^6.3.0",
         "@stylexjs/stylex": "^0.19.0",
+        "@typstyle/typstyle-wasm-bundler": "0.15.1",
         "@unified-latex/unified-latex-util-parse": "^1.8.3",
         "codemirror": "^6.0.2",
         "codemirror-lang-typst": "^0.4.0",
@@ -617,6 +618,8 @@
     "@typescript-eslint/utils": ["@typescript-eslint/utils@8.57.0", "", { "dependencies": { "@eslint-community/eslint-utils": "^4.9.1", "@typescript-eslint/scope-manager": "8.57.0", "@typescript-eslint/types": "8.57.0", "@typescript-eslint/typescript-estree": "8.57.0" }, "peerDependencies": { "eslint": "^8.57.0 || ^9.0.0 || ^10.0.0", "typescript": ">=4.8.4 <6.0.0" } }, "sha512-5iIHvpD3CZe06riAsbNxxreP+MuYgVUsV0n4bwLH//VJmgtt54sQeY2GszntJ4BjYCpMzrfVh2SBnUQTtys2lQ=="],
 
     "@typescript-eslint/visitor-keys": ["@typescript-eslint/visitor-keys@8.57.0", "", { "dependencies": { "@typescript-eslint/types": "8.57.0", "eslint-visitor-keys": "^5.0.0" } }, "sha512-zm6xx8UT/Xy2oSr2ZXD0pZo7Jx2XsCoID2IUh9YSTFRu7z+WdwYTRk6LhUftm1crwqbuoF6I8zAFeCMw0YjwDg=="],
+
+    "@typstyle/typstyle-wasm-bundler": ["@typstyle/typstyle-wasm-bundler@0.15.1", "", {}, "sha512-WXguHBsgxQOmY8m0+5T6xnUQBdzEFPFmfdAt0G0XXFM1yiLLx4Z3qoEhXf1Skx6r0R1Iy8VVy8GSJvFtcjGbIA=="],
 
     "@unified-latex/unified-latex-builder": ["@unified-latex/unified-latex-builder@1.8.3", "", { "dependencies": { "@unified-latex/unified-latex-types": "^1.8.0" } }, "sha512-DxZZHcSBUYaJD4LIDsgHqHG3sxY1Ycb+C+Ig/Xc7yjxV38CF6Hq+AfpgfT4dS5fs/sj0FK2/tNGwKEqRTgXy1w=="],
 
