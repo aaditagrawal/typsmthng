@@ -17,6 +17,8 @@ const COMPILE_DELAY_MULTIPLIER = 1.35
 const TYPING_IDLE_WINDOW_MS = 120
 const MAX_RESULT_APPLY_DEFER_MS = 350
 const APPLY_DEFER_POLL_MS = 24
+/** Hold diagnostics and error status until typing has been idle this long. */
+const DIAGNOSTIC_IDLE_MS = 900
 
 interface CachedImportSpecs {
   hash: number
@@ -168,6 +170,73 @@ export function applyPagePreamble(source: string): string {
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
+let pendingDiagnosticTimer: ReturnType<typeof setTimeout> | null = null
+let pendingDiagnosticGeneration = 0
+let quietDiagnosticCache: {
+  fingerprint: string
+  diagnostics: Diagnostic[]
+  setError: boolean
+} | null = null
+
+function diagnosticIdleRemaining(): number {
+  const lastUserEditAt = useEditorStore.getState().lastUserEditAt
+  if (!lastUserEditAt) return 0
+  return Math.max(0, DIAGNOSTIC_IDLE_MS - (Date.now() - lastUserEditAt))
+}
+
+/** Drop a diagnostic/error apply that has not landed yet. Keystrokes call this. */
+export function cancelPendingDiagnosticApply(): void {
+  pendingDiagnosticGeneration += 1
+  if (pendingDiagnosticTimer) {
+    clearTimeout(pendingDiagnosticTimer)
+    pendingDiagnosticTimer = null
+  }
+}
+
+/**
+ * Preview results apply on the normal compile delay. Diagnostics and the
+ * error status wait until typing is idle so underlines do not chase each
+ * keystroke. An empty diagnostic list still clears immediately.
+ */
+function publishCompileDiagnostics(
+  requestId: number,
+  fingerprint: string,
+  diagnostics: Diagnostic[],
+  setError: boolean,
+): void {
+  quietDiagnosticCache = { fingerprint, diagnostics, setError }
+  cancelPendingDiagnosticApply()
+  const generation = pendingDiagnosticGeneration
+
+  const apply = () => {
+    if (generation !== pendingDiagnosticGeneration) return
+    if (requestId < latestRequestedCompileId) return
+    const current = useCompileStore.getState()
+    current.setDiagnostics(diagnostics)
+    if (setError) current.setStatus('error')
+  }
+
+  const delay = diagnostics.length === 0 && !setError ? 0 : diagnosticIdleRemaining()
+  if (delay <= 0) {
+    apply()
+    return
+  }
+
+  const schedule = (waitMs: number) => {
+    pendingDiagnosticTimer = setTimeout(() => {
+      pendingDiagnosticTimer = null
+      if (generation !== pendingDiagnosticGeneration) return
+      const remaining = diagnosticIdleRemaining()
+      if (remaining > 0) {
+        schedule(remaining)
+        return
+      }
+      apply()
+    }, waitMs)
+  }
+  schedule(delay)
+}
+
 interface CompileRequest {
   source: string
   sourcePath?: string | null
@@ -368,6 +437,7 @@ async function doCompile(request: CompileRequest): Promise<void> {
   }
 
   compiling = true
+  cancelPendingDiagnosticApply()
   const store = useCompileStore.getState()
 
   const totalStart = perfMark()
@@ -402,6 +472,14 @@ async function doCompile(request: CompileRequest): Promise<void> {
       if (useCompileStore.getState().status !== 'success') {
         store.setStatus('success')
       }
+      if (quietDiagnosticCache?.fingerprint === fingerprint) {
+        publishCompileDiagnostics(
+          request.requestId,
+          fingerprint,
+          quietDiagnosticCache.diagnostics,
+          quietDiagnosticCache.setError,
+        )
+      }
       return
     }
 
@@ -432,15 +510,19 @@ async function doCompile(request: CompileRequest): Promise<void> {
           lastEnsuredPackagesKey = null
           lastSuccessfulCompileFingerprint = null
           if (!isStaleRequest(request.requestId)) {
-            store.setStatus('error')
-            store.setDiagnostics([{
-              severity: 'error',
-              path: '',
-              range: '',
-              message: `Failed to resolve package dependencies: ${
-                err instanceof Error ? err.message : 'unknown package resolution error'
-              }. Retry compilation when network is available.`,
-            }])
+            publishCompileDiagnostics(
+              request.requestId,
+              fingerprint,
+              [{
+                severity: 'error',
+                path: '',
+                range: '',
+                message: `Failed to resolve package dependencies: ${
+                  err instanceof Error ? err.message : 'unknown package resolution error'
+                }. Retry compilation when network is available.`,
+              }],
+              true,
+            )
           }
           return
         }
@@ -493,10 +575,14 @@ async function doCompile(request: CompileRequest): Promise<void> {
     }
 
     const preambleLines = preamble ? preamble.split('\n').length - 1 : 0
-    store.setCompileTime(Math.round(totalSample.ms))
-    store.setDiagnostics(
-      shiftDiagnosticsForPreamble(result.diagnostics, compileInputs.mainPath, preambleLines),
+    const diagnostics = shiftDiagnosticsForPreamble(
+      result.diagnostics,
+      compileInputs.mainPath,
+      preambleLines,
     )
+    const hasErrors = diagnostics.some((d) => d.severity === 'error')
+    const producedPreview = Boolean(result.success && result.vectorData)
+    store.setCompileTime(Math.round(totalSample.ms))
 
     if (result.timings) {
       perfSample('compile.engine.compile', result.timings.compileMs, {
@@ -507,29 +593,38 @@ async function doCompile(request: CompileRequest): Promise<void> {
       })
     }
 
-    if (result.success && result.vectorData) {
+    if (producedPreview && result.vectorData) {
       store.setSvgResult(result.svg ?? null, result.vectorData, result.pageDimensions)
-      const hasErrors = result.diagnostics.some((d) => d.severity === 'error')
-      store.setStatus(hasErrors ? 'error' : 'success')
+      if (!hasErrors) store.setStatus('success')
       // Re-read the config token: the compile itself may have swapped fonts.
       lastSuccessfulCompileFingerprint = hasErrors
         ? null
         : computeCompileFingerprint(compileInputs, finalSource, wantSvg)
     } else {
-      store.setStatus('error')
       lastSuccessfulCompileFingerprint = null
     }
+
+    publishCompileDiagnostics(
+      request.requestId,
+      fingerprint,
+      diagnostics,
+      hasErrors || !producedPreview,
+    )
   } catch (err) {
     lastSuccessfulCompileFingerprint = null
     if (!isStaleRequest(request.requestId)) {
       console.error('Compilation failed:', err)
-      store.setStatus('error')
-      store.setDiagnostics([{
-        severity: 'error',
-        path: '',
-        range: '',
-        message: err instanceof Error ? err.message : 'Unknown compilation error',
-      }])
+      publishCompileDiagnostics(
+        request.requestId,
+        `failure:${request.requestId}`,
+        [{
+          severity: 'error',
+          path: '',
+          range: '',
+          message: err instanceof Error ? err.message : 'Unknown compilation error',
+        }],
+        true,
+      )
     }
   } finally {
     compiling = false
@@ -551,6 +646,8 @@ async function doCompile(request: CompileRequest): Promise<void> {
 }
 
 export function requestCompile(source: string, sourcePath?: string | null): void {
+  // A new keystroke invalidates diagnostics computed for the previous buffer.
+  cancelPendingDiagnosticApply()
   const { autoCompile, compileDelay } = useSettingsStore.getState()
   if (!autoCompile) return
 
