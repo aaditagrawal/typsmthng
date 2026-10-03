@@ -9,14 +9,10 @@ interface PreviewState {
   setFitMode: (mode: 'width' | 'page' | 'custom') => void
   setCurrentPage: (page: number) => void
   setRenderMode: (mode: PreviewRenderMode) => void
-  zoomIn: () => void
-  zoomOut: () => void
 }
 
 export type PreviewRenderMode = 'auto' | 'svg' | 'canvas'
 
-const ZOOM_STEPS = [25, 50, 75, 100, 125, 150, 200, 300]
-const REVERSED_ZOOM_STEPS = [...ZOOM_STEPS].reverse()
 export function resolvePreviewRenderMode(mode: PreviewRenderMode): Exclude<PreviewRenderMode, 'auto'> {
   if (mode !== 'auto') return mode
   return 'canvas'
@@ -45,19 +41,5 @@ export const usePreviewStore = create<PreviewState>((set, get) => ({
   setRenderMode: (renderMode) => {
     if (get().renderMode === renderMode) return
     set({ renderMode })
-  },
-
-  zoomIn: () => {
-    const { zoom, fitMode } = get()
-    const next = ZOOM_STEPS.find((s) => s > zoom) ?? 300
-    if (next === zoom && fitMode === 'custom') return
-    set({ zoom: next, fitMode: 'custom' })
-  },
-
-  zoomOut: () => {
-    const { zoom, fitMode } = get()
-    const next = REVERSED_ZOOM_STEPS.find((s) => s < zoom) ?? 25
-    if (next === zoom && fitMode === 'custom') return
-    set({ zoom: next, fitMode: 'custom' })
   },
 }))

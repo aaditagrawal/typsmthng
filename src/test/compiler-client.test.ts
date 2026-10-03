@@ -24,7 +24,6 @@ vi.mock('@/lib/compiler-backend', () => ({
   configureCompilerBackend: vi.fn(),
   ensurePackagesForCompileBackend: vi.fn(async () => {}),
   isCompilerReadyBackend: vi.fn(() => false),
-  resolveSourceLocBackend: vi.fn(async () => undefined),
   resolveSourceLocBatchBackend: vi.fn(async () => []),
 }))
 
@@ -82,13 +81,6 @@ function installMockEventWorker(): void {
 function mockWorkerApi() {
   return {
     initCompiler: vi.fn().mockResolvedValue(undefined),
-    compileTypst: vi.fn().mockResolvedValue({
-      svg: '<svg>worker</svg>',
-      vectorData: new Uint8Array([3]),
-      pageDimensions: [],
-      diagnostics: [],
-      success: true,
-    }),
     compileTypstIncremental: vi.fn().mockResolvedValue({
       kind: 'result',
       result: {
@@ -101,8 +93,6 @@ function mockWorkerApi() {
     }),
     compileToPdf: vi.fn().mockResolvedValue({ pdf: new Uint8Array([5]), diagnostics: [] }),
     ensurePackagesForCompile: vi.fn().mockResolvedValue(undefined),
-    isCompilerReady: vi.fn().mockReturnValue(true),
-    resolveSourceLoc: vi.fn().mockResolvedValue(undefined),
     resolveSourceLocBatch: vi.fn().mockResolvedValue([]),
   }
 }

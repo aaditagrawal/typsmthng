@@ -52,16 +52,3 @@ export function perfSample(
 
   return sample
 }
-
-export async function perfMeasureAsync<T>(
-  name: string,
-  run: () => Promise<T>,
-  context?: Record<string, string | number>,
-): Promise<{ result: T; sample: PerfSample }> {
-  const start = perfMark()
-  const result = await run()
-  return {
-    result,
-    sample: perfMeasure(name, start, context),
-  }
-}

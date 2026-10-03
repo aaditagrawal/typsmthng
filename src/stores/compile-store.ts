@@ -24,7 +24,6 @@ interface CompileState {
   errorCount: number
   warningCount: number
   compileTime: number
-  autoCompile: boolean
   setStatus: (status: CompileStatus) => void
   setCompilerReady: (ready: boolean) => void
   bumpCompilerGeneration: () => void
@@ -32,7 +31,6 @@ interface CompileState {
   setSvgResult: (svg: string | null, vectorData: Uint8Array, pageDimensions: PageDimension[]) => void
   clearPreview: () => void
   setCompileTime: (ms: number) => void
-  setAutoCompile: (auto: boolean) => void
 }
 
 export const useCompileStore = create<CompileState>((set) => ({
@@ -47,7 +45,6 @@ export const useCompileStore = create<CompileState>((set) => ({
   errorCount: 0,
   warningCount: 0,
   compileTime: 0,
-  autoCompile: true,
   setStatus: (status) => set({ status }),
   setCompilerReady: (compilerReady) => set({ compilerReady }),
   bumpCompilerGeneration: () => set((state) => ({ compilerGeneration: state.compilerGeneration + 1 })),
@@ -78,5 +75,4 @@ export const useCompileStore = create<CompileState>((set) => ({
     status: 'idle',
   }),
   setCompileTime: (compileTime) => set({ compileTime }),
-  setAutoCompile: (autoCompile) => set({ autoCompile }),
 }))

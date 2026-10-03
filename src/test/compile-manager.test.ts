@@ -51,7 +51,6 @@ describe('Compile Manager', () => {
       errorCount: 0,
       warningCount: 0,
       compileTime: 0,
-      autoCompile: true,
     })
     useProjectStore.setState({
       projects: [],

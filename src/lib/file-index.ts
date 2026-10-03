@@ -7,13 +7,11 @@ export interface SearchablePathEntry {
 
 export interface ProjectFileIndex {
   treeFiles: ProjectFile[]
-  searchablePaths: string[]
   searchablePathEntries: SearchablePathEntry[]
 }
 
 const EMPTY_INDEX: ProjectFileIndex = {
   treeFiles: [],
-  searchablePaths: [],
   searchablePathEntries: [],
 }
 
@@ -47,7 +45,6 @@ export function getProjectFileIndex(project?: Project | null): ProjectFileIndex 
   const index: ProjectFileIndex = {
     treeFiles,
     searchablePathEntries,
-    searchablePaths: searchablePathEntries.map((entry) => entry.path),
   }
 
   indexCache.set(project, index)
