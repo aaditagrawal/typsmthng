@@ -39,7 +39,7 @@ describe('CommandSearch actions', () => {
     expect(screen.getByText('Save project')).toBeInTheDocument()
     expect(screen.getByText('Cycle theme')).toBeInTheDocument()
 
-    const input = screen.getByPlaceholderText('SEARCH FILES AND COMMANDS...')
+    const input = screen.getByPlaceholderText('SEARCH FILES, CONTENT, AND COMMANDS...')
     expect(input).toHaveAttribute('role', 'combobox')
     expect(input).toHaveAttribute('aria-controls', 'command-palette-results')
     expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-0')
@@ -103,6 +103,35 @@ describe('CommandSearch actions', () => {
     rerender(<CommandSearch />)
     fireEvent.click(screen.getByText('Download PDF'))
     await waitFor(() => expect(exportCurrentProjectPdf).toHaveBeenCalledOnce())
+    expect(useUIStore.getState().commandSearchOpen).toBe(false)
+  })
+
+  it('jumps to a content match and skips hidden project files', () => {
+    useProjectStore.setState({
+      projects: [{
+        id: 'p',
+        name: 'Notes',
+        files: [
+          { path: '/main.typ', content: 'hello needle\n', isBinary: false, lastModified: 1 },
+          { path: '/.typsmthng/template.json', content: 'needle', isBinary: false, lastModified: 1 },
+        ],
+        mainFile: '/main.typ',
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+      currentProjectId: 'p',
+      currentFilePath: '/other.typ',
+    })
+    useEditorStore.setState({ editorJump: null, source: '' })
+    render(<CommandSearch />)
+
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'needle' } })
+    expect(screen.getByText('/main.typ:1:7 hello needle')).toBeInTheDocument()
+    expect(screen.queryByText(/template.json/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('/main.typ:1:7 hello needle'))
+    expect(useProjectStore.getState().currentFilePath).toBe('/main.typ')
+    expect(useEditorStore.getState().editorJump).toEqual({ path: '/main.typ', line: 1, column: 7 })
     expect(useUIStore.getState().commandSearchOpen).toBe(false)
   })
 })

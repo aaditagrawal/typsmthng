@@ -18,6 +18,7 @@ import { requestCompile, forceCompile, ensureCompilerReady } from '@/lib/compile
 import { typstKeymap } from '@/lib/keybindings'
 import { sourceHighlightField } from '@/lib/editor-highlight'
 import { centeredCaretScrollTop } from '@/lib/centered-scrolling'
+import { revealPosition } from '@/lib/editor-jump'
 import { diagnosticField, setDiagnostics } from '@/lib/editor-diagnostics'
 import { useCompileStore } from '@/stores/compile-store'
 import {
@@ -489,8 +490,12 @@ export function TypstEditor() {
       forceCompile(file.content, currentFilePath)
     }
 
-    // Restore this file's last cursor/scroll position, clamped to the doc.
-    if (switchingFile) {
+    // A content-search jump wins over the saved cursor for this file.
+    const jump = useEditorStore.getState().editorJump
+    if (jump && jump.path === currentFilePath) {
+      revealPosition(view, jump.line, jump.column)
+      useEditorStore.getState().clearEditorJump()
+    } else if (switchingFile) {
       const saved = savedViewStates.get(nextKey)
       if (saved) {
         const docLength = view.state.doc.length
