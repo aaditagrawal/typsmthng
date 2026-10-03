@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 vi.mock('@/lib/compiler', () => ({
   initCompiler: vi.fn(async () => {}),
   compileTypst: vi.fn(async (source: string) => ({
-    svg: `<svg>${source.slice(0, 10)}</svg>`,
+    svg: `<svg>${source}</svg>`,
     vectorData: new Uint8Array([1, 2, 3]),
     pageDimensions: [{ width: 595, height: 842 }],
     diagnostics: [],

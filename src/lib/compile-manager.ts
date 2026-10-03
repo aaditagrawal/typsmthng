@@ -10,6 +10,7 @@ import { applyPackageImportCompatRewrites } from './package-compat'
 import { buildCompileInputs } from './compile-inputs'
 import type { CompileInputs } from './compile-inputs'
 import { perfMark, perfMeasure, perfSample } from './perf'
+import { currentLocalePaper } from './locale-paper'
 
 const MIN_COMPILE_DELAY_MS = 120
 const MAX_COMPILE_DELAY_MS = 900
@@ -98,13 +99,13 @@ function currentProjectLayoutLocked(): boolean {
 
 function buildPagePreamble(pageSize: PageSize, source: string, layoutLocked: boolean): string {
   if (layoutLocked) return ''
-  if (pageSize === 'auto') return ''
   if (/^#set\s+page\s*\(/m.test(source)) return ''
 
-  if (pageSize === 'presentation-16-9') {
+  const resolved = pageSize === 'auto' ? currentLocalePaper() : pageSize
+  if (resolved === 'presentation-16-9') {
     return '#set page(width: 25.4cm, height: 14.29cm, margin: 2cm)\n'
   }
-  return `#set page(paper: "${pageSize}")\n`
+  return `#set page(paper: "${resolved}")\n`
 }
 
 export function getInjectedPreambleLineCount(source: string): number {

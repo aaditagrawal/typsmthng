@@ -6,6 +6,7 @@ import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import type { PageSize } from '@/stores/settings-store'
 import { forceCompile } from '@/lib/compile-manager'
+import { autoPageSizeLabel } from '@/lib/locale-paper'
 import { useModalA11y } from '@/components/ui/context-menu'
 
 type Theme = 'light' | 'dark' | 'system'
@@ -400,7 +401,9 @@ export function SettingsModal() {
               }}
             >
               {PAGE_SIZE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                <option key={opt.value} value={opt.value}>
+                  {opt.value === 'auto' ? autoPageSizeLabel() : opt.label}
+                </option>
               ))}
             </select>
             )}
