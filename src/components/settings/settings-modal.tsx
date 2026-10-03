@@ -1,7 +1,7 @@
 import { useRef, useCallback, useId } from 'react'
 import { X } from 'lucide-react'
 import { useShallow } from 'zustand/react/shallow'
-import { useSettingsStore, PAGE_SIZE_OPTIONS } from '@/stores/settings-store'
+import { useSettingsStore, PAGE_SIZE_OPTIONS, MIN_EDITOR_FONT_SIZE, MAX_EDITOR_FONT_SIZE } from '@/stores/settings-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
 import type { PageSize } from '@/stores/settings-store'
@@ -329,8 +329,8 @@ export function SettingsModal() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <input
                   type="range"
-                  min={12}
-                  max={24}
+                  min={MIN_EDITOR_FONT_SIZE}
+                  max={MAX_EDITOR_FONT_SIZE}
                   value={fontSize}
                   aria-labelledby={labelId}
                   onChange={(e) => setFontSize(Number(e.target.value))}
