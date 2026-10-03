@@ -65,6 +65,7 @@ const defaults: Settings = {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSettings: Settings | null = null
+let settingsRevision = 0
 const PERSIST_DEBOUNCE_MS = 300
 
 function flushPendingSettings() {
@@ -81,6 +82,7 @@ function flushPendingSettings() {
 }
 
 function persistSettings(settings: Settings) {
+  settingsRevision += 1
   pendingSettings = settings
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = setTimeout(flushPendingSettings, PERSIST_DEBOUNCE_MS)
@@ -169,9 +171,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   loadSettings: async () => {
+    const revision = settingsRevision
     try {
       const saved = await idbGet<Settings>(SETTINGS_KEY, settingsDb)
-      if (saved) {
+      if (saved && revision === settingsRevision) {
         set({
           fontSize: saved.fontSize ?? defaults.fontSize,
           autoCompile: saved.autoCompile ?? defaults.autoCompile,

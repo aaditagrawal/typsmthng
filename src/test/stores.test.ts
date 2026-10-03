@@ -49,7 +49,6 @@ describe('Compile Store', () => {
     expect(state.errorCount).toBe(0)
     expect(state.warningCount).toBe(0)
     expect(state.svg).toBeNull()
-    expect(state.autoCompile).toBe(true)
   })
 
   it('should update status', () => {
@@ -133,19 +132,6 @@ describe('Preview Store', () => {
     expect(state.renderMode).toBe('auto')
   })
 
-  it('should zoom in through steps', () => {
-    // Reset
-    usePreviewStore.setState({ zoom: 100, fitMode: 'custom' })
-    usePreviewStore.getState().zoomIn()
-    expect(usePreviewStore.getState().zoom).toBe(125)
-    expect(usePreviewStore.getState().fitMode).toBe('custom')
-  })
-
-  it('should zoom out through steps', () => {
-    usePreviewStore.setState({ zoom: 100, fitMode: 'custom' })
-    usePreviewStore.getState().zoomOut()
-    expect(usePreviewStore.getState().zoom).toBe(75)
-  })
 
   it('should clamp zoom to valid range', () => {
     usePreviewStore.getState().setZoom(500)

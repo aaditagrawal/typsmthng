@@ -777,11 +777,11 @@ describe('Project Store', () => {
     vi.useFakeTimers()
     await useProjectStore.getState().createFilesBatch([{ path: '/notes.typ', content: '= notes' }])
     const first = getProjectFileIndex(useProjectStore.getState().getCurrentProject())
-    expect(first.searchablePaths).toContain('/notes.typ')
+    expect(first.searchablePathEntries.map((entry) => entry.path)).toContain('/notes.typ')
 
     await useProjectStore.getState().addBinaryFilesBatch([{ path: '/img.png', data: new Uint8Array([1]) }])
     const second = getProjectFileIndex(useProjectStore.getState().getCurrentProject())
-    expect(second.searchablePaths).toContain('/img.png')
+    expect(second.searchablePathEntries.map((entry) => entry.path)).toContain('/img.png')
   })
 
   it('does not clear dirty state when the user types during an in-flight save', async () => {

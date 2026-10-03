@@ -11,7 +11,6 @@ import {
   ensurePackagesForCompileBackend,
   initCompilerBackend,
   isCompilerReadyBackend,
-  resolveSourceLocBackend,
   resolveSourceLocBatchBackend,
   type CompileManifestEntry,
   type CompileOptions,
@@ -27,15 +26,7 @@ interface CompilerInitOptions {
 
 interface CompilerWorkerApi {
   initCompiler: (options?: CompilerInitOptions) => Promise<void>
-  compileTypst: (
-    source: string,
-    extraFiles?: Array<{ path: string; content: string }>,
-    mainFilePath?: string,
-    extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-    options?: CompileOptions,
-  ) => Promise<CompileResult>
   compileTypstIncremental: (request: IncrementalCompileRequest) => Promise<IncrementalCompileResponse>
-  resolveSourceLoc: (vectorData: Uint8Array, path: Uint32Array) => Promise<string | undefined>
   resolveSourceLocBatch: (vectorData: Uint8Array, paths: Uint32Array[]) => Promise<Array<string | undefined>>
   compileToPdf: (
     source: string,
@@ -44,7 +35,6 @@ interface CompilerWorkerApi {
     extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
   ) => Promise<PdfCompileResult>
   ensurePackagesForCompile: (specs: string[]) => Promise<void>
-  isCompilerReady: () => boolean
 }
 
 /**
@@ -469,15 +459,6 @@ export async function compileTypstClient(
   )
 }
 
-export async function resolveSourceLocClient(
-  vectorData: Uint8Array,
-  path: Uint32Array,
-): Promise<string | undefined> {
-  return callWithCompilerFallback(
-    (api) => api.resolveSourceLoc(vectorData, path),
-    () => resolveSourceLocBackend(vectorData, path),
-  )
-}
 
 export async function resolveSourceLocBatchClient(
   vectorData: Uint8Array,

@@ -471,23 +471,6 @@ export async function compileTypstIncrementalBackend(
   })
 }
 
-export async function resolveSourceLocBackend(
-  vectorData: Uint8Array,
-  path: Uint32Array,
-): Promise<string | undefined> {
-  return enqueueCompilerOperation(async () => {
-    if (!renderer) return undefined
-
-    let loc: string | undefined
-    await renderer.runWithSession(
-      { format: 'vector', artifactContent: vectorData },
-      async (session) => {
-        loc = session.getSourceLoc(path)
-      },
-    )
-    return loc
-  })
-}
 
 export async function resolveSourceLocBatchBackend(
   vectorData: Uint8Array,
