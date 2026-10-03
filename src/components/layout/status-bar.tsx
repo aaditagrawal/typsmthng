@@ -18,6 +18,7 @@ export function StatusBar() {
   const compileStatus = useCompileStore((s) => s.status)
   const compilerReady = useCompileStore((s) => s.compilerReady)
   const compileTime = useCompileStore((s) => s.compileTime)
+  const pageCount = useCompileStore((s) => s.pageDimensions.length)
   const errors = useCompileStore((s) => s.errorCount)
   const warnings = useCompileStore((s) => s.warningCount)
   const saveStatus = useEditorStore((s) => s.saveStatus)
@@ -79,6 +80,12 @@ export function StatusBar() {
         {compileTime > 0 && (
           <>
             <span>{compileTime}ms</span>
+            <div style={separatorStyle} />
+          </>
+        )}
+        {pageCount > 0 && (
+          <>
+            <span>{pageCount} {pageCount === 1 ? 'Page' : 'Pages'}</span>
             <div style={separatorStyle} />
           </>
         )}
