@@ -475,8 +475,7 @@ export function TypstEditor() {
   return (
     <div
       ref={editorRef}
-      className="h-full w-full overflow-hidden"
-      style={{ background: 'var(--bg-surface)' }}
+      className="h-full w-full overflow-hidden bg-(--bg-surface)"
     />
   )
 }

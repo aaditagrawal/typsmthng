@@ -49,28 +49,15 @@ export function SafariBanner() {
       : 'Safari may clear stored data after 7 days of inactivity. Download your work regularly to avoid data loss.'
 
   return (
-    <div
-      className="flex items-center gap-2 px-3 py-1.5 text-xs shrink-0"
-      style={{
-        background: '#FFF3ED',
-        color: '#932B00',
-        borderBottom: '1px solid #FFE3D1',
-      }}
-    >
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs shrink-0 bg-accent-50 text-accent-800 border-b border-b-accent-100">
       <AlertTriangle size={14} className="shrink-0" />
       <span className="flex-1">{message}</span>
       {storageStatus === 'idle' && (
         <button
           type="button"
           onClick={handleAllowStorage}
-          className="shrink-0 px-2 py-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            border: '1px solid #FFD0B5',
-          }}
+          className="shrink-0 px-2 py-0.5 rounded hover:bg-accent-100 transition-colors font-mono fs-10 tracking-(--ls) uppercase border border-accent-150"
+          style={{ '--ls': '0.04em' }}
         >
           Allow storage
         </button>
@@ -78,7 +65,7 @@ export function SafariBanner() {
       <button
         type="button"
         onClick={dismiss}
-        className="shrink-0 p-0.5 rounded hover:bg-[#FFE3D1] transition-colors"
+        className="shrink-0 p-0.5 rounded hover:bg-accent-100 transition-colors"
         aria-label="Dismiss"
       >
         <X size={14} />

@@ -174,21 +174,15 @@ function ContextMenuPanel({
       onClick={(event) => {
         event.stopPropagation()
       }}
-      style={{ position: 'relative' }}
+      className="relative"
     >
       <div
         ref={panelRef}
         role="menu"
-        className="fixed z-50 min-w-[220px]"
+        className="fixed z-50 min-w-55 context-menu-panel left-(--menu-x) top-(--menu-y)"
         style={{
-          left: position.left,
-          top: position.top,
-          background: 'var(--bg-elevated)',
-          border: 'none',
-          borderRadius: '2px',
-          fontFamily: 'var(--font-mono)',
-          boxShadow: '0 10px 24px rgba(0, 0, 0, 0.22)',
-          padding: '6px',
+          '--menu-x': `${position.left}px`,
+          '--menu-y': `${position.top}px`,
         }}
         onKeyDown={(event) => {
           if (event.key === 'ArrowDown') {
@@ -216,16 +210,7 @@ function ContextMenuPanel({
       >
         {actions.map((action, index) => (
           <div key={`${action.label}-${index}`}>
-            {index > 0 && (
-              <div
-                aria-hidden="true"
-                style={{
-                  height: '1px',
-                  background: 'color-mix(in srgb, var(--text-tertiary) 30%, transparent)',
-                  margin: '4px 0 4px 12px',
-                }}
-              />
-            )}
+            {index > 0 && <div aria-hidden="true" className="context-menu-sep" />}
             <button
               ref={(element) => {
                 itemRefs.current[index] = element
@@ -236,21 +221,16 @@ function ContextMenuPanel({
               aria-disabled={action.disabled || undefined}
               aria-haspopup={action.children?.length ? 'menu' : undefined}
               aria-expanded={action.children?.length ? openSubmenuIndex === index : undefined}
-              className="flex items-center gap-3 w-full px-4 py-2"
+              className="flex items-center gap-3 w-full px-4 py-2 text-(--fg) fs-11 font-mono uppercase tracking-wider cursor-(--cur) opacity-(--op) text-left bg-(--item-bg)"
               style={{
-                color: action.disabled
+                '--fg': action.disabled
                   ? 'var(--text-tertiary)'
                   : action.danger
                     ? 'var(--status-error)'
                     : 'var(--text-secondary)',
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-                cursor: action.disabled ? 'not-allowed' : 'pointer',
-                opacity: action.disabled ? 0.5 : 1,
-                textAlign: 'left',
-                background: openSubmenuIndex === index ? 'var(--bg-hover)' : 'transparent',
+                '--cur': action.disabled ? 'not-allowed' : 'pointer',
+                '--op': action.disabled ? '0.5' : '1',
+                '--item-bg': openSubmenuIndex === index ? 'var(--bg-hover)' : 'transparent',
               }}
               onMouseDown={(event) => {
                 event.stopPropagation()
@@ -300,18 +280,10 @@ function ContextMenuPanel({
                 onClose()
               }}
             >
-              <span
-                style={{
-                  width: '16px',
-                  minWidth: '16px',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
+              <span className="w-4 min-w-4 inline-flex items-center justify-center">
                 {action.icon ?? null}
               </span>
-              <span style={{ flex: 1 }}>{action.label}</span>
+              <span className="flex-1">{action.label}</span>
               {action.children?.length ? <ChevronRight size={12} /> : null}
             </button>
           </div>

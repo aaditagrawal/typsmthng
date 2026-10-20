@@ -28,30 +28,12 @@ function Toggle({ checked, onChange, labelId }: {
           onChange(!checked)
         }
       }}
-      style={{
-        position: 'relative',
-        width: '36px',
-        height: '20px',
-        borderRadius: '2px',
-        border: '1px solid var(--border-default)',
-        background: checked ? 'var(--accent)' : 'var(--bg-inset)',
-        cursor: 'pointer',
-        transition: 'background 150ms ease',
-        flexShrink: 0,
-        padding: 0,
-      }}
+      className="relative w-9 h-5 rounded-xs border border-(color:--border-default) bg-(--tog-bg) cursor-pointer transition-colors duration-150 shrink-0 p-0"
+      style={{ '--tog-bg': checked ? 'var(--accent)' : 'var(--bg-inset)' }}
     >
       <span
-        style={{
-          position: 'absolute',
-          top: '2px',
-          left: checked ? '18px' : '2px',
-          width: '14px',
-          height: '14px',
-          borderRadius: '2px',
-          background: '#fff',
-          transition: 'left 150ms ease',
-        }}
+        className="absolute top-0.5 left-(--knob-x) w-3.5 h-3.5 rounded-xs bg-white transition-all duration-150"
+        style={{ '--knob-x': checked ? '18px' : '2px' }}
       />
     </button>
   )
@@ -68,37 +50,17 @@ function SettingRow({
 }) {
   const labelId = useId()
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 0',
-        borderBottom: '1px solid var(--border-subtle)',
-        gap: '12px',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div className="flex items-center justify-between py-2.5 border-b border-b-(color:--border-subtle) gap-3">
+      <div className="flex-1 min-w-0">
         <div
           id={labelId}
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            color: 'var(--text-primary)',
-            letterSpacing: '0.02em',
-          }}
+          className="font-mono fs-12 text-(--text-primary) tracking-(--ls)"
+          style={{ '--ls': '0.02em' }}
         >
           {label}
         </div>
         {description && (
-          <div
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              marginTop: '2px',
-            }}
-          >
+          <div className="font-mono fs-11 text-(--text-tertiary) mt-0.5">
             {description}
           </div>
         )}
@@ -111,16 +73,8 @@ function SettingRow({
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: '11px',
-        fontWeight: 600,
-        color: 'var(--text-tertiary)',
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase' as const,
-        marginTop: '20px',
-        marginBottom: '4px',
-      }}
+      className="font-mono fs-11 font-semibold text-(--text-tertiary) tracking-(--ls) uppercase mt-5 mb-1"
+      style={{ '--ls': '0.08em' }}
     >
       {children}
     </div>
@@ -142,12 +96,7 @@ function ThemeSegment({ value, onChange, labelId }: {
     <div
       role="group"
       aria-labelledby={labelId}
-      style={{
-        display: 'flex',
-        border: '1px solid var(--border-default)',
-        borderRadius: '2px',
-        overflow: 'hidden',
-      }}
+      className="flex border border-(color:--border-default) rounded-xs overflow-hidden"
     >
       {options.map((opt) => (
         <button
@@ -155,17 +104,12 @@ function ThemeSegment({ value, onChange, labelId }: {
           type="button"
           aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
+          className="font-mono fs-11 tracking-(--ls) py-1 px-3 border-none border-r-(length:--seg-bw) border-r-(color:--border-default) bg-(--seg-bg) text-(--seg-fg) cursor-pointer transition-colors duration-100"
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            letterSpacing: '0.02em',
-            padding: '4px 12px',
-            border: 'none',
-            borderRight: opt.value !== 'system' ? '1px solid var(--border-default)' : 'none',
-            background: value === opt.value ? 'var(--accent)' : 'var(--bg-inset)',
-            color: value === opt.value ? '#fff' : 'var(--text-secondary)',
-            cursor: 'pointer',
-            transition: 'background 100ms ease, color 100ms ease',
+            '--ls': '0.02em',
+            '--seg-bw': opt.value !== 'system' ? '1px' : '0px',
+            '--seg-bg': value === opt.value ? 'var(--accent)' : 'var(--bg-inset)',
+            '--seg-fg': value === opt.value ? 'var(--accent-text)' : 'var(--text-secondary)',
           }}
         >
           {opt.label}
@@ -235,15 +179,7 @@ export function SettingsModal() {
       onClick={(e) => {
         if (e.target === backdropRef.current) handleClose()
       }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.6)',
-      }}
+      className="fixed inset-0 z-1000 flex items-center justify-center bg-black/60"
     >
       <div
         ref={panelRef}
@@ -251,56 +187,24 @@ export function SettingsModal() {
         aria-modal="true"
         aria-label="Settings"
         tabIndex={-1}
+        className="w-(--panel-w) max-w-120 max-h-(--panel-maxh) bg-(--bg-surface) border border-(color:--border-strong) rounded-xs flex flex-col overflow-hidden"
         style={{
-          width: 'calc(100% - 48px)',
-          maxWidth: '480px',
-          maxHeight: 'calc(100vh - 80px)',
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: '2px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
+          '--panel-w': 'calc(100% - 48px)',
+          '--panel-maxh': 'calc(100vh - 80px)',
         }}
       >
         {/* Header */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border-default)',
-          }}
-        >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-b-(color:--border-default)">
           <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '14px',
-              fontWeight: 600,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase' as const,
-              color: 'var(--text-primary)',
-            }}
+            className="font-mono fs-14 font-semibold tracking-(--ls) uppercase text-(--text-primary)"
+            style={{ '--ls': '0.08em' }}
           >
             Settings
           </span>
           <button
             onClick={handleClose}
             aria-label="Close settings"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '28px',
-              height: '28px',
-              border: '1px solid transparent',
-              borderRadius: '2px',
-              background: 'transparent',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'background 100ms ease, color 100ms ease',
-            }}
+            className="inline-flex items-center justify-center size-7 border border-transparent rounded-xs bg-transparent text-(--text-secondary) cursor-pointer transition-colors duration-100"
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-hover)'
               e.currentTarget.style.color = 'var(--text-primary)'
@@ -315,18 +219,12 @@ export function SettingsModal() {
         </div>
 
         {/* Content */}
-        <div
-          style={{
-            padding: '4px 16px 16px',
-            overflowY: 'auto',
-            flex: 1,
-          }}
-        >
+        <div className="px-4 pt-1 pb-4 overflow-y-auto flex-1">
           <SectionLabel>Editor</SectionLabel>
 
           <SettingRow label="Font Size">
             {(labelId) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="flex items-center gap-2">
                 <input
                   type="range"
                   min={12}
@@ -334,20 +232,9 @@ export function SettingsModal() {
                   value={fontSize}
                   aria-labelledby={labelId}
                   onChange={(e) => setFontSize(Number(e.target.value))}
-                  style={{
-                    width: '80px',
-                    accentColor: 'var(--accent)',
-                  }}
+                  className="w-20 accent-(--accent)"
                 />
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
-                    minWidth: '28px',
-                    textAlign: 'right',
-                  }}
-                >
+                <span className="font-mono fs-12 text-(--text-secondary) min-w-7 text-right">
                   {fontSize}px
                 </span>
               </div>
@@ -380,18 +267,8 @@ export function SettingsModal() {
               value={pageSize}
               aria-labelledby={labelId}
               onChange={(e) => handlePageSizeChange(e.target.value as PageSize)}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                letterSpacing: '0.02em',
-                padding: '4px 8px',
-                background: 'var(--bg-inset)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                color: 'var(--text-primary)',
-                cursor: 'pointer',
-                outline: 'none',
-              }}
+              className="font-mono fs-11 tracking-(--ls) py-1 px-2 bg-(--bg-inset) border border-(color:--border-default) rounded-xs text-(--text-primary) cursor-pointer outline-none"
+              style={{ '--ls': '0.02em' }}
             >
               {PAGE_SIZE_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -419,7 +296,7 @@ export function SettingsModal() {
 
           <SettingRow label="Compile Delay" description="Delay before auto-compile triggers (ms)">
             {(labelId) => (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="flex items-center gap-2">
                 <input
                   type="range"
                   min={50}
@@ -428,20 +305,9 @@ export function SettingsModal() {
                   value={compileDelay}
                   aria-labelledby={labelId}
                   onChange={(e) => setCompileDelay(Number(e.target.value))}
-                  style={{
-                    width: '80px',
-                    accentColor: 'var(--accent)',
-                  }}
+                  className="w-20 accent-(--accent)"
                 />
-                <span
-                  style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '12px',
-                    color: 'var(--text-secondary)',
-                    minWidth: '42px',
-                    textAlign: 'right',
-                  }}
-                >
+                <span className="font-mono fs-12 text-(--text-secondary) min-w-10.5 text-right">
                   {compileDelay}ms
                 </span>
               </div>
@@ -450,38 +316,14 @@ export function SettingsModal() {
         </div>
 
         {/* Footer */}
-        <div
-          style={{
-            padding: '10px 16px',
-            borderTop: '1px solid var(--border-default)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-            }}
-          >
+        <div className="px-4 py-2.5 border-t border-t-(color:--border-default) flex items-center justify-between">
+          <span className="font-mono fs-11 text-(--text-tertiary)">
             Changes saved automatically
           </span>
           <button
             onClick={handleClose}
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '12px',
-              letterSpacing: '0.04em',
-              padding: '5px 16px',
-              border: '1px solid var(--border-default)',
-              borderRadius: '2px',
-              background: 'var(--bg-inset)',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              transition: 'background 100ms ease, color 100ms ease, border-color 100ms ease',
-            }}
+            className="font-mono fs-12 tracking-(--ls) py-1.25 px-4 border border-(color:--border-default) rounded-xs bg-(--bg-inset) text-(--text-secondary) cursor-pointer transition-colors duration-100"
+            style={{ '--ls': '0.04em' }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-hover)'
               e.currentTarget.style.color = 'var(--text-primary)'

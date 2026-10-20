@@ -33,120 +33,40 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const message = this.props.fallbackMessage ?? 'Something went wrong'
 
     return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          height: '100%',
-          width: '100%',
-          background: 'var(--bg-app)',
-          fontFamily: 'var(--font-mono)',
-          color: 'var(--text-primary)',
-          padding: '24px',
-        }}
-      >
-        <div
-          style={{
-            maxWidth: '480px',
-            width: '100%',
-            border: '2px solid var(--accent)',
-            borderRadius: '2px',
-            background: 'var(--bg-surface)',
-            padding: '24px',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase' as const,
-              color: 'var(--accent)',
-              marginBottom: '12px',
-            }}
-          >
+      <div className="flex flex-col items-center justify-center h-full w-full bg-(--bg-app) font-mono text-(--text-primary) p-6">
+        <div className="max-w-120 w-full border-2 border-(color:--accent) rounded-xs bg-(--bg-surface) p-6">
+          <div className="fs-11 font-bold tracking-widest uppercase text-(--accent) mb-3">
             ERROR
           </div>
 
-          <div
-            style={{
-              fontSize: '13px',
-              lineHeight: '1.5',
-              color: 'var(--text-secondary)',
-              marginBottom: '8px',
-            }}
-          >
+          <div className="fs-13 leading-(--lh) text-(--text-secondary) mb-2" style={{ '--lh': '1.5' }}>
             {message}
           </div>
 
           {this.state.error && (
-            <div
-              style={{
-                fontSize: '12px',
-                color: 'var(--text-tertiary)',
-                marginBottom: '20px',
-              }}
-            >
+            <div className="fs-12 text-(--text-tertiary) mb-5">
               {this.state.error.message}
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+          <div className="flex gap-2 mb-4 flex-wrap">
             <button
               onClick={() => this.setState({ hasError: false, error: null, showDetails: false })}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase' as const,
-                padding: '8px 16px',
-                background: 'var(--accent)',
-                color: 'var(--accent-text)',
-                border: 'none',
-                borderRadius: '2px',
-                cursor: 'pointer',
-              }}
+              className="font-mono fs-11 font-bold tracking-widest uppercase py-2 px-4 bg-(--accent) text-(--accent-text) border-none rounded-xs cursor-pointer"
             >
               TRY AGAIN
             </button>
 
             <button
               onClick={() => window.location.reload()}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase' as const,
-                padding: '8px 16px',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                cursor: 'pointer',
-              }}
+              className="font-mono fs-11 font-bold tracking-widest uppercase py-2 px-4 bg-transparent text-(--text-secondary) border border-(color:--border-default) rounded-xs cursor-pointer"
             >
               RELOAD
             </button>
 
             <button
               onClick={() => this.setState((s) => ({ showDetails: !s.showDetails }))}
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase' as const,
-                padding: '8px 16px',
-                background: 'transparent',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                cursor: 'pointer',
-              }}
+              className="font-mono fs-11 font-bold tracking-widest uppercase py-2 px-4 bg-transparent text-(--text-secondary) border border-(color:--border-default) rounded-xs cursor-pointer"
             >
               {this.state.showDetails ? 'HIDE DETAILS' : 'DETAILS'}
             </button>
@@ -154,19 +74,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
           {this.state.showDetails && this.state.error?.stack && (
             <pre
-              style={{
-                fontSize: '11px',
-                lineHeight: '1.6',
-                color: 'var(--text-tertiary)',
-                background: 'var(--bg-inset)',
-                border: '1px solid var(--border-subtle)',
-                borderRadius: '2px',
-                padding: '12px',
-                overflow: 'auto',
-                maxHeight: '200px',
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-all',
-              }}
+              className="fs-11 leading-(--lh) text-(--text-tertiary) bg-(--bg-inset) border border-(color:--border-subtle) rounded-xs p-3 overflow-auto max-h-50 whitespace-pre-wrap break-all"
+              style={{ '--lh': '1.6' }}
             >
               {this.state.error.stack}
             </pre>

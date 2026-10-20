@@ -200,7 +200,7 @@ function normalizePreviewImportSpec(raw: string): string | null {
 export function findPreviewImportSpecs(source: string): string[] {
   const found = new Set<string>()
   const re = /@preview\/[a-zA-Z][a-zA-Z0-9-]*(?::\d+\.\d+\.\d+)?/g
-  let match: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
 
   while ((match = re.exec(source)) !== null) {
     found.add(normalizeImportSpec(match[0]))
@@ -220,7 +220,7 @@ function parseTypstImportTargets(source: string): string[] {
   //   #import("foo.typ")
   //   #include "foo.typ"
   const re = /#(?:import|include)\s*(?:\(\s*)?(?:"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)')/g
-  let match: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
 
   while ((match = re.exec(source)) !== null) {
     const raw = match[1] ?? match[2]

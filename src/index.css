@@ -29,6 +29,7 @@
 @theme {
   --color-accent-50: #FFF3ED;
   --color-accent-100: #FFE3D1;
+  --color-accent-150: #FFD0B5;
   --color-accent-200: #FFC3A2;
   --color-accent-300: #FF9B68;
   --color-accent-400: #FF6D2D;
@@ -57,6 +58,33 @@
 
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* Pixel font sizes used across the app UI. Named fs-* rather than text-*:
+   unlike text-xs these do not also impose a line-height. */
+@utility fs-10 {
+  font-size: 10px;
+}
+@utility fs-11 {
+  font-size: 11px;
+}
+@utility fs-12 {
+  font-size: 12px;
+}
+@utility fs-13 {
+  font-size: 13px;
+}
+@utility fs-14 {
+  font-size: 14px;
+}
+@utility fs-17 {
+  font-size: 17px;
+}
+@utility fs-18 {
+  font-size: 18px;
+}
+@utility fs-24 {
+  font-size: 24px;
 }
 
 /* ── Light theme ── */
@@ -90,6 +118,9 @@
   --status-error: #dc2626;
   --status-warning: #d97706;
   --status-success: #16a34a;
+
+  --accent-faint: color-mix(in srgb, var(--accent) 4%, transparent);
+  --shadow-accent: 0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent);
 
   color-scheme: light;
 }
@@ -125,6 +156,9 @@
   --status-error: #f87171;
   --status-warning: #fbbf24;
   --status-success: #4ade80;
+
+  --accent-faint: color-mix(in srgb, var(--accent) 4%, transparent);
+  --shadow-accent: 0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent);
 
   color-scheme: dark;
 }
@@ -207,6 +241,10 @@ body {
   max-width: 2px !important;
 }
 
+.workspace-sidebar:not([hidden]) {
+  border-right: 1px solid var(--border-default);
+}
+
 /* Stack the two work surfaces on phone-sized screens. The sidebar becomes an
    overlay so opening it cannot squeeze either surface down to a few pixels. */
 @media (max-width: 767px) {
@@ -286,17 +324,176 @@ body {
   outline-offset: -2px;
 }
 
+.preview-brutalist-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 2px;
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  transition: background 0.1s, color 0.1s;
+}
+
+/* Wider variant used by the zoom / render-mode dropdown triggers. */
+.preview-brutalist-btn--wide {
+  width: auto;
+  padding: 0 12px 0 8px;
+  gap: 4px;
+  font-weight: 600;
+}
+
 .preview-brutalist-btn:hover:not(:disabled) {
   background: var(--bg-hover) !important;
   color: var(--text-primary) !important;
+}
+
+/* Shared uppercase mono treatment for preview chrome. Size/tracking/case can
+   be overridden per-element via --bfs / --bls / --btt. */
+.brutalist-text {
+  font-family: var(--font-mono);
+  font-size: var(--bfs, 11px);
+  letter-spacing: var(--bls, 0.05em);
+  text-transform: var(--btt, uppercase);
+}
+
+/* Thin separator inside the preview toolbar. */
+.toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border-default);
+  flex-shrink: 0;
+}
+
+/* Fixed-position dropdown menus anchored to toolbar triggers. */
+.toolbar-menu {
+  position: fixed;
+  top: var(--menu-top);
+  right: var(--menu-right);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  z-index: 50;
+  padding: 4px 0;
+}
+
+.toolbar-menu-sep {
+  height: 1px;
+  background: var(--border-default);
+  margin: 4px 0;
+}
+
+.preview-zoom-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--zm-fg, var(--text-secondary));
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: var(--zm-fw, 400);
 }
 
 .preview-zoom-menu-item:hover {
   background: var(--bg-hover) !important;
 }
 
+.preview-compile-button {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 700;
+  transition: background 0.1s;
+}
+
 .preview-compile-button:hover {
   background: color-mix(in srgb, var(--accent) 85%, white) !important;
+}
+
+/* Rendered preview page surface. */
+.preview-page {
+  position: relative;
+  width: 100%;
+  max-width: 800px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: var(--pg-cursor, default);
+}
+
+.preview-page[data-render-mode="svg"] {
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 30%), 0 0 0 1px rgb(0 0 0 / 8%);
+}
+
+/* Dashed page-break marker overlaid on the SVG preview. */
+.page-break-line {
+  position: absolute;
+  top: -0.5px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background-image: repeating-linear-gradient(to right, var(--accent) 0, var(--accent) 6px, transparent 6px, transparent 12px);
+}
+
+.page-break-label {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* Clickable row in the error panel under the preview. */
+.diag-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 0;
+  cursor: var(--diag-cursor, default);
+  border-radius: 3px;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+
+.diag-item[data-clickable="true"]:hover {
+  background: var(--bg-hover);
 }
 
 /* ── Rail buttons ── */
@@ -335,6 +532,340 @@ body {
 .rail-button[data-active="true"] {
   color: var(--accent);
   border-color: var(--accent);
+}
+
+/* ── File tree / menus ── */
+
+/* Uppercase mono label shared by dropdown and context-menu items. */
+.menu-text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Skips offscreen rows via content-visibility (32px row estimate). */
+.tree-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 32px;
+}
+
+/* ── Context menu ── */
+.context-menu-panel {
+  background: var(--bg-elevated);
+  border: none;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 22%);
+  padding: 6px;
+}
+
+.context-menu-sep {
+  height: 1px;
+  background: color-mix(in srgb, var(--text-tertiary) 30%, transparent);
+  margin: 4px 0 4px 12px;
+}
+
+/* Command palette footer hint text. */
+.palette-hint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+/* ── Home / project picker ── */
+
+/* Ghost text link-button used in the home header and footer. */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-btn:hover {
+  color: var(--text-primary);
+}
+
+/* Project card on the home grid. Selected/idle accents are driven by the
+   --card-* custom properties set inline on the element. */
+.project-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--card-bc);
+  border-radius: 2px;
+  padding: 14px 16px;
+  cursor: var(--card-cursor, pointer);
+  transition: background 100ms ease, border-color 100ms ease, box-shadow 100ms ease;
+  font-family: var(--font-mono);
+  position: relative;
+  box-shadow: var(--card-shadow, none);
+}
+
+.project-card[data-hoverable="true"]:hover {
+  background: var(--bg-hover);
+  border-color: var(--card-hover-bc);
+}
+
+/* Row item inside the LaTeX import dropdown. */
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* Translucent blurred panel used for the workspace bar and selection bar. */
+.home-panel {
+  background: color-mix(in srgb, var(--bg-surface) var(--panel-tint, 88%), transparent);
+  border: 1px solid var(--border-default);
+  border-radius: 2px;
+  backdrop-filter: blur(var(--panel-blur, 14px));
+}
+
+/* Dashed "New Project" tile on the home grid. */
+.new-project-btn {
+  background: transparent;
+  border: 1px dashed var(--border-default);
+  border-radius: 2px;
+  padding: 14px 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  transition: color 100ms ease, border-color 100ms ease;
+  min-height: 80px;
+}
+
+.new-project-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Full-screen overlays. */
+.modal-overlay,
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+}
+
+.modal-overlay {
+  align-items: center;
+  background: rgb(0 0 0 / 60%);
+}
+
+.sheet-overlay {
+  align-items: flex-end;
+  background: rgb(0 0 0 / 32%);
+}
+
+/* Bottom-sheet dialog for workspace assignment. */
+.workspace-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  padding: 16px;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 18%);
+  display: grid;
+  gap: 12px;
+}
+
+/* Template marketplace dialog. */
+.marketplace-modal {
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 48px);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Status banners shown after LaTeX/project imports. */
+.banner-error,
+.banner-success {
+  background: var(--bg-surface);
+  border: 1px solid var(--banner-bc);
+  border-radius: 2px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+.banner-error {
+  --banner-bc: color-mix(in srgb, var(--status-error) 50%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.banner-success {
+  --banner-bc: color-mix(in srgb, var(--status-success) 50%, transparent);
+}
+
+/* Marketplace error / empty-state boxes. */
+.marketplace-error-box {
+  border: 1px solid color-mix(in srgb, var(--status-error) 60%, transparent);
+  border-radius: 2px;
+  padding: 10px;
+  color: var(--status-error);
+  font-size: 11px;
+}
+
+.dashed-note {
+  border: 1px dashed var(--border-default);
+  border-radius: 2px;
+  padding: 10px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+/* Marketplace result type badges. */
+.badge-template,
+.badge-package {
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--badge-bc);
+  color: var(--badge-fg);
+  border-radius: 2px;
+  letter-spacing: 0.03em;
+}
+
+.badge-template {
+  --badge-bc: color-mix(in srgb, var(--status-success) 50%, transparent);
+  --badge-fg: var(--status-success);
+}
+
+.badge-package {
+  --badge-bc: var(--border-default);
+  --badge-fg: var(--text-tertiary);
+}
+
+/* Workspace bar grid inside the home panel. */
+.workspace-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+}
+
+/* Responsive grid of project cards. */
+.project-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+
+@layer components {
+  /* ── Guide page ── */
+  .guide-paragraph {
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+
+  .guide-code-block {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-default);
+    border-radius: 2px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .guide-divider {
+    height: 1px;
+    background: var(--border-default);
+    margin: 32px 0;
+  }
+
+  .guide-kbd {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 2px;
+    padding: 2px 6px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    font-family: var(--font-mono);
+  }
+
+  .guide-inline-code {
+    background: var(--bg-inset);
+    border: 1px solid var(--border-default);
+    border-radius: 2px;
+    padding: 1px 5px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+  }
+
+  .guide-section-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+
+  /* Shortcut/description grid used by the guide's keybinding tables. */
+  .shortcut-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    margin-bottom: 16px;
+    align-items: center;
+  }
+}
+
+/* ── Canvas preview page (class doubles as a DOM hook for closest() in
+   preview-panel.tsx) ── */
+.canvas-preview-page {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  width: 100%;
+  aspect-ratio: var(--page-aspect, auto);
 }
 
 /* ── Preview page SVG ── */
