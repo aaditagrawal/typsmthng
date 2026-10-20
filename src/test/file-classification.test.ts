@@ -41,6 +41,15 @@ describe('file classification', () => {
     expect(isKnownTextPath('/macros/MyClass.CLS')).toBe(true)
   })
 
+  it.each(['bst', 'bbx', 'cbx', 'lbx', 'clo', 'def', 'fd', 'dtx', 'ins', 'ltx'])(
+    'keeps LaTeX .%s support files readable when the browser provides no MIME type',
+    (extension) => {
+      const file = new File(['source'], `support.${extension.toUpperCase()}`)
+      expect(isKnownTextPath(`/styles/${file.name}`)).toBe(true)
+      expect(shouldTreatUploadAsText(file)).toBe(true)
+    },
+  )
+
   it('recognizes image paths for preview routing', () => {
     expect(isImagePath('/figs/photo.PNG')).toBe(true)
     expect(isImagePath('diagram.svg')).toBe(true)

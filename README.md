@@ -13,6 +13,7 @@ I had given Typst a try throughout the years, and even though I did not like the
 - Multi-file projects with file tree operations (create, rename, move, delete)
 - Local persistence with IndexedDB
 - Project import/export as `.zip`
+- LaTeX project import with preserved sources, multi-file conversion, and bibliography support
 - PDF export
 - Vim mode, theme switching, and editor preferences (for the nerds)
 - PWA installability (because mobile users need good support too) 
@@ -66,6 +67,9 @@ Open the URL printed by Vite (typically `http://localhost:5173`).
 - `bun run lint` - run ESLint
 - `bun run test` - run Vitest once
 - `bun run test:watch` - run Vitest in watch mode
+- `bun run test:helium` - build and test project import/export in the installed macOS Helium browser
+
+See [LaTeX project testing](docs/latex-project-testing.md) for fixtures, browser checks, and conversion limits.
 
 ## Project Structure
 

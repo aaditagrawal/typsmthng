@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -458,9 +458,19 @@ export function ProjectPicker({
   const [showTemplateInit, setShowTemplateInit] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
   const [marketplaceQuery, setMarketplaceQuery] = useState('')
-  const [marketplaceBusy, setMarketplaceBusy] = useState(false)
-  const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
-  const [marketplaceResults, setMarketplaceResults] = useState<UniverseMarketplacePackage[]>([])
+  const marketplaceRequest = useMemo(() => ({
+    query: marketplaceQuery.trim(),
+    open: marketplaceOpen,
+  }), [marketplaceQuery, marketplaceOpen])
+  const [marketplaceResponse, setMarketplaceResponse] = useState<{
+    request: typeof marketplaceRequest | null
+    results: UniverseMarketplacePackage[]
+    error: string | null
+  }>({ request: null, results: [], error: null })
+  const marketplaceSearchable = marketplaceRequest.query.length >= MIN_MARKETPLACE_QUERY_LENGTH
+  const marketplaceBusy = marketplaceSearchable && marketplaceResponse.request !== marketplaceRequest
+  const marketplaceError = marketplaceSearchable && !marketplaceBusy ? marketplaceResponse.error : null
+  const marketplaceResults = marketplaceSearchable && !marketplaceBusy ? marketplaceResponse.results : []
   const newInputRef = useRef<HTMLInputElement>(null)
   const latexFileInputRef = useRef<HTMLInputElement>(null)
   const latexFolderInputRef = useRef<HTMLInputElement>(null)
@@ -474,13 +484,12 @@ export function ProjectPicker({
   const [importAllResult, setImportAllResult] = useState<string | null>(null)
   const [importAllError, setImportAllError] = useState<string | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
+  const [selectedProjectIdsState, setSelectedProjectIds] = useState<string[]>([])
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false)
   const [workspaceName, setWorkspaceName] = useState('')
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null)
   const [workspaceQuickAddOpen, setWorkspaceQuickAddOpen] = useState(false)
   const [workspaceContextMenu, setWorkspaceContextMenu] = useState<{ workspaceId: string; x: number; y: number } | null>(null)
-  const marketplaceSearchToken = useRef(0)
   const workspaceSheetRef = useRef<HTMLDivElement>(null)
   const marketplaceModalRef = useRef<HTMLDivElement>(null)
   const builtInTemplates = listBuiltInTemplates()
@@ -495,41 +504,33 @@ export function ProjectPicker({
   useModalA11y(marketplaceModalRef, marketplaceOpen, () => setMarketplaceOpen(false))
 
   useEffect(() => {
-    if (!marketplaceOpen) return
+    const { query, open } = marketplaceRequest
+    if (!open || query.length < MIN_MARKETPLACE_QUERY_LENGTH) return
 
-    const query = marketplaceQuery.trim()
-    if (query.length < MIN_MARKETPLACE_QUERY_LENGTH) {
-      setMarketplaceBusy(false)
-      setMarketplaceError(null)
-      setMarketplaceResults([])
-      return
-    }
-
-    const token = ++marketplaceSearchToken.current
-    setMarketplaceBusy(true)
-    setMarketplaceError(null)
-
+    let cancelled = false
     const timer = setTimeout(() => {
       void searchUniverseMarketplace(query)
         .then((results) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceResults(results)
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceResponse({ request: marketplaceRequest, results, error: null })
         })
         .catch((err) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceError(err instanceof Error ? err.message : 'Failed to fetch marketplace packages')
-          setMarketplaceResults([])
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceResponse({
+            request: marketplaceRequest,
+            results: [],
+            error: err instanceof Error ? err.message : 'Failed to fetch marketplace packages',
+          })
         })
     }, 160)
 
-    return () => clearTimeout(timer)
-  }, [marketplaceOpen, marketplaceQuery])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [marketplaceRequest])
 
-  useEffect(() => {
-    setSelectedProjectIds((current) => current.filter((id) => projects.some((project) => project.id === id)))
-  }, [projects])
+  const selectedProjectIds = selectedProjectIdsState.filter((id) => projects.some((project) => project.id === id))
 
   const quickInitCommands = [
     { label: 'IEEE Journal', command: 'typst init @preview/charged-ieee' },

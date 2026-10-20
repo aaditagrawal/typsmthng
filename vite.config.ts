@@ -1,17 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import { stylexOptions } from './stylex.config.mjs'
 import wasm from 'vite-plugin-wasm'
-import topLevelAwait from 'vite-plugin-top-level-await'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { HOME_PRELOAD_FILTER_PATTERNS } from './scripts/check-bundle-budget.mjs'
 
 export default defineConfig({
   plugins: [
-    react({ babel: { plugins: [['@stylexjs/babel-plugin', stylexOptions]] } }),
+    babel({ plugins: [['@stylexjs/babel-plugin', stylexOptions]] }),
+    react(),
     wasm(),
-    topLevelAwait(),
     VitePWA({
       // Prompt mode so UpdateToast can call the registerSW updater.
       // autoUpdate + skipWaiting never fires onNeedRefresh.

@@ -241,6 +241,19 @@ describe('Compile Manager', () => {
     expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(2)
   })
 
+  it('recompiles identical inputs after selecting a project clears its preview', async () => {
+    await forceCompile('= Roundtrip document', '/main.typ')
+    expect(useCompileStore.getState().vectorData).not.toBeNull()
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(1)
+
+    useCompileStore.getState().clearPreview()
+    await forceCompile('= Roundtrip document', '/main.typ')
+
+    expect(vi.mocked(compileTypst)).toHaveBeenCalledTimes(2)
+    expect(useCompileStore.getState().status).toBe('success')
+    expect(useCompileStore.getState().vectorData).not.toBeNull()
+  })
+
   it('never skips a compile after an error result', async () => {
     vi.mocked(compileTypst).mockResolvedValueOnce({
       svg: null,

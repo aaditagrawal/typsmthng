@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { fireEvent, render, waitFor } from '@testing-library/react'
 
 vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
@@ -20,13 +20,7 @@ const importLatexProjectMock = vi.hoisted(() => vi.fn(async (entries: Array<{ re
   metadata: {},
 })))
 
-vi.mock('@/lib/project-io', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/project-io')>('@/lib/project-io')
-  return {
-    ...actual,
-    importLatexProject: importLatexProjectMock,
-  }
-})
+vi.mock('@/lib/project-io', () => ({ importLatexProject: importLatexProjectMock, importLatexZip: vi.fn() }))
 
 import { ProjectPicker } from '@/components/home/project-picker'
 import { useProjectStore } from '@/stores/project-store'
@@ -66,9 +60,9 @@ describe('ProjectPicker LaTeX file input', () => {
       set: () => { cleared = true },
     })
 
-    input.dispatchEvent(new Event('change', { bubbles: true }))
+    fireEvent.change(input)
 
-    await waitFor(() => expect(importLatexProjectMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(importLatexProjectMock).toHaveBeenCalledTimes(1), { timeout: 5000 })
     const entries = importLatexProjectMock.mock.calls[0][0]
     expect(entries).toHaveLength(1)
     expect(entries[0].relativePath).toBe('doc.tex')

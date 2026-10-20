@@ -42,6 +42,8 @@ export function Toolbar() {
     setExportBusy(true)
     try {
       await exportProject()
+    } catch (error) {
+      window.alert(`Could not export the project: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setExportBusy(false)
     }

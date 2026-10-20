@@ -57,6 +57,8 @@ vi.mock('idb-keyval', () => {
 })
 
 import { useProjectStore, resetProjectPersistStateForTests } from '@/stores/project-store'
+import { useCompileStore } from '@/stores/compile-store'
+import { useEditorStore } from '@/stores/editor-store'
 import * as idbKeyval from 'idb-keyval'
 
 type MockIdb = typeof idbKeyval & {
@@ -81,6 +83,7 @@ describe('Project Store', () => {
 
     // Clear the mock idb store
     mockIdb.__store.clear()
+    useEditorStore.setState({ source: '', isDirty: false, saveStatus: 'saved' })
 
     // Reset zustand store state between tests
     useProjectStore.setState({
@@ -128,6 +131,34 @@ describe('Project Store', () => {
     const mainFile = project!.files.find((f) => f.path === '/main.typ')
     expect(mainFile).toBeDefined()
     expect(mainFile!.content).toBe(SAMPLE_DOCUMENT)
+  })
+
+  it('does not overwrite an unreadable default project or discard its recovery journal', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useProjectStore.getState().updateFileContent('/main.typ', '= Unsaved recovery')
+    const stored = mockIdb.__store.get('default')
+    vi.mocked(mockIdb.get).mockRejectedValueOnce(new Error('Temporary read failure'))
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(mockIdb.__store.get('default')).toBe(stored)
+    expect(localStorage.getItem('typsmthng-recovery-journal')).toContain('Unsaved recovery')
+
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().projects.find((p) => p.id === 'default')?.files[0].content)
+      .toBe('= Unsaved recovery')
+  })
+
+  it('continues loading readable projects after another project read fails', async () => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Readable')
+    vi.mocked(mockIdb.get).mockRejectedValueOnce(new Error('Temporary read failure'))
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects.map((p) => p.id)).toEqual([id])
+    expect(mockIdb.__store.has('default')).toBe(true)
   })
 
   it('should create a new project', async () => {
@@ -212,6 +243,65 @@ describe('Project Store', () => {
     const project = useProjectStore.getState().getCurrentProject()
     expect(project?.files.find((f) => f.path === '/img/a.png')?.isBinary).toBe(true)
     expect(project?.files.find((f) => f.path === '/img/b.png')?.binaryData?.length).toBe(3)
+  })
+
+  it('persists completed text and binary uploads before their promises resolve', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    vi.useFakeTimers()
+    await useProjectStore.getState().createFilesBatch([
+      { path: '/chapters/intro.typ', content: '= Introduction' },
+      { path: '/refs/library.bib', content: '@book{sample, title={Sample}}' },
+    ])
+    await useProjectStore.getState().addBinaryFilesBatch([
+      { path: '/figures/chart.png', data: new Uint8Array([137, 80, 78, 71]) },
+    ])
+
+    await useProjectStore.getState().loadProjects()
+
+    const project = useProjectStore.getState().projects.find((p) => p.id === 'default')
+    expect(project?.files.find((f) => f.path === '/chapters/intro.typ')?.content).toBe('= Introduction')
+    expect(project?.files.find((f) => f.path === '/refs/library.bib')?.content)
+      .toBe('@book{sample, title={Sample}}')
+    expect(project?.files.find((f) => f.path === '/figures/chart.png')?.binaryData)
+      .toEqual(new Uint8Array([137, 80, 78, 71]))
+  })
+
+  it('does not restore a stale editor journal over a replacement upload', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useProjectStore.getState().updateFileContent('/main.typ', '= Old edit')
+    await useProjectStore.getState().createFilesBatch([{ path: '/main.typ', content: '= Imported replacement' }])
+    await useProjectStore.getState().saveCurrentProject()
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === 'default')?.files[0].content)
+      .toBe('= Imported replacement')
+  })
+
+  it('restores an entrypoint when adding source to a project with no remaining files', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    await useProjectStore.getState().deleteFile('/main.typ')
+    await useProjectStore.getState().createFilesBatch([
+      { path: '/refs.bib', content: '@book{x, title={X}}' },
+      { path: '/paper.typ', content: '= New paper' },
+    ])
+
+    expect(useProjectStore.getState().getCurrentProject()?.mainFile).toBe('/paper.typ')
+  })
+
+  it('keeps the active preview when creating a project without selecting it', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useCompileStore.setState({ svg: '<svg>active preview</svg>', totalPages: 1 })
+
+    await useProjectStore.getState().createProject('Background import', undefined, { select: false })
+
+    expect(useProjectStore.getState().currentProjectId).toBe('default')
+    expect(useCompileStore.getState().svg).toBe('<svg>active preview</svg>')
+    useCompileStore.getState().clearPreview()
   })
 
   it('should update file content', async () => {
@@ -308,6 +398,79 @@ describe('Project Store', () => {
     expect(after?.files.find((f) => f.path === '/destination/note.typ')?.content).toBe('= destination')
   })
 
+  it.each(['file rename', 'folder rename', 'new folder', 'text upload', 'binary upload'])(
+    'rejects file/folder collisions during %s without changing the project',
+    async (operation) => {
+      await useProjectStore.getState().loadProjects()
+      useProjectStore.getState().selectProject('default')
+      await useProjectStore.getState().createFile('/chapters/intro.typ', '= Introduction')
+      const before = useProjectStore.getState().getCurrentProject()
+
+      const attempt = operation === 'file rename'
+        ? useProjectStore.getState().renameFile('/main.typ', '/chapters')
+        : operation === 'folder rename'
+          ? useProjectStore.getState().renameFolder('/chapters', '/main.typ')
+          : operation === 'new folder'
+            ? useProjectStore.getState().createFolder('/main.typ')
+            : operation === 'text upload'
+              ? useProjectStore.getState().createFilesBatch([
+                  { path: '/safe.typ', content: '= Safe' },
+                  { path: '/main.typ/nested.typ', content: '= Collision' },
+                ])
+              : useProjectStore.getState().addBinaryFilesBatch([
+                  { path: '/safe.png', data: new Uint8Array([1]) },
+                  { path: '/chapters', data: new Uint8Array([2]) },
+                ])
+
+      await expect(attempt).rejects.toThrow('both a file and a folder')
+      expect(useProjectStore.getState().getCurrentProject()).toEqual(before)
+    },
+  )
+
+  it('rejects scaffold file/folder collisions before storing a project', async () => {
+    await useProjectStore.getState().loadProjects()
+    const before = useProjectStore.getState().projects
+
+    await expect(useProjectStore.getState().createProject('Conflicting paths', {
+      mainFile: '/paper.typ',
+      files: [
+        { path: '/paper.typ', content: '= Paper', isBinary: false },
+        { path: '/paper.typ/chapter.typ', content: '= Chapter', isBinary: false },
+      ],
+    })).rejects.toThrow('both a file and a folder')
+
+    expect(useProjectStore.getState().projects).toEqual(before)
+  })
+
+  it('chooses source instead of a binary or placeholder when a scaffold entrypoint is absent', async () => {
+    const { id } = await useProjectStore.getState().createProject('Scaffold fallback', {
+      mainFile: '/missing.typ',
+      files: [
+        { path: '/image.png', content: '', isBinary: true, binaryData: new Uint8Array([1]) },
+        { path: '/empty/.folder', content: '', isBinary: false },
+        { path: '/references.bib', content: '@book{x, title={X}}', isBinary: false },
+        { path: '/paper.typ', content: '= Paper', isBinary: false },
+      ],
+    })
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === id)?.mainFile).toBe('/paper.typ')
+  })
+
+  it('preserves an explicitly empty imported scaffold through reload', async () => {
+    const { id } = await useProjectStore.getState().createProject('Empty imported project', { mainFile: '', files: [] })
+
+    expect(useProjectStore.getState().getCurrentProject()?.files).toEqual([])
+    expect(useProjectStore.getState().getCurrentProject()?.mainFile).toBe('')
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === id)?.files).toEqual([])
+    expect(useProjectStore.getState().projects.find((p) => p.id === id)?.mainFile).toBe('')
+    useProjectStore.getState().selectProject(id)
+    expect(useProjectStore.getState().currentFilePath).toBeNull()
+  })
+
   it('should toggle sidebar', () => {
     expect(useProjectStore.getState().sidebarOpen).toBe(false)
     useProjectStore.getState().setSidebarOpen(true)
@@ -373,6 +536,27 @@ describe('Project Store', () => {
     await useProjectStore.getState().loadProjects()
     const project = useProjectStore.getState().projects.find((p) => p.id === 'project-user')
     expect(project?.files.find((f) => f.path === '/main.typ')?.content).toBe('')
+  })
+
+  it('keeps intentionally emptied default content empty after saving and reloading', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useProjectStore.getState().updateFileContent('/main.typ', '')
+    await useProjectStore.getState().saveCurrentProject()
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === 'default')?.files[0].content).toBe('')
+  })
+
+  it('keeps an intentionally empty default buffer recovered before autosave', async () => {
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject('default')
+    useProjectStore.getState().updateFileContent('/main.typ', '')
+
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === 'default')?.files[0].content).toBe('')
   })
 
   it('should NOT overwrite existing non-empty content during migration', async () => {
@@ -755,6 +939,24 @@ describe('Project Store', () => {
     expect(useProjectStore.getState().currentFilePath).toBe('/real.typ')
   })
 
+  it.each(['file', 'folder'])('prefers Typst source over bibliography when deleting the main %s', async (kind) => {
+    await useProjectStore.getState().loadProjects()
+    const { id } = await useProjectStore.getState().createProject('Multiple sources', {
+      mainFile: '/chapters/main.typ',
+      files: [
+        { path: '/chapters/main.typ', content: '= Main', isBinary: false },
+        { path: '/references.bib', content: '@book{x, title={X}}', isBinary: false },
+        { path: '/paper.typ', content: '= Paper', isBinary: false },
+      ],
+    })
+
+    if (kind === 'file') await useProjectStore.getState().deleteFile('/chapters/main.typ')
+    else await useProjectStore.getState().deleteFolder('/chapters')
+
+    expect(useProjectStore.getState().projects.find((p) => p.id === id)?.mainFile).toBe('/paper.typ')
+    expect(useProjectStore.getState().currentFilePath).toBe('/paper.typ')
+  })
+
   it('clears file pointers when deleting the main file leaves only placeholders', async () => {
     await useProjectStore.getState().loadProjects()
     useProjectStore.getState().selectProject('default')
@@ -955,6 +1157,58 @@ describe('Project Store', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('/missing.png'))
   })
 
+  it('keeps binary metadata after a transient read error so saving does not lose the asset', async () => {
+    const stored = {
+      id: 'project-retry', name: 'Retry', mainFile: '/main.typ', createdAt: 1, updatedAt: 1,
+      files: [
+        { path: '/main.typ', content: '= Retry', isBinary: false, lastModified: 1 },
+        { path: '/chart.png', content: '', isBinary: true, lastModified: 1 },
+      ],
+    }
+    mockIdb.__store.set(stored.id, stored)
+    mockIdb.__store.set('bin:project-retry:/chart.png', new Uint8Array([1, 2, 3]))
+    vi.mocked(mockIdb.get).mockResolvedValueOnce(stored).mockRejectedValueOnce(new Error('Temporary binary read failure'))
+
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().projects[0].files.some((f) => f.path === '/chart.png')).toBe(true)
+    await useProjectStore.getState().saveProject(stored.id)
+    await useProjectStore.getState().loadProjects()
+
+    expect(useProjectStore.getState().projects[0].files.find((f) => f.path === '/chart.png')?.binaryData)
+      .toEqual(new Uint8Array([1, 2, 3]))
+  })
+
+  it.each(['file', 'folder', 'move'])('rejects a binary %s rename after a failed payload read and preserves the original for retry', async (operation) => {
+    const stored = {
+      id: 'project-unavailable', name: 'Unavailable', mainFile: '/main.typ', createdAt: 1, updatedAt: 1,
+      files: [
+        { path: '/main.typ', content: '= Retry', isBinary: false, lastModified: 1 },
+        { path: '/figures/chart.png', content: '', isBinary: true, lastModified: 1 },
+      ],
+    }
+    const bytes = new Uint8Array([1, 2, 3])
+    mockIdb.__store.set(stored.id, stored)
+    mockIdb.__store.set('bin:project-unavailable:/figures/chart.png', bytes)
+    vi.mocked(mockIdb.get).mockResolvedValueOnce(stored).mockRejectedValueOnce(new Error('Temporary binary read failure'))
+    await useProjectStore.getState().loadProjects()
+    useProjectStore.getState().selectProject(stored.id)
+    const before = useProjectStore.getState().getCurrentProject()
+
+    const rename = operation === 'file'
+      ? useProjectStore.getState().renameFile('/figures/chart.png', '/figures/renamed.png')
+      : operation === 'folder'
+        ? useProjectStore.getState().renameFolder('/figures', '/images')
+        : useProjectStore.getState().moveFile('/figures/chart.png', '/images/chart.png')
+
+    await expect(rename).rejects.toThrow('data is unavailable')
+    expect(useProjectStore.getState().getCurrentProject()).toBe(before)
+    expect(mockIdb.__store.get('bin:project-unavailable:/figures/chart.png')).toEqual(bytes)
+
+    await useProjectStore.getState().loadProjects()
+    expect(useProjectStore.getState().projects[0].files.find((f) => f.path === '/figures/chart.png')?.binaryData)
+      .toEqual(bytes)
+  })
+
   it('cascades project deletion to its binary records', async () => {
     await useProjectStore.getState().loadProjects()
     const { id } = await useProjectStore.getState().createProject('Doomed Binaries')
@@ -1016,10 +1270,9 @@ describe('Project Store', () => {
     await useProjectStore.getState().loadProjects()
     const { id } = await useProjectStore.getState().createProject('Quota Bin')
     useProjectStore.getState().selectProject(id)
-    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/big.png', data: new Uint8Array([1]) }])
 
     mockIdb.__failKeyPrefix('bin:', new DOMException('quota exceeded', 'QuotaExceededError'))
-    await useProjectStore.getState().saveProject(id)
+    await useProjectStore.getState().addBinaryFilesBatch([{ path: '/big.png', data: new Uint8Array([1]) }])
 
     const saveError = useProjectStore.getState().saveError
     expect(saveError?.quota).toBe(true)

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { isHiddenInternalPath } from '@/lib/file-index'
+import { assertNoFileFolderConflicts } from '@/lib/paths'
 import { useCompileStore } from './compile-store'
 import { useEditorStore } from './editor-store'
 
@@ -237,8 +238,8 @@ async function deleteProjectBinaryRecords(projectId: string): Promise<void> {
  * Reattach binary payloads to a loaded main record. Legacy records with inline
  * `binaryData` pass through untouched (and are left untracked, so their next
  * save migrates them to the split layout). Binary files whose payload record is
- * missing or unreadable are dropped with a console.error rather than failing
- * the whole project load.
+ * missing are dropped with a console.error. Transient read failures keep their
+ * metadata so a later save cannot remove a payload that still exists on disk.
  */
 async function stitchProjectBinaries(stored: Project): Promise<Project> {
   if (!stored.files.some((file) => file.isBinary && !file.binaryData)) return stored
@@ -261,8 +262,9 @@ async function stitchProjectBinaries(stored: Project): Promise<Project> {
         )
       }
     } catch (err) {
+      files.push(file)
       console.error(
-        `Failed to read binary record for "${file.path}" in project "${stored.id}"; dropping the file:`,
+        `Failed to read binary record for "${file.path}" in project "${stored.id}"; keeping it for retry:`,
         err,
       )
     }
@@ -400,6 +402,8 @@ export interface Project {
   templateMeta?: ProjectTemplateMeta
   createdAt: number
   updatedAt: number
+  /** Marks the one-time migration of the legacy empty sample project. */
+  defaultContentInitialized?: boolean
 }
 
 export interface HomeWorkspace {
@@ -506,8 +510,13 @@ function persistHomeMeta(getState: () => ProjectState): Promise<void> {
 /** Files eligible to become mainFile / currentFilePath after a delete. */
 function isSelectableFallbackFile(file: ProjectFile): boolean {
   return !file.isBinary
-    && !file.path.endsWith('.folder')
+    && !file.path.endsWith('/.folder')
     && !isHiddenInternalPath(file.path)
+}
+
+function findFallbackFile(files: ProjectFile[]): ProjectFile | undefined {
+  return files.find((file) => isSelectableFallbackFile(file) && /\.typ$/i.test(file.path))
+    ?? files.find(isSelectableFallbackFile)
 }
 
 function createDefaultProject(): Project {
@@ -523,6 +532,7 @@ function createDefaultProject(): Project {
     mainFile: '/main.typ',
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    defaultContentInitialized: true,
   }
 }
 
@@ -541,21 +551,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   loadProjects: async () => {
     const projects: Project[] = []
     let homeMeta: HomeMeta | undefined
+    let projectLoadFailed = false
     persistedBinaryRecords.clear()
     try {
       const allKeys = await idbKeys(projectsStore)
       const projectKeys = allKeys.filter(
         (key): key is string => typeof key === 'string' && !key.startsWith(BINARY_RECORD_PREFIX),
       )
-      const loaded = await Promise.all(
+      const loaded = await Promise.allSettled(
         projectKeys.map((key) => idbGet<Project>(key, projectsStore)),
       )
-      for (const project of loaded) {
+      for (const result of loaded) {
+        if (result.status === 'rejected') {
+          projectLoadFailed = true
+          console.warn('Failed to load a project from IDB:', result.reason)
+          continue
+        }
+        const project = result.value
         if (project && Array.isArray(project.files) && typeof project.mainFile === 'string') {
           projects.push(await stitchProjectBinaries(project))
         }
       }
     } catch (err) {
+      projectLoadFailed = true
       console.warn('Failed to load projects from IDB:', err)
     }
 
@@ -565,7 +583,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       console.warn('Failed to load home metadata from IDB:', err)
     }
 
-    if (projects.length === 0) {
+    if (projects.length === 0 && !projectLoadFailed) {
       const defaultProject = createDefaultProject()
       // Invalidate any in-flight persist that still holds a deleted `default`.
       bumpProjectEpoch(defaultProject.id)
@@ -587,6 +605,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const recoveredKeysByProject = new Map<Project, string[]>()
       for (const [key, entry] of recoveryJournal) {
         const project = projects.find((item) => item.id === entry.projectId)
+        // An unreadable record is not a deleted project. Keep its recovery
+        // snapshot until a later successful load can apply it.
+        if (!project && projectLoadFailed) continue
         const file = project?.files.find((item) => (
           item.path === entry.path && !item.isBinary
         ))
@@ -599,6 +620,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         file.content = entry.content
         file.lastModified = recoveredAt
         project.updatedAt = recoveredAt
+        if (project.id === 'default') project.defaultContentInitialized = true
         const keys = recoveredKeysByProject.get(project) ?? []
         keys.push(key)
         recoveredKeysByProject.set(project, keys)
@@ -617,12 +639,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     // Migrate the legacy seeded `default` project when its main file was stored
     // empty. Do not rewrite intentional empty mains on user projects.
     for (const project of projects) {
-      if (project.id !== 'default') continue
+      if (project.id !== 'default' || project.defaultContentInitialized) continue
       const mainFile = project.files.find((f) => f.path === project.mainFile)
-      if (!mainFile || mainFile.isBinary || mainFile.content !== '') continue
-      mainFile.content = SAMPLE_DOCUMENT
-      mainFile.lastModified = Date.now()
-      project.updatedAt = Date.now()
+      if (mainFile && !mainFile.isBinary && mainFile.content === '') {
+        mainFile.content = SAMPLE_DOCUMENT
+        mainFile.lastModified = Date.now()
+        project.updatedAt = Date.now()
+      }
+      project.defaultContentInitialized = true
       try {
         await persistProjectRecord(project)
       } catch (err) {
@@ -678,11 +702,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       lastModified: now,
     }
 
-    const files = scaffoldFiles.length > 0 ? scaffoldFiles : [defaultFile]
+    const files = scaffold ? scaffoldFiles : [defaultFile]
+    assertNoFileFolderConflicts(files.map((file) => file.path))
     const mainFile =
-      scaffold?.mainFile && files.some((file) => file.path === scaffold.mainFile)
+      scaffold?.mainFile && files.some((file) => file.path === scaffold.mainFile && isSelectableFallbackFile(file))
         ? scaffold.mainFile
-        : files.find((file) => file.path === '/main.typ')?.path ?? files[0]?.path ?? '/main.typ'
+        : files.find((file) => file.path === '/main.typ' && !file.isBinary)?.path
+          ?? findFallbackFile(files)?.path ?? ''
 
     const project: Project = {
       id,
@@ -715,7 +741,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       ...(select
         ? {
             currentProjectId: id,
-            currentFilePath: mainFile,
+            currentFilePath: mainFile || null,
             hasSelectedProject: true,
           }
         : {}),
@@ -728,7 +754,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           }
         : {}),
     }))
-    useCompileStore.getState().clearPreview()
+    if (select) useCompileStore.getState().clearPreview()
     if (selectedWorkspaceId) {
       await persistHomeMeta(get)
     }
@@ -886,7 +912,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     const project = get().projects.find((p) => p.id === id)
     set({
       currentProjectId: id,
-      currentFilePath: project?.mainFile ?? null,
+      currentFilePath: project?.mainFile || null,
       hasSelectedProject: true,
     })
     if (previousId !== id) {
@@ -930,6 +956,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (projectIndex < 0) return s
 
       const project = s.projects[projectIndex]
+      assertNoFileFolderConflicts([...project.files, ...normalized].map((file) => file.path))
       const nextFiles = project.files.slice()
       const now = Date.now()
 
@@ -961,7 +988,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       const nextProjects = s.projects.slice()
       nextProjects[projectIndex] = changed
-        ? { ...project, files: nextFiles, updatedAt: now }
+        ? {
+            ...project,
+            files: nextFiles,
+            mainFile: nextFiles.some((file) => file.path === project.mainFile && isSelectableFallbackFile(file))
+              ? project.mainFile
+              : findFallbackFile(nextFiles)?.path ?? '',
+            updatedAt: now,
+          }
         : project
 
       return {
@@ -972,7 +1006,11 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     if (changed) {
       const projectId = get().currentProjectId
-      if (projectId) scheduleAutoSave(projectId, (id) => get().saveProject(id))
+      if (projectId) {
+        // Replacements supersede any unsaved editor snapshot for these paths.
+        for (const entry of normalized) writeRecoveryJournalEntry({ projectId, ...entry })
+        await get().saveProject(projectId)
+      }
     }
   },
 
@@ -982,7 +1020,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!project) return s
 
       const nextFiles = project.files.filter((f) => f.path !== path)
-      const fallbackFile = nextFiles.find(isSelectableFallbackFile)
+      const fallbackFile = findFallbackFile(nextFiles)
       let nextMainFile = project.mainFile
       if (nextMainFile === path) {
         nextMainFile = fallbackFile?.path ?? ''
@@ -1009,8 +1047,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   renameFile: async (oldPath, newPath) => {
     const project = get().projects.find((p) => p.id === get().currentProjectId)
+    if (oldPath === newPath) return
+    const file = project?.files.find((entry) => entry.path === oldPath)
+    if (file?.isBinary && !file.binaryData) {
+      throw new Error('Cannot rename this file while its data is unavailable. Reload the project and try again.')
+    }
     if (oldPath !== newPath && project?.files.some((f) => f.path === newPath)) {
       throw new Error(`Cannot rename file: "${newPath}" already exists.`)
+    }
+    if (project) {
+      assertNoFileFolderConflicts(project.files.map((file) => file.path === oldPath ? newPath : file.path))
     }
 
     set((s) => ({
@@ -1092,6 +1138,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (projectIndex < 0) return s
 
       const project = s.projects[projectIndex]
+      assertNoFileFolderConflicts([...project.files, ...normalized].map((file) => file.path))
       const nextFiles = project.files.slice()
       const now = Date.now()
 
@@ -1138,13 +1185,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!changed) return s
 
       const nextProjects = s.projects.slice()
-      nextProjects[projectIndex] = { ...project, files: nextFiles, updatedAt: now }
+      nextProjects[projectIndex] = {
+        ...project,
+        files: nextFiles,
+        mainFile: nextFiles.some((file) => file.path === project.mainFile && isSelectableFallbackFile(file))
+          ? project.mainFile
+          : findFallbackFile(nextFiles)?.path ?? '',
+        updatedAt: now,
+      }
       return { projects: nextProjects }
     })
 
     if (changed) {
       const projectId = get().currentProjectId
-      if (projectId) scheduleAutoSave(projectId, (id) => get().saveProject(id))
+      if (projectId) await get().saveProject(projectId)
     }
   },
 
@@ -1156,6 +1210,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!project) return s
       // Don't create if placeholder already exists
       if (project.files.some((f) => f.path === placeholderPath)) return s
+      assertNoFileFolderConflicts([...project.files.map((file) => file.path), placeholderPath])
       const newFile: ProjectFile = {
         path: placeholderPath,
         content: '',
@@ -1180,7 +1235,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const project = s.projects.find((p) => p.id === s.currentProjectId)
       if (!project) return s
       const remainingFiles = project.files.filter((f) => !f.path.startsWith(prefix))
-      const fallbackFile = remainingFiles.find(isSelectableFallbackFile)
+      const fallbackFile = findFallbackFile(remainingFiles)
       const mainWasRemoved = project.mainFile.startsWith(prefix)
       const nextMainFile = mainWasRemoved
         ? (fallbackFile?.path ?? '')
@@ -1215,6 +1270,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     const project = get().projects.find((p) => p.id === get().currentProjectId)
     if (project) {
+      if (project.files.some((file) => file.path.startsWith(oldPrefix) && file.isBinary && !file.binaryData)) {
+        throw new Error('Cannot rename this folder while some file data is unavailable. Reload the project and try again.')
+      }
       const unaffectedPaths = new Set(
         project.files.filter((f) => !f.path.startsWith(oldPrefix)).map((f) => f.path),
       )
@@ -1226,6 +1284,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (collision) {
         throw new Error(`Cannot rename folder: "${collision}" already exists.`)
       }
+      assertNoFileFolderConflicts(project.files.map((file) => file.path.startsWith(oldPrefix)
+        ? `${newPrefix}${file.path.slice(oldPrefix.length)}`
+        : file.path))
     }
 
     set((s) => ({

@@ -13,6 +13,11 @@ const { forceCompile, exportCurrentProjectPdf } = vi.hoisted(() => ({
 
 vi.mock('@/lib/compile-manager', () => ({ forceCompile }))
 vi.mock('@/lib/pdf-export', () => ({ exportCurrentProjectPdf }))
+vi.mock('idb-keyval', () => ({
+  createStore: () => 'command-search-test',
+  get: vi.fn(async () => undefined),
+  set: vi.fn(async () => undefined),
+}))
 
 describe('CommandSearch actions', () => {
   beforeEach(() => {

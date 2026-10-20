@@ -6,6 +6,21 @@ export interface ConversionWarning {
   construct: string
 }
 
+export interface ConversionOptions {
+  resolvePath?: (path: string, kind: 'include' | 'image' | 'bibliography') => string
+  hasManualBibliography?: boolean
+}
+
+interface ConversionContext {
+  warnings: ConversionWarning[]
+  options: ConversionOptions
+  hasManualBibliography: boolean
+  bibliographyFiles: string[]
+  metadata: ConversionResult['metadata']
+  formattedTitle?: string
+  includeUncited: boolean
+}
+
 export interface ConversionResult {
   typst: string
   warnings: ConversionWarning[]
@@ -24,23 +39,41 @@ let parseLatex: ((src: string) => Ast.Root) | null = null
 async function ensureParser() {
   if (!parseLatex) {
     const mod = await import('@unified-latex/unified-latex-util-parse')
-    parseLatex = mod.parse
+    const parser = mod.getParser({
+      macros: {
+        addbibresource: { signature: 'o m' },
+        printbibliography: { signature: 'o' },
+        autocite: { signature: 'o o m' },
+        parencite: { signature: 'o o m' },
+        textcite: { signature: 'o o m' },
+        nocite: { signature: 'm' },
+      },
+    })
+    parseLatex = (source) => parser.parse(source)
   }
   return parseLatex
 }
 
-/** Whether the document being converted carries a manual thebibliography. */
-let hasManualBibliography = false
-
-export async function convertLatexToTypst(source: string): Promise<ConversionResult> {
+export async function convertLatexToTypst(
+  source: string,
+  options: ConversionOptions = {},
+): Promise<ConversionResult> {
   const parse = await ensureParser()
   const ast = parse(source)
 
   const warnings: ConversionWarning[] = []
   const metadata: ConversionResult['metadata'] = { packages: [] }
 
-  hasManualBibliography = /\\begin\{thebibliography\}/.test(source)
-  const typst = emitRoot(ast, warnings, metadata)
+  const context: ConversionContext = {
+    warnings,
+    options,
+    hasManualBibliography: options.hasManualBibliography ?? containsEnvironment(ast.content, 'thebibliography'),
+    bibliographyFiles: [],
+    metadata,
+    includeUncited: false,
+  }
+  collectBibliographyResources(ast.content, context)
+  const typst = emitRoot(ast, context, metadata)
   return { typst, warnings, metadata }
 }
 
@@ -223,12 +256,68 @@ function getEnvName(env: Ast.Environment): string {
 }
 
 function escapeTypstString(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return JSON.stringify(value).slice(1, -1)
 }
 
-function escapeTypstBracketContent(value: string): string {
-  // Content inside [...] must not terminate the bracket early.
-  return value.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]')
+function escapeTypstText(value: string): string {
+  return value.replace(/[\\#[\]<>*_`@$]/g, '\\$&')
+}
+
+function escapeComment(value: string): string {
+  return value.replace(/\/\*/g, '/ *').replace(/\*\//g, '* /')
+}
+
+function containsEnvironment(nodes: Ast.Node[], name: string): boolean {
+  return nodes.some((node) => {
+    if (node.type === 'environment' || node.type === 'mathenv') {
+      return getEnvName(node) === name || containsEnvironment(node.content, name)
+    }
+    return node.type === 'group' && containsEnvironment(node.content, name)
+  })
+}
+
+function resolveBibliographyPath(raw: string, context: ConversionContext): string {
+  // Preserve the explicit source extension and case while the project resolver
+  // looks up the file and chooses a compiler-compatible .bib alias.
+  const resolved = context.options.resolvePath?.(raw, 'bibliography')
+  return resolved && resolved !== raw ? resolved : normalizeBibliographyPath(raw)
+}
+
+function collectBibliographyResources(nodes: Ast.Node[], context: ConversionContext): void {
+  for (const node of nodes) {
+    if (node.type === 'macro' && node.content === 'addbibresource') {
+      const file = resolveBibliographyPath(getArgs(node)[0] || '', context)
+      if (file && !context.bibliographyFiles.includes(file)) context.bibliographyFiles.push(file)
+    } else if (node.type === 'macro' && node.content === 'nocite' && getArgs(node)[0]?.split(',').some((key) => key.trim() === '*')) {
+      context.includeUncited = true
+    } else if (node.type === 'environment' || node.type === 'mathenv' || node.type === 'group') {
+      collectBibliographyResources(node.content, context)
+    }
+  }
+}
+
+function emitBibliographyCall(files: string[], context: ConversionContext): string {
+  const full = context.includeUncited ? ', full: true' : ''
+  if (files.length === 1) return `#bibliography("${escapeTypstString(files[0])}"${full})`
+  if (files.length > 1) return `#bibliography((${files.map((file) => `"${escapeTypstString(file)}"`).join(', ')})${full})`
+  return '// No bibliography resources were declared.'
+}
+
+function emitContentArgs(macro: Ast.Macro, context: ConversionContext): string[] {
+  return getMandatoryArgNodes(macro).map((nodes) => emitNodes(nodes, context, false))
+}
+
+function plainText(nodes: Ast.Node[]): string {
+  return nodes.map((node) => {
+    if (node.type === 'string') return node.content
+    if (node.type === 'whitespace' || node.type === 'parbreak') return ' '
+    if (node.type === 'macro') {
+      const args = getMandatoryArgNodes(node)
+      return args.length ? args.map(plainText).join('') : node.content
+    }
+    if (node.type === 'group' || node.type === 'inlinemath' || node.type === 'displaymath') return plainText(node.content)
+    return ''
+  }).join('')
 }
 
 /** Strip known bib extensions, then ensure a single `.bib` suffix for Typst. */
@@ -242,7 +331,7 @@ function normalizeBibliographyPath(raw: string): string {
 
 function emitRoot(
   root: Ast.Root,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
   metadata: ConversionResult['metadata'],
 ): string {
   // Scan for preamble info (before \begin{document})
@@ -268,18 +357,12 @@ function emitRoot(
 
   // If no \begin{document}, treat everything as body
   if (!hasDocumentEnv) {
-    bodyNodes.push(...preambleNodes.splice(0))
-    bodyNodes.push(...root.content.filter((n) => !preambleNodes.includes(n)))
-    // Reset since we moved everything
+    bodyNodes.push(...preambleNodes)
     preambleNodes.length = 0
-    bodyNodes.length = 0
-    for (const node of root.content) {
-      bodyNodes.push(node)
-    }
   }
 
   // Extract preamble metadata
-  extractPreambleMetadata(preambleNodes, metadata)
+  extractPreambleMetadata(preambleNodes, metadata, context)
 
   // Build output
   const parts: string[] = []
@@ -287,14 +370,14 @@ function emitRoot(
   // Emit metadata as Typst #set / #show rules
   if (metadata.title || metadata.author || metadata.date) {
     const setArgs: string[] = []
-    if (metadata.title) setArgs.push(`  title: [${escapeTypstBracketContent(metadata.title)}],`)
+    if (metadata.title) setArgs.push(`  title: [${context.formattedTitle}],`)
     if (metadata.author) setArgs.push(`  author: "${escapeTypstString(metadata.author)}",`)
-    if (metadata.date) setArgs.push(`  date: "${escapeTypstString(metadata.date)}",`)
+    // LaTeX dates are free-form display text; Typst document.date requires a datetime.
     parts.push(`#set document(\n${setArgs.join('\n')}\n)`)
     parts.push('')
   }
 
-  const body = emitNodes(bodyNodes, warnings, false).trim()
+  const body = emitNodes(bodyNodes, context, false).trim()
   // LaTeX numbers sectioning commands by default, and converted @sec:*
   // references only resolve against numbered headings.
   if (/^=+ /m.test(body)) {
@@ -309,6 +392,7 @@ function emitRoot(
 function extractPreambleMetadata(
   nodes: Ast.Node[],
   metadata: ConversionResult['metadata'],
+  context: ConversionContext,
 ) {
   for (const node of nodes) {
     if (node.type !== 'macro') continue
@@ -324,11 +408,12 @@ function extractPreambleMetadata(
       }
       case 'usepackage': {
         const pkg = args[0]
-        if (pkg) metadata.packages.push(pkg)
+        if (pkg) metadata.packages.push(...pkg.split(',').map((part) => part.trim()).filter(Boolean))
         break
       }
       case 'title':
-        metadata.title = args[0]
+        metadata.title = plainText(getMandatoryArgNodes(macro)[0] || [])
+        context.formattedTitle = emitContentArgs(macro, context)[0]
         break
       case 'author':
         metadata.author = args[0]
@@ -342,34 +427,33 @@ function extractPreambleMetadata(
 
 function emitNodes(
   nodes: Ast.Node[],
-  warnings: ConversionWarning[],
+  context: ConversionContext,
   inMath: boolean,
 ): string {
   const parts: string[] = []
   let prevWasMathLetter = false
   for (let i = 0; i < nodes.length; i++) {
-    const emitted = emitNode(nodes[i], warnings, inMath)
-    const isStringNode = nodes[i].type === 'string'
+    const emitted = emitNode(nodes[i], context, inMath)
     // Typst math reads adjacent letters as one identifier; the LaTeX parser
     // hands us math letters as separate string nodes, so keep them separate.
-    if (inMath && isStringNode && prevWasMathLetter && /^[A-Za-z]/.test(emitted)) {
+    if (inMath && prevWasMathLetter && /^[A-Za-z]/.test(emitted)) {
       parts.push(' ')
     }
     parts.push(emitted)
-    prevWasMathLetter = inMath && isStringNode && /[A-Za-z]$/.test(emitted)
+    prevWasMathLetter = inMath && /[A-Za-z]$/.test(emitted)
   }
   return parts.join('')
 }
 
 function emitNode(
   node: Ast.Node,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
   inMath: boolean,
 ): string {
   switch (node.type) {
     case 'string': {
       const content = (node as Ast.String).content
-      if (!inMath) return content
+      if (!inMath) return escapeTypstText(content)
       // Typst math reads a multi-letter run as one identifier, so LaTeX `mc`
       // must become `m c` to render as adjacent variables.
       return content.replace(/[A-Za-z]{2,}/g, (run) => run.split('').join(' '))
@@ -383,32 +467,33 @@ function emitNode(
 
     case 'comment': {
       const commentText = (node as Ast.Comment).content
-      return `//${commentText.startsWith(' ') ? '' : ' '}${commentText}\n`
+      return `//${commentText.startsWith(' ') ? '' : ' '}${commentText.replace(/\r?\n/g, ' ')}\n`
     }
 
     case 'macro':
-      return emitMacro(node as Ast.Macro, warnings, inMath)
+      return emitMacro(node as Ast.Macro, context, inMath)
 
     case 'environment':
     case 'mathenv':
-      return emitEnvironment(node as Ast.Environment, warnings)
+      return emitEnvironment(node as Ast.Environment, context, inMath)
 
     case 'inlinemath':
-      return `$${emitNodes((node as Ast.InlineMath).content, warnings, true)}$`
+      return `$${emitNodes((node as Ast.InlineMath).content, context, true)}$`
 
     case 'displaymath':
-      return `\n$ ${emitNodes((node as Ast.DisplayMath).content, warnings, true)} $\n`
+      return `\n$ ${emitNodes((node as Ast.DisplayMath).content, context, true)} $\n`
 
     case 'group':
-      return emitNodes((node as Ast.Group).content, warnings, inMath)
+      return emitNodes((node as Ast.Group).content, context, inMath)
 
     case 'verbatim': {
       const verb = node as Ast.VerbatimEnvironment
-      return `\`\`\`\n${verb.content}\n\`\`\`\n`
+      const fence = '`'.repeat(Math.max(3, ...(verb.content.match(/`+/g) || []).map((run) => run.length + 1)))
+      return `${fence}\n${verb.content}\n${fence}\n`
     }
 
     case 'verb':
-      return `\`${(node as Ast.Verb).content}\``
+      return node.content.includes('`') ? `#raw("${escapeTypstString(node.content)}")` : `\`${node.content}\``
 
     default:
       return ''
@@ -417,7 +502,7 @@ function emitNode(
 
 function emitMacro(
   macro: Ast.Macro,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
   inMath: boolean,
 ): string {
   const name = macro.content
@@ -425,7 +510,7 @@ function emitMacro(
 
   // Math mode handling
   if (inMath) {
-    return emitMathMacro(macro, warnings)
+    return emitMathMacro(macro, context)
   }
 
   // Sectioning commands
@@ -433,7 +518,10 @@ function emitMacro(
     const depth = SECTIONING[name]
     // depth 0 (part) must not collapse via `0 || 1` into the same level as section.
     const heading = '='.repeat(depth <= 0 ? 1 : depth)
-    const title = args[0] || ''
+    const title = emitContentArgs(macro, context)[0] || ''
+    if (macro.args?.some((arg) => arg.openMark === '' && emitArgContent(arg.content) === '*')) {
+      return `\n#heading(level: ${Math.max(depth, 1)}, numbering: none)[${title}]\n`
+    }
     if (name === 'part') {
       return `\n#pagebreak()\n${heading} ${title}\n`
     }
@@ -443,11 +531,20 @@ function emitMacro(
   // Text formatting
   if (name in TEXT_FORMAT) {
     const fmt = TEXT_FORMAT[name]
-    const content = args[0] || ''
+    const content = name === 'texttt' ? args[0] || '' : emitContentArgs(macro, context)[0] || ''
+    if (name === 'texttt' && content.includes('`')) return `#raw("${escapeTypstString(content)}")`
     return `${fmt.before}${content}${fmt.after}`
   }
 
   // Simple commands (no arguments)
+  if (name === 'maketitle') {
+    const { title, author, date } = context.metadata
+    return `\n#align(center)[\n${[
+      title ? `#text(size: 1.5em, weight: "bold")[${context.formattedTitle}]` : '',
+      author ? escapeTypstText(author) : '',
+      date ? escapeTypstText(date) : '',
+    ].filter(Boolean).join('\n\n')}\n]\n`
+  }
   if (name in SIMPLE_COMMANDS) {
     return SIMPLE_COMMANDS[name]
   }
@@ -455,15 +552,15 @@ function emitMacro(
   // Special commands with arguments
   switch (name) {
     case 'underline':
-      return `#underline[${args[0] || ''}]`
+      return `#underline[${emitContentArgs(macro, context)[0] || ''}]`
 
     case 'footnote':
-      return `#footnote[${args[0] || ''}]`
+      return `#footnote[${emitContentArgs(macro, context)[0] || ''}]`
 
     case 'href': {
       const url = args[0] || ''
-      const text = args[1] || url
-      return `#link("${escapeTypstString(url)}")[${escapeTypstBracketContent(text)}]`
+      const text = emitContentArgs(macro, context)[1] || escapeTypstText(url)
+      return `#link("${escapeTypstString(url)}")[${text}]`
     }
 
     case 'url':
@@ -473,9 +570,10 @@ function emitMacro(
       const file = args[0] || getOptionalArg(macro) || ''
       // Get the last mandatory arg (the file), since first may be options
       const mandatoryArgs = getMandatoryArgs(macro)
-      const imgPath = mandatoryArgs[mandatoryArgs.length - 1] || file
+      const rawPath = mandatoryArgs[mandatoryArgs.length - 1] || file
+      const imgPath = context.options.resolvePath?.(rawPath, 'image') ?? rawPath
       if (imgPath && !/\.[A-Za-z0-9]+$/.test(imgPath)) {
-        warnings.push({
+        context.warnings.push({
           message: `\\includegraphics{${imgPath}} has no file extension; Typst requires one (e.g. .png)`,
           construct: 'includegraphics',
         })
@@ -498,7 +596,9 @@ function emitMacro(
     case 'cite':
     case 'citep':
     case 'citet':
-    case 'autocite': {
+    case 'autocite':
+    case 'parencite':
+    case 'textcite': {
       const keys = (args[0] || '')
         .split(',')
         .map((key) => key.trim())
@@ -506,8 +606,8 @@ function emitMacro(
       // With a manual thebibliography the keys label plain blocks, which can
       // be linked but not @-referenced; without one, keep @key for real
       // #bibliography() setups.
-      if (hasManualBibliography) {
-        return keys.map((key) => `#link(label("${key}"))[\\[${key}\\]]`).join(' ')
+      if (context.hasManualBibliography) {
+        return keys.map((key) => `#link(label("${escapeTypstString(key)}"))[\\[${escapeTypstText(key)}\\]]`).join(' ')
       }
       return keys.map((key) => `@${key}`).join(' ')
     }
@@ -515,21 +615,28 @@ function emitMacro(
     case 'bibliography': {
       const files = (args[0] || '')
         .split(',')
-        .map((part) => normalizeBibliographyPath(part.trim()))
+        .map((part) => resolveBibliographyPath(part.trim(), context))
         .filter((part) => part.length > 0)
-      if (files.length === 0) return '#bibliography("")'
-      if (files.length === 1) return `#bibliography("${escapeTypstString(files[0])}")`
-      const list = files.map((file) => `"${escapeTypstString(file)}"`).join(', ')
-      return `#bibliography((${list}))`
+      return emitBibliographyCall(files, context)
     }
+
+    case 'addbibresource':
+      return '' // Resources are collected before emitting the document body.
+
+    case 'printbibliography':
+      return emitBibliographyCall(context.bibliographyFiles, context)
+
+    case 'nocite':
+      return (args[0] || '').split(',').map((key) => key.trim()).filter((key) => key && key !== '*').map((key) => `#cite(label("${escapeTypstString(key)}"), form: none)`).join(' ')
 
     case 'bibliographystyle':
       return '' // no typst equivalent
 
     case 'input':
     case 'include': {
-      let file = (args[0] || '').trim()
-      if (!file) return '#include ""'
+      const rawPath = (args[0] || '').trim()
+      let file = context.options.resolvePath?.(rawPath, 'include') ?? rawPath
+      if (!file) return '#include ""\n'
       const lower = file.toLowerCase()
       if (lower.endsWith('.typ')) {
         // already typst
@@ -540,7 +647,9 @@ function emitMacro(
         file = `${file}.typ`
       }
       // Leave .sty/.cls/other extensions untouched (unsupported includes).
-      return `#include "${escapeTypstString(file)}"`
+      // Include is a statement, so the next converted node must not be
+      // consumed as another token in its path expression.
+      return `#include "${escapeTypstString(file)}"\n`
     }
 
     case 'textcolor': {
@@ -582,7 +691,7 @@ function emitMacro(
     case '~':
       return '~'
     case '\\':
-      return '\n'
+      return '\\\n'
     case ',':
       return inMath ? ' ' : '\u2009' // thin space
     case ';':
@@ -604,18 +713,26 @@ function emitMacro(
 
   // Unknown macro - emit as comment with warning
   const argStr = args.length > 0 ? `{${args.join('}{')}}` : ''
-  warnings.push({
+  context.warnings.push({
     message: `Unsupported command: \\${name}`,
     construct: `\\${name}${argStr}`,
   })
-  return `/* [LaTeX] Unsupported: \\${name}${argStr} */`
+  return `/* [LaTeX] Unsupported: ${escapeComment(`\\${name}${argStr}`)} */`
 }
 
 function emitMathMacro(
   macro: Ast.Macro,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
 ): string {
   const name = macro.content
+
+  if (name === 'label') return '' // Equation labels belong after the equation.
+  if (name === 'notag' || name === 'nonumber') return ''
+
+  if (name === 'text' || name === 'textrm' || name === 'operatorname') {
+    const text = escapeTypstString(getArgs(macro)[0] || '')
+    return name === 'operatorname' ? `op("${text}")` : `"${text}"`
+  }
 
   // Check math command map
   if (name in MATH_COMMANDS) {
@@ -625,18 +742,16 @@ function emitMathMacro(
     // Commands that take arguments as function calls
     if (args.length > 0 && ['frac', 'sqrt', 'bb', 'cal', 'frak', 'upright', 'bold', 'italic',
       'overline', 'underline', 'hat', 'macron', 'tilde', 'arrow', 'dot', 'dot.double'].includes(typstCmd)) {
-      const emittedArgs = args.map((a) => emitNodes(a, warnings, true))
+      const emittedArgs = args.map((a) => emitNodes(a, context, true))
+      if (name === 'sqrt') {
+        const index = macro.args?.find((arg) => arg.openMark === '[')
+        if (index?.content.length) return `root(${emitNodes(index.content, context, true)}, ${emittedArgs[0]})`
+      }
       return `${typstCmd}(${emittedArgs.join(', ')})`
     }
 
     // Simple symbol replacement
     return typstCmd
-  }
-
-  // Text inside math
-  if (name === 'text' || name === 'textrm' || name === 'mathrm') {
-    const args = getArgs(macro)
-    return `"${args[0] || ''}"`
   }
 
   // Escaped special chars in math, emitted directly — routing through the
@@ -661,7 +776,7 @@ function emitMathMacro(
   if (name === '_' || name === '^') {
     const args = getMandatoryArgNodes(macro)
     if (args.length === 0) return `\\${name}`
-    const sub = emitNodes(args[0], warnings, true)
+    const sub = emitNodes(args[0], context, true)
     return `${name}(${sub})`
   }
 
@@ -672,42 +787,59 @@ function emitMathMacro(
 
   // Unknown math command
   const args = getArgs(macro)
-  if (args.length > 0) {
-    warnings.push({
-      message: `Unsupported math command: \\${name}`,
-      construct: `\\${name}{${args.join('}{')}}`,
-    })
-  }
-  return name
+  context.warnings.push({
+    message: `Unsupported math command: \\${name}`,
+    construct: `\\${name}${args.length ? `{${args.join('}{')}}` : ''}`,
+  })
+  return `op("${escapeTypstString(name)}")`
 }
 
 function emitEnvironment(
   env: Ast.Environment,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
+  inMath = false,
 ): string {
   const envName = getEnvName(env)
   switch (envName) {
     case 'itemize':
-      return emitList(env, warnings, '-')
+      return emitList(env, context, '-')
 
     case 'enumerate':
-      return emitList(env, warnings, '+')
+      return emitList(env, context, '+')
 
     case 'description':
-      return emitDescriptionList(env, warnings)
+      return emitDescriptionList(env, context)
 
     case 'tabular':
     case 'tabular*':
     case 'array':
-      return emitTable(env, warnings)
+      if (inMath && envName === 'array') return emitMatrix(env, context, 'none')
+      return emitTable(env, context)
+
+    case 'matrix':
+      return emitMatrix(env, context, 'none')
+    case 'pmatrix':
+      return emitMatrix(env, context, '"("')
+    case 'bmatrix':
+      return emitMatrix(env, context, '"["')
+    case 'Bmatrix':
+      return emitMatrix(env, context, '"{"')
+    case 'vmatrix':
+      return emitMatrix(env, context, '"|"')
+    case 'Vmatrix':
+      return emitMatrix(env, context, '"||"')
+    case 'aligned':
+    case 'gathered':
+    case 'split':
+      return emitNodes(env.content, context, true)
 
     case 'figure':
     case 'figure*':
-      return emitFigure(env, warnings)
+      return emitFigure(env, context)
 
     case 'table':
     case 'table*':
-      return emitTableEnv(env, warnings)
+      return emitTableEnv(env, context)
 
     case 'equation':
     case 'equation*':
@@ -717,38 +849,38 @@ function emitEnvironment(
     case 'gather*':
     case 'multline':
     case 'multline*':
-      return `\n$ ${emitNodes(env.content, warnings, true)} $\n`
+      return emitEquation(env, context)
 
     case 'center':
-      return `#align(center)[\n${emitNodes(env.content, warnings, false).trim()}\n]\n`
+      return `#align(center)[\n${emitNodes(env.content, context, false).trim()}\n]\n`
 
     case 'flushleft':
-      return `#align(left)[\n${emitNodes(env.content, warnings, false).trim()}\n]\n`
+      return `#align(left)[\n${emitNodes(env.content, context, false).trim()}\n]\n`
 
     case 'flushright':
-      return `#align(right)[\n${emitNodes(env.content, warnings, false).trim()}\n]\n`
+      return `#align(right)[\n${emitNodes(env.content, context, false).trim()}\n]\n`
 
     case 'quote':
     case 'quotation':
-      return `#quote(block: true)[\n${emitNodes(env.content, warnings, false).trim()}\n]\n`
+      return `#quote(block: true)[\n${emitNodes(env.content, context, false).trim()}\n]\n`
 
     case 'verbatim':
     case 'lstlisting':
     case 'minted':
-      return `\`\`\`\n${emitNodes(env.content, warnings, false)}\n\`\`\`\n`
+      return `\`\`\`\n${emitNodes(env.content, context, false)}\n\`\`\`\n`
 
     case 'abstract':
-      return `// Abstract\n${emitNodes(env.content, warnings, false).trim()}\n`
+      return `// Abstract\n${emitNodes(env.content, context, false).trim()}\n`
 
     case 'thebibliography':
-      return emitBibliography(env, warnings)
+      return emitBibliography(env, context)
 
     case 'minipage':
-      return emitNodes(env.content, warnings, false)
+      return emitNodes(env.content, context, false)
 
     case 'tikzpicture':
     case 'pgfpicture': {
-      warnings.push({
+      context.warnings.push({
         message: `TikZ/PGF not supported: ${envName}`,
         construct: `\\begin{${envName}}...\\end{${envName}}`,
       })
@@ -757,11 +889,11 @@ function emitEnvironment(
 
     default: {
       // Unknown environment
-      warnings.push({
+      context.warnings.push({
         message: `Unknown environment: ${envName}`,
         construct: `\\begin{${envName}}...\\end{${envName}}`,
       })
-      return emitNodes(env.content, warnings, false)
+      return emitNodes(env.content, context, false)
     }
   }
 }
@@ -770,33 +902,27 @@ function emitEnvironment(
 
 function emitList(
   env: Ast.Environment,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
   marker: string,
 ): string {
-  const items = collectItems(env.content, warnings)
-  const lines = items.map((item) => `${marker} ${item.trim()}`)
+  const items = collectItems(env.content, context)
+  const lines = items.map((item) => `${marker} ${item.trim().replace(/\n/g, '\n  ')}`)
   return '\n' + lines.join('\n') + '\n'
 }
 
 function emitDescriptionList(
   env: Ast.Environment,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
 ): string {
   const parts: string[] = []
-  let currentLabel = ''
 
   for (const node of env.content) {
     if (node.type === 'macro' && (node as Ast.Macro).content === 'item') {
-      if (currentLabel) {
-        parts.push('') // just in case
-      }
-      const optArg = getOptionalArg(node as Ast.Macro)
-      currentLabel = optArg || ''
-      parts.push(`/ ${currentLabel}: `)
-    } else if (node.type === 'parbreak' || node.type === 'whitespace') {
-      // skip
+      const label = node.args?.find((arg) => arg.openMark === '[')
+      const body = node.args?.find((arg) => arg.openMark === '' && arg.content.length)
+      parts.push(`/ ${label ? emitNodes(label.content, context, false) : ''}: ${body ? emitNodes(body.content, context, false) : ''}`)
     } else {
-      const text = emitNode(node, warnings, false)
+      const text = emitNode(node, context, false)
       if (parts.length > 0) {
         parts[parts.length - 1] += text
       }
@@ -808,7 +934,7 @@ function emitDescriptionList(
 
 function collectItems(
   content: Ast.Node[],
-  warnings: ConversionWarning[],
+  context: ConversionContext,
 ): string[] {
   const items: string[] = []
   let current = ''
@@ -819,9 +945,9 @@ function collectItems(
       // Extract item body from absorbed args (empty open/close marks)
       const macro = node as Ast.Macro
       const bodyArg = macro.args?.find((a) => a.openMark === '' && a.closeMark === '' && a.content.length > 0)
-      current = bodyArg ? emitNodes(bodyArg.content, warnings, false) : ''
+      current = bodyArg ? emitNodes(bodyArg.content, context, false) : ''
     } else {
-      current += emitNode(node, warnings, false)
+      current += emitNode(node, context, false)
     }
   }
 
@@ -833,163 +959,114 @@ function collectItems(
 
 function emitTable(
   env: Ast.Environment,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
 ): string {
-  // Parse column spec from args
-  const colSpec = getOptionalOrMandatoryArg(env)
-  // Count column specifiers only — separators like | and p-column widths
-  // (braces may already be stripped by the parser) must not inflate it.
-  const cleanedSpec = colSpec
-    ? colSpec.replace(/\{[^}]*\}/g, '').replace(/[\d.]+[a-z]*/g, '')
-    : ''
-  const numCols = (cleanedSpec.match(/[lcrp]/g) || []).length || 3
-
-  // Parse rows by splitting on \\
-  const rows = splitTableRows(env.content, warnings)
-  const cells = rows.map((row) =>
-    row
-      .split('&')
-      .map((c) => `[${c.trim()}]`)
-      .join(', ')
-  )
+  // The final mandatory argument is the colspec; optional placement and the
+  // width of tabular* are unrelated to the number of columns.
+  const colSpec = env.args?.filter((arg) => arg.openMark === '{').at(-1)
+  const rows = splitTableCells(env.content)
+  const numCols = countColumns(colSpec?.content ?? []) || Math.max(1, ...rows.map((row) => row.length))
+  const cells = rows.map((row) => row.map((cell) => `[${emitNodes(cell, context, false).trim()}]`).join(', '))
 
   const cellLines = cells.filter(Boolean).map((c) => `  ${c},`).join('\n')
   return `\n#table(\n  columns: ${numCols},\n${cellLines}\n)\n`
 }
 
-function splitTableRows(
-  content: Ast.Node[],
-  warnings: ConversionWarning[],
-): string[] {
-  const rows: string[] = []
-  let current = ''
-
-  for (const node of content) {
-    if (node.type === 'macro' && (node as Ast.Macro).content === '\\') {
-      rows.push(current)
-      current = ''
-    } else if (node.type === 'macro' && (node as Ast.Macro).content === 'hline') {
-      // skip horizontal rules
-    } else if (node.type === 'macro' && (node as Ast.Macro).content === 'toprule') {
-      // skip booktabs
-    } else if (node.type === 'macro' && (node as Ast.Macro).content === 'midrule') {
-      // skip booktabs
-    } else if (node.type === 'macro' && (node as Ast.Macro).content === 'bottomrule') {
-      // skip booktabs
+function countColumns(nodes: Ast.Node[]): number {
+  let count = 0
+  for (let index = 0; index < nodes.length; index++) {
+    const node = nodes[index]
+    if (node.type !== 'string') continue
+    if (node.content === '*' && nodes[index + 1]?.type === 'group' && nodes[index + 2]?.type === 'group') {
+      const repeat = nodes[index + 1] as Ast.Group
+      const pattern = nodes[index + 2] as Ast.Group
+      count += Math.max(0, Number(emitArgContent(repeat.content)) || 0) * countColumns(pattern.content)
+      index += 2
     } else {
-      current += emitNode(node, warnings, false)
+      count += (node.content.match(/[lcrpmbX]/g) || []).length
     }
   }
+  return count
+}
 
-  if (current.trim()) rows.push(current)
+function splitTableCells(content: Ast.Node[]): Ast.Node[][][] {
+  const rows: Ast.Node[][][] = []
+  let row: Ast.Node[][] = [[]]
+  for (const node of content) {
+    if (node.type === 'macro' && node.content === '\\') {
+      rows.push(row)
+      row = [[]]
+    } else if (node.type === 'string' && node.content === '&') {
+      row.push([])
+    } else if (node.type === 'macro' && ['hline', 'toprule', 'midrule', 'bottomrule', 'cline', 'cmidrule'].includes(node.content)) {
+      // Rules do not consume a cell. Escaped ampersands and nested formulas do.
+    } else {
+      row[row.length - 1].push(node)
+    }
+  }
+  if (row.length > 1 || row[0].some((node) => !['whitespace', 'parbreak', 'comment'].includes(node.type))) rows.push(row)
   return rows
+}
+
+function emitMatrix(env: Ast.Environment, context: ConversionContext, delimiter: string): string {
+  const rows = splitTableCells(env.content).map((row) => row.map((cell) => emitNodes(cell, context, true).trim()).join(', '))
+  return `mat(delim: ${delimiter}, ${rows.join('; ')})`
+}
+
+function emitEquation(env: Ast.Environment, context: ConversionContext): string {
+  const labels = env.content.filter((node): node is Ast.Macro => node.type === 'macro' && node.content === 'label')
+  const unnumbered = getEnvName(env).endsWith('*') || env.content.some((node) => node.type === 'macro' && ['notag', 'nonumber'].includes(node.content))
+  const body = emitNodes(env.content, context, true).trim()
+  const label = labels[0] ? ` <${getArgs(labels[0])[0] || ''}>` : ''
+  if (labels.length > 1) {
+    context.warnings.push({ message: 'Multiple equation labels require manual row numbering; only the first label was retained.', construct: getEnvName(env) })
+  }
+  return `\n#math.equation(block: true, numbering: ${unnumbered ? 'none' : '"(1)"'}, $ ${body} $)${label}\n`
 }
 
 // ── Figure emitter ──
 
-function emitFigure(
-  env: Ast.Environment,
-  warnings: ConversionWarning[],
-): string {
-  let imagePath = ''
-  let caption = ''
-  let label = ''
-  const otherContent: string[] = []
-
-  for (const node of env.content) {
-    if (node.type === 'macro') {
-      const macro = node as Ast.Macro
-      if (macro.content === 'includegraphics') {
-        const mandatoryArgs = getMandatoryArgs(macro)
-        imagePath = mandatoryArgs[mandatoryArgs.length - 1] || ''
-      } else if (macro.content === 'caption') {
-        caption = getArgs(macro)[0] || ''
-      } else if (macro.content === 'label') {
-        label = getArgs(macro)[0] || ''
-      } else if (macro.content === 'centering' || macro.content === '\\') {
-        // skip
-      } else {
-        otherContent.push(emitNode(node, warnings, false))
-      }
-    } else if (node.type !== 'whitespace' && node.type !== 'parbreak') {
-      otherContent.push(emitNode(node, warnings, false))
-    }
-  }
-
-  const parts: string[] = []
-  parts.push('#figure(')
-  if (imagePath) {
-    parts.push(`  image("${imagePath}"),`)
-  }
-  if (caption) {
-    parts.push(`  caption: [${caption}],`)
-  }
-  parts.push(')')
-  if (label) {
-    parts.push(` <${label}>`)
-  }
-
-  return '\n' + parts.join('\n') + '\n'
+function emitFigure(env: Ast.Environment, context: ConversionContext): string {
+  return emitFloat(env, context, 'image')
 }
 
-// ── Table environment (wraps tabular in figure) ──
+function emitTableEnv(env: Ast.Environment, context: ConversionContext): string {
+  return emitFloat(env, context, 'table')
+}
 
-function emitTableEnv(
-  env: Ast.Environment,
-  warnings: ConversionWarning[],
-): string {
-  let tableContent = ''
+function emitFloat(env: Ast.Environment, context: ConversionContext, kind: 'image' | 'table'): string {
   let caption = ''
   let label = ''
-
+  const body: string[] = []
   for (const node of env.content) {
-    if (node.type === 'macro') {
-      const macro = node as Ast.Macro
-      if (macro.content === 'caption') {
-        caption = getArgs(macro)[0] || ''
-      } else if (macro.content === 'label') {
-        label = getArgs(macro)[0] || ''
-      } else if (macro.content === 'centering') {
-        // skip
-      } else {
-        tableContent += emitNode(node, warnings, false)
-      }
-    } else if (node.type === 'environment') {
-      const nestedEnv = getEnvName(node as Ast.Environment)
-      if (nestedEnv === 'tabular' || nestedEnv === 'tabular*' || nestedEnv === 'array') {
-        tableContent += emitTable(node as Ast.Environment, warnings)
-      } else {
-        tableContent += emitNode(node, warnings, false)
-      }
-    } else if (node.type !== 'whitespace' && node.type !== 'parbreak') {
-      tableContent += emitNode(node, warnings, false)
+    if (node.type === 'macro' && node.content === 'caption') {
+      caption = emitContentArgs(node, context)[0] || ''
+    } else if (node.type === 'macro' && node.content === 'label') {
+      label = getArgs(node)[0] || ''
+    } else if (node.type === 'macro' && node.content === 'centering') {
+      continue
+    } else {
+      const content = emitNode(node, context, false).trim()
+      if (content) body.push(content)
     }
   }
-
-  if (caption || label) {
-    const parts: string[] = []
-    parts.push('#figure(')
-    // Inside #figure's argument list we are in code context, so the nested
-    // table call must not carry its own # prefix.
-    parts.push(`  ${tableContent.trim().replace(/^#/, '')},`)
-    if (caption) {
-      parts.push(`  caption: [${caption}],`)
-    }
-    parts.push(')')
-    if (label) {
-      parts.push(` <${label}>`)
-    }
-    return '\n' + parts.join('\n') + '\n'
-  }
-
-  return tableContent
+  if (kind === 'table' && !caption && !label) return body.join('\n')
+  // A single image/table is a code expression; mixed float content needs a
+  // content block so every image and surrounding paragraph is retained.
+  const direct = body.length === 1 && body[0].startsWith(`#${kind}(`)
+  const content = direct ? body[0].slice(1) : `[${body.join('\n')}]`
+  const parts = [`#figure(\n  ${content},`]
+  if (!direct) parts.push(`  kind: ${kind},`)
+  if (caption) parts.push(`  caption: [${caption}],`)
+  parts.push(`)${label ? ` <${label}>` : ''}`)
+  return '\n' + parts.join('\n') + '\n'
 }
 
 // ── Bibliography emitter ──
 
 function emitBibliography(
   env: Ast.Environment,
-  warnings: ConversionWarning[],
+  context: ConversionContext,
 ): string {
   // \begin{thebibliography} contains \bibitems
   const items: string[] = []
@@ -1006,9 +1083,9 @@ function emitBibliography(
       // The parser can absorb the trailing item text into an empty-mark arg,
       // exactly as it does for \item.
       const bodyArg = macro.args?.find((a) => a.openMark === '' && a.closeMark === '' && a.content.length > 0)
-      currentText = bodyArg ? emitNodes(bodyArg.content, warnings, false) : ''
+      currentText = bodyArg ? emitNodes(bodyArg.content, context, false) : ''
     } else {
-      currentText += emitNode(node, warnings, false)
+      currentText += emitNode(node, context, false)
     }
   }
 
@@ -1016,7 +1093,7 @@ function emitBibliography(
     items.push(`#block[\\[${currentKey}\\] ${currentText.trim()}] <${currentKey}>`)
   }
 
-  warnings.push({
+  context.warnings.push({
     message: 'Manual bibliography converted to labeled blocks; citations link to them. Consider a .bib file with #bibliography().',
     construct: '\\begin{thebibliography}',
   })
@@ -1049,15 +1126,6 @@ function getOptionalArg(macro: Ast.Macro): string | undefined {
   const opt = macro.args.find((a) => a.openMark === '[' && a.closeMark === ']')
   if (!opt) return undefined
   return emitArgContent(opt.content)
-}
-
-function getOptionalOrMandatoryArg(env: Ast.Environment): string | undefined {
-  if (!env.args) return undefined
-  for (const arg of env.args) {
-    const content = emitArgContent(arg.content)
-    if (content) return content
-  }
-  return undefined
 }
 
 function emitArgContent(content: Ast.Node[]): string {

@@ -563,3 +563,219 @@ describe('references and manual bibliography', () => {
     expect(result.typst).not.toContain('#link(label(')
   })
 })
+
+describe('real project conversion regressions', () => {
+  it('terminates include statements before adjacent includes, prose, and bibliography calls', async () => {
+    const result = await convertLatexToTypst(String.raw`\input{first}\input{second}Tail.\bibliography{refs}`)
+    expect(result.typst).toContain('#include "first.typ"\n#include "second.typ"\nTail.#bibliography("refs.bib")')
+  })
+
+  it('collects biblatex resources from the preamble and prints a bibliography', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\usepackage[backend=biber]{biblatex}
+\addbibresource{references.bib}
+\addbibresource[location=local]{extra.bibtex}
+\begin{document}
+See \autocite{doe2020} and \parencite{smith2021}.
+\printbibliography[title={References}]
+\end{document}`)
+    expect(result.typst).toContain('@doe2020')
+    expect(result.typst).toContain('@smith2021')
+    expect(result.typst).toContain('#bibliography(("references.bib", "extra.bib"))')
+    expect(result.warnings).toEqual([])
+  })
+
+  it('lets project imports resolve original include, image, and bibliography paths', async () => {
+    const paths: Array<[string, string]> = []
+    const result = await convertLatexToTypst(String.raw`
+\input{Chapter.TEX}
+\includegraphics{diagram}
+\bibliography{references.bibtex}`, {
+      resolvePath: (path, kind) => {
+        paths.push([path, kind])
+        if (kind === 'include') return '../Chapter-2.typ'
+        if (kind === 'image') return '../assets/diagram.svg'
+        return '../references.bib'
+      },
+    })
+    expect(paths).toEqual([
+      ['Chapter.TEX', 'include'],
+      ['diagram', 'image'],
+      ['references.bibtex', 'bibliography'],
+    ])
+    expect(result.typst).toContain('#include "../Chapter-2.typ"')
+    expect(result.typst).toContain('#image("../assets/diagram.svg")')
+    expect(result.typst).toContain('#bibliography("../references.bib")')
+    expect(result.warnings).toEqual([])
+  })
+
+  it('preserves explicit bibliography extension and case for project alias resolution', async () => {
+    const requested: string[] = []
+    const result = await convertLatexToTypst(String.raw`\addbibresource{Refs.BIB}\begin{document}\printbibliography\end{document}`, {
+      resolvePath: (path, kind) => {
+        if (kind === 'bibliography') requested.push(path)
+        return 'Refs-2.bib'
+      },
+    })
+    expect(requested).toEqual(['Refs.BIB'])
+    expect(result.typst).toContain('#bibliography("Refs-2.bib")')
+  })
+
+  it('does not mistake a commented-out bibliography for a manual bibliography', async () => {
+    const result = await convertLatexToTypst(String.raw`
+% \begin{thebibliography}
+\cite{doe2020}`)
+    expect(result.typst).toContain('@doe2020')
+    expect(result.typst).not.toContain('#link(label(')
+  })
+
+  it('supports manual bibliography citations in separately converted chapter files', async () => {
+    const result = await convertLatexToTypst(String.raw`\cite{doe2020}`, { hasManualBibliography: true })
+    expect(result.typst).toContain('#link(label("doe2020"))')
+    const independent = await convertLatexToTypst(String.raw`\cite{doe2020}`)
+    expect(independent.typst).toContain('@doe2020')
+  })
+
+  it('preserves free-form title dates without invalid document metadata', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\title{A $\frac{x}{y}$ Paper}
+\author{Jane Doe}
+\date{September 2026}
+\begin{document}\maketitle\end{document}`)
+    expect(result.metadata.date).toBe('September 2026')
+    expect(result.typst).not.toContain('date: "September 2026"')
+    expect(result.typst).toContain('#text(size: 1.5em, weight: "bold")[A $frac(x, y)$ Paper]')
+    expect(result.typst).toContain('September 2026')
+  })
+
+  it('emits nested math in headings, formatted text, links, and footnotes', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\section{Ratio $\frac{a}{b}$}
+\textbf{Energy $mc^2$}
+\href{https://example.com}{\emph{Ratio} $\frac{x}{y}$}
+\footnote{For $x^2$.}`)
+    expect(result.typst).toContain('= Ratio $frac(a, b)$')
+    expect(result.typst).toContain('*Energy $m c^(2)$*')
+    expect(result.typst).toContain('#link("https://example.com")[_Ratio_ $frac(x, y)$]')
+    expect(result.typst).toContain('#footnote[For $x^(2)$.]')
+  })
+
+  it('escapes literal Typst markup and code in prose and macro contents', async () => {
+    const result = await convertLatexToTypst(String.raw`[draft] #name @person *stars* \textbf{a]b #code}`)
+    expect(result.typst).toContain(String.raw`\[draft\] \#name \@person \*stars\*`)
+    expect(result.typst).toContain(String.raw`*a\]b \#code*`)
+  })
+
+  it('preserves unnumbered headings', async () => {
+    const result = await convertLatexToTypst(String.raw`\section*{Acknowledgments}\section{Results}`)
+    expect(result.typst).toContain('#heading(level: 1, numbering: none)[Acknowledgments]')
+    expect(result.typst).toContain('= Results')
+  })
+
+  it('places equation labels on numbered equations outside math mode', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{equation}\label{eq:ratio}\frac{x}{y}=2\end{equation}
+See \eqref{eq:ratio}.
+\begin{equation*}x=2\end{equation*}`)
+    expect(result.typst).toContain('#math.equation(block: true, numbering: "(1)", $ frac(x, y)=2 $) <eq:ratio>')
+    expect(result.typst).toContain('@eq:ratio')
+    expect(result.typst).toContain('#math.equation(block: true, numbering: none, $ x=2 $)')
+    expect(result.warnings).toEqual([])
+  })
+
+  it('separates adjacent math symbols and preserves indexed roots', async () => {
+    const result = await convertLatexToTypst(String.raw`$\alpha\beta x + \sqrt[3]{y}$`)
+    expect(result.typst).toContain('alpha beta x')
+    expect(result.typst).toContain('root(3, y)')
+  })
+
+  it('escapes quotes in math text and warns about unknown math commands', async () => {
+    const result = await convertLatexToTypst(String.raw`$\text{say "hello"} + \unknown$`)
+    expect(result.typst).toContain(String.raw`"say \"hello\""`)
+    expect(result.typst).toContain('op("unknown")')
+    expect(result.warnings.some((warning) => warning.construct === '\\unknown')).toBe(true)
+  })
+
+  it('converts matrix cells in math mode', async () => {
+    const result = await convertLatexToTypst(String.raw`$\begin{pmatrix}a & \frac{b}{c}\\d & e\end{pmatrix}$`)
+    expect(result.typst).toContain('mat(delim: "(", a, frac(b, c); d, e)')
+    expect(result.warnings).toEqual([])
+  })
+
+  it('counts repeated table column specs independently of optional placement', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{tabular}[t]{*{2}{l}p{3cm}}A & B & C\end{tabular}`)
+    expect(result.typst).toContain('columns: 3,')
+  })
+
+  it('does not use tabular star width as the column specification', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{tabular*}{10cm}[t]{lc}A & B\end{tabular*}`)
+    expect(result.typst).toContain('columns: 2,')
+  })
+
+  it('keeps escaped ampersands and math alignment markers inside table cells', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{tabular}{ll}A \& B & $\begin{pmatrix}1 & 2\end{pmatrix}$\\C & D\end{tabular}`)
+    expect(result.typst).toContain('[A & B], [$mat(delim: "(", 1, 2)$]')
+    expect(result.typst).toContain('[C], [D]')
+  })
+
+  it('retains every image and text in a figure and resolves their paths', async () => {
+    const result = await convertLatexToTypst(String.raw`
+\begin{figure}
+\includegraphics{first.png}
+Comparison
+\includegraphics{second.png}
+\caption{A $\frac{x}{y}$ comparison}
+\label{fig:both}
+\end{figure}`, { resolvePath: (path) => `../${path}` })
+    expect(result.typst).toContain('#image("../first.png")')
+    expect(result.typst).toContain('#image("../second.png")')
+    expect(result.typst).toContain('Comparison')
+    expect(result.typst).toContain('caption: [A $frac(x, y)$ comparison]')
+    expect(result.typst).toContain('<fig:both>')
+  })
+
+  it('escapes image filenames inside a figure', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{figure}\includegraphics{a"b.png}\end{figure}`)
+    expect(result.typst).toContain(String.raw`image("a\"b.png")`)
+  })
+
+  it('indents nested lists under the parent item', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{itemize}\item Parent\begin{itemize}\item Child\end{itemize}\item Sibling\end{itemize}`)
+    expect(result.typst).toMatch(/- Parent\s*\n {2}- Child/)
+    expect(result.typst).toContain('\n- Sibling')
+  })
+
+  it('retains absorbed description item bodies and spaces', async () => {
+    const result = await convertLatexToTypst(String.raw`\begin{description}\item[Term] A definition with several words.\end{description}`)
+    expect(result.typst).toContain('/ Term: ')
+    expect(result.typst).toContain('A definition with several words.')
+  })
+
+  it('uses full bibliography output for wildcard nocite', async () => {
+    const result = await convertLatexToTypst(String.raw`\nocite{*}\bibliography{refs}`)
+    expect(result.typst).toContain('#bibliography("refs.bib", full: true)')
+  })
+
+  it('uses a hidden citation to retain individual nocite entries', async () => {
+    const result = await convertLatexToTypst(String.raw`\nocite{doe2020}\bibliography{refs}`)
+    expect(result.typst).toContain('#cite(label("doe2020"), form: none)')
+  })
+
+  it('keeps formatting out of plain project title metadata', async () => {
+    const result = await convertLatexToTypst(String.raw`\title{A \textbf{Bold} Paper}\begin{document}\maketitle\end{document}`)
+    expect(result.metadata.title).toBe('A Bold Paper')
+    expect(result.typst).toContain('title: [A *Bold* Paper]')
+  })
+
+  it('preserves literal backticks in inline code', async () => {
+    const result = await convertLatexToTypst('\\texttt{foo`bar} and \\verb|baz`qux|')
+    expect(result.typst).toContain('#raw("foo`bar")')
+    expect(result.typst).toContain('#raw("baz`qux")')
+  })
+
+  it('uses a longer verbatim fence when source contains triple backticks', async () => {
+    const result = await convertLatexToTypst('\\begin{verbatim}\n```sample```\n\\end{verbatim}')
+    expect(result.typst).toContain('````\n')
+    expect(result.typst).toContain('```sample```')
+  })
+})

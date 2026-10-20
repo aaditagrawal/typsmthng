@@ -414,7 +414,13 @@ export function TypstEditor() {
         annotations: [Transaction.addToHistory.of(false)],
       })
 
-      forceCompile(file.content, currentFilePath)
+    }
+
+    // Project selection clears the preview even when its main document matches
+    // the previous buffer, as happens when importing an exported project.
+    if (switchingFile || currentContent !== file.content) {
+      useEditorStore.setState({ source: file.content, isDirty: false, saveStatus: 'saved' })
+      void forceCompile(file.content, currentFilePath)
     }
 
     // Restore this file's last cursor/scroll position, clamped to the doc.

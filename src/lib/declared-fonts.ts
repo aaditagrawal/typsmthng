@@ -181,7 +181,7 @@ export function extractTypstFontFamilies(
 
   for (const content of contents) {
     FONT_CONFIG_REGEX.lastIndex = 0
-    let fontConfigMatch: RegExpExecArray | null = null
+    let fontConfigMatch: RegExpExecArray | null
     while ((fontConfigMatch = FONT_CONFIG_REGEX.exec(content)) !== null) {
       const start = fontConfigMatch.index + fontConfigMatch[0].length
       for (const family of extractFontFamiliesFromExpression(content, start)) {
@@ -279,7 +279,7 @@ function extractGoogleFontUrls(css: string): string[] {
   const urls = new Set<string>()
   GOOGLE_FONT_URL_REGEX.lastIndex = 0
 
-  let match: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
   while ((match = GOOGLE_FONT_URL_REGEX.exec(css)) !== null) {
     const rawUrl = match[1]?.trim().replace(/^['"]|['"]$/g, '')
     if (rawUrl) {

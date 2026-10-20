@@ -8,7 +8,7 @@ import {
 } from '@/stores/project-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { isKnownTextPath, isLatexPath, shouldTreatUploadAsText } from '@/lib/file-classification'
-import { convertLatexToTypst, type ConversionResult, type ConversionWarning } from '@/lib/latex-converter'
+import { convertLatexToTypst, type ConversionOptions, type ConversionResult, type ConversionWarning } from '@/lib/latex-converter'
 import { downloadBlob } from '@/lib/download'
 import { basename, dirname } from '@/lib/paths'
 
@@ -31,13 +31,15 @@ export interface ProjectImportResult {
 interface ZipImportEntry {
   path: string
   data: Uint8Array
+  text?: boolean
 }
 
-interface BuiltProjectFiles {
+export interface BuiltProjectFiles {
   projectFiles: ProjectFile[]
   texFilesConverted: number
   warnings: ConversionWarning[]
   metadata: ConversionResult['metadata']
+  mainFile: string | null
 }
 
 const PREFERRED_MAIN_NAME = /\/(main|paper|thesis|article|report)\.typ$/i
@@ -46,11 +48,13 @@ const PROJECT_MANIFEST_FORMAT = 'typsmthng-project'
 const PROJECT_MANIFEST_VERSION = 1
 const PRESERVED_MANIFEST_PATH = /^\.typsmthng\/project\.user(?:-\d+)?\.json$/
 
-function projectManifestBytes(mainFile: string, preservedManifestPath?: string): Uint8Array {
+function projectManifestBytes(mainFile: string, projectName: string, projectFiles: ProjectFile[], preservedManifestPath?: string): Uint8Array {
   return encodeTextForZip(JSON.stringify({
     format: PROJECT_MANIFEST_FORMAT,
     version: PROJECT_MANIFEST_VERSION,
     mainFile,
+    projectName,
+    fileTypes: Object.fromEntries(projectFiles.map((file) => [file.path, file.isBinary ? 'binary' : 'text'])),
     ...(preservedManifestPath ? { preservedManifestPath } : {}),
   }, null, 2))
 }
@@ -58,6 +62,8 @@ function projectManifestBytes(mainFile: string, preservedManifestPath?: string):
 function addProjectManifest(
   files: Record<string, Uint8Array>,
   mainFile: string,
+  projectName: string,
+  projectFiles: ProjectFile[],
   folderPrefix = '',
 ): void {
   const prefix = folderPrefix ? `${folderPrefix}/` : ''
@@ -76,12 +82,13 @@ function addProjectManifest(
     files[`${prefix}${preservedManifestPath}`] = files[manifestZipPath]
   }
 
-  files[manifestZipPath] = projectManifestBytes(mainFile, preservedManifestPath)
+  files[manifestZipPath] = projectManifestBytes(mainFile, projectName, projectFiles, preservedManifestPath)
 }
 
 function takeManifestMainFile(entries: ZipImportEntry[]): {
   entries: ZipImportEntry[]
   manifestMainFile: string | null
+  projectName?: string
 } {
   const manifest = entries.find((entry) => entry.path === PROJECT_MANIFEST_PATH)
   if (!manifest) return { entries, manifestMainFile: null }
@@ -89,25 +96,27 @@ function takeManifestMainFile(entries: ZipImportEntry[]): {
   try {
     const value: unknown = JSON.parse(strFromU8(manifest.data))
     if (!value || typeof value !== 'object') return { entries, manifestMainFile: null }
-    const { format, version, mainFile, preservedManifestPath } = value as {
+    const { format, version, mainFile, preservedManifestPath, projectName, fileTypes } = value as {
       format?: unknown
       version?: unknown
       mainFile?: unknown
       preservedManifestPath?: unknown
+      projectName?: unknown
+      fileTypes?: unknown
     }
     if (
       format !== PROJECT_MANIFEST_FORMAT
       || version !== PROJECT_MANIFEST_VERSION
       || typeof mainFile !== 'string'
-      || !mainFile.startsWith('/')
+      || (mainFile !== '' && !mainFile.startsWith('/'))
     ) {
       return { entries, manifestMainFile: null }
     }
     const normalized = normalizeZipPath(mainFile)
     if (
-      !normalized
+      mainFile !== '' && (!normalized
       || `/${normalized}` !== mainFile
-      || !entries.some((entry) => entry.path === normalized)
+      || !entries.some((entry) => entry.path === normalized))
     ) {
       return { entries, manifestMainFile: null }
     }
@@ -120,14 +129,33 @@ function takeManifestMainFile(entries: ZipImportEntry[]): {
         sourceEntries.push({ path: PROJECT_MANIFEST_PATH, data: preservedEntry.data })
       }
     }
-    return { entries: sourceEntries, manifestMainFile: mainFile }
+    if (fileTypes && typeof fileTypes === 'object') {
+      const types = new Map(Object.entries(fileTypes))
+      sourceEntries = sourceEntries.map((entry) => ({
+        ...entry,
+        ...(types.get(`/${entry.path}`) === 'text' ? { text: true } : {}),
+        ...(types.get(`/${entry.path}`) === 'binary' ? { text: false } : {}),
+      }))
+      for (const [path, type] of types) {
+        const normalizedPath = normalizeZipPath(path)
+        if (type === 'text' && path === `/${normalizedPath}` && basename(path) === '.folder'
+          && !sourceEntries.some((entry) => entry.path === normalizedPath)) {
+          sourceEntries.push({ path: normalizedPath, data: new Uint8Array(), text: true })
+        }
+      }
+    }
+    return {
+      entries: sourceEntries,
+      manifestMainFile: mainFile,
+      ...(typeof projectName === 'string' && projectName.trim() ? { projectName } : {}),
+    }
   } catch {
     return { entries, manifestMainFile: null }
   }
 }
 
 function resolveImportedMainFile(projectFiles: ProjectFile[]): string {
-  const typFiles = projectFiles.filter((f) => f.path.endsWith('.typ'))
+  const typFiles = projectFiles.filter((f) => !f.isBinary && /\.typ$/i.test(f.path))
   const rootTyp = typFiles.filter((f) => !f.path.slice(1).includes('/'))
 
   return typFiles.find((f) => f.path === '/main.typ')?.path
@@ -141,10 +169,13 @@ function resolveImportedMainFile(projectFiles: ProjectFile[]): string {
 }
 
 function shouldSkipZipPath(path: string): boolean {
-  return path.endsWith('/') || path.includes('__MACOSX') || path.includes('.DS_Store')
+  const normalized = path.replace(/\\/g, '/')
+  return normalized.endsWith('/') || normalized.split('/').some((part) => part === '__MACOSX' || part === '.DS_Store')
 }
 
 function normalizeZipPath(path: string): string {
+  if (Array.from(path).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
+    || /^[A-Za-z]:/.test(path) || path.startsWith('\\\\')) return ''
   const normalized = path.replace(/\\/g, '/').replace(/^\/+/, '')
   const parts = normalized.split('/').filter((part) => part.length > 0 && part !== '.')
   // Reject zip-slip / traversal entries before they become project paths.
@@ -157,7 +188,7 @@ function toProjectPath(path: string): string {
 }
 
 function latexFallbackContent(source: string): string {
-  return `// LaTeX conversion failed for this file.\n// Original .tex content preserved below:\n\n/* ${source.replace(/\*\//g, '* /')} */\n`
+  return `// LaTeX conversion failed for this file.\n// Original .tex content preserved below:\n\n/* ${source.replace(/\/\*/g, '/ *').replace(/\*\//g, '* /')} */\n`
 }
 
 /** True when a zip tree looks like a single Typst or LaTeX project root. */
@@ -223,9 +254,10 @@ export function normalizeSingleProjectZipEntries(
 async function convertLatexSource(
   source: string,
   sourceLabel: string,
+  options?: ConversionOptions,
 ): Promise<{ content: string; warnings: ConversionWarning[]; metadata: ConversionResult['metadata'] | null }> {
   try {
-    const result = await convertLatexToTypst(source)
+    const result = await convertLatexToTypst(source, options)
     return {
       content: result.typst,
       warnings: result.warnings,
@@ -261,7 +293,7 @@ function mergeConversionMetadata(
   }
 }
 
-function dedupeProjectPath(path: string, used: Set<string>): string {
+function dedupeProjectPath(path: string, used: Set<string>, reserved = new Set<string>()): string {
   if (!used.has(path)) {
     used.add(path)
     return path
@@ -277,7 +309,7 @@ function dedupeProjectPath(path: string, used: Set<string>): string {
 
   let suffix = 2
   let candidate = `${prefix}${stem}-${suffix}${ext}`
-  while (used.has(candidate)) {
+  while (used.has(candidate) || reserved.has(candidate)) {
     suffix++
     candidate = `${prefix}${stem}-${suffix}${ext}`
   }
@@ -285,59 +317,54 @@ function dedupeProjectPath(path: string, used: Set<string>): string {
   return candidate
 }
 
-/** Rewrite Typst path literals after import path collisions rename files. */
-function rewriteTypstPathRefs(content: string, renames: Map<string, string>): string {
-  if (renames.size === 0) return content
-
-  const resolveRename = (rawPath: string): string | null => {
-    const absolute = rawPath.startsWith('/') ? rawPath : `/${rawPath}`
-    const renamed = renames.get(absolute) ?? renames.get(rawPath)
-    if (!renamed) return null
-    return rawPath.startsWith('/') ? renamed : renamed.replace(/^\//, '')
+/** Resolve references inside the virtual project, without escaping its root. */
+function resolveProjectReference(directory: string, reference: string): string | null {
+  const segments = (reference.startsWith('/') ? reference : `${directory}/${reference}`).split('/')
+  const normalized: string[] = []
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') {
+      if (normalized.length === 0) return null
+      normalized.pop()
+    } else {
+      normalized.push(segment)
+    }
   }
-
-  let next = content.replace(
-    /#include\s+"([^"]+)"/g,
-    (match, path: string) => {
-      const renamed = resolveRename(path)
-      return renamed ? `#include "${renamed}"` : match
-    },
-  )
-  next = next.replace(
-    /#import\s+"([^"]+)"/g,
-    (match, path: string) => {
-      const renamed = resolveRename(path)
-      return renamed ? `#import "${renamed}"` : match
-    },
-  )
-  next = next.replace(
-    /#image\("([^"]+)"/g,
-    (match, path: string) => {
-      const renamed = resolveRename(path)
-      return renamed ? `#image("${renamed}"` : match
-    },
-  )
-  next = next.replace(
-    /#bibliography\("([^"]+)"\)/g,
-    (match, path: string) => {
-      const renamed = resolveRename(path)
-      return renamed ? `#bibliography("${renamed}")` : match
-    },
-  )
-  return next
+  return `/${normalized.join('/')}`
 }
 
-function applyPathRenames(projectFiles: ProjectFile[], renames: Map<string, string>): void {
-  if (renames.size === 0) return
-  for (const file of projectFiles) {
-    if (file.isBinary) continue
-    file.content = rewriteTypstPathRefs(file.content, renames)
+function relativeProjectReference(sourcePath: string, targetPath: string): string {
+  const from = dirname(sourcePath).split('/').filter(Boolean)
+  const to = targetPath.split('/').filter(Boolean)
+  while (from.length && to.length && from[0] === to[0]) {
+    from.shift()
+    to.shift()
   }
+  return [...from.map(() => '..'), ...to].join('/')
+}
+
+/** Native Typst references retain their original target when that target moves. */
+function rewriteNativeTypstPathRefs(content: string, sourcePath: string, outputPath: string, targets: Map<string, string>): string {
+  return content.replace(
+    /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|(#?\b(?:include|import)\s+|#?\b(?:image|bibliography)\(\s*\(?\s*)("(?:\\.|[^"\\])*"(?:\s*,\s*"(?:\\.|[^"\\])*")*)/g,
+    (match, prefix: string | undefined, paths: string | undefined) => {
+      if (!prefix || !paths) return match
+      return prefix + paths.replace(/"(?:\\.|[^"\\])*"/g, (literal) => {
+        let reference: string
+        try { reference = JSON.parse(literal) } catch { return literal }
+        const original = resolveProjectReference(dirname(sourcePath), reference)
+        const target = original && targets.get(original)
+        if (!target || target === original) return literal
+        const replacement = reference.startsWith('/') ? target : relativeProjectReference(outputPath, target)
+        return JSON.stringify(replacement)
+      })
+    },
+  )
 }
 
 interface DecodedZipText {
   content: string
-  encoding: 'utf-8' | 'windows-1252'
+  encoding: 'utf-8' | 'windows-1252' | 'utf-16le' | 'utf-16be'
 }
 
 /**
@@ -345,6 +372,14 @@ interface DecodedZipText {
  * legacy-encoded files with U+FFFD. Fall back to Windows-1252, then binary.
  */
 function decodeZipText(data: Uint8Array): DecodedZipText | null {
+  if ((data[0] === 0xff && data[1] === 0xfe) || (data[0] === 0xfe && data[1] === 0xff)) {
+    const encoding = data[0] === 0xff ? 'utf-16le' : 'utf-16be'
+    try {
+      return { content: new TextDecoder(encoding, { fatal: true }).decode(data), encoding }
+    } catch {
+      return null
+    }
+  }
   try {
     return {
       content: new TextDecoder('utf-8', { fatal: true }).decode(data),
@@ -365,98 +400,149 @@ function decodeZipText(data: Uint8Array): DecodedZipText | null {
 
 async function buildProjectFilesFromZipEntries(
   entries: ZipImportEntry[],
-  options: { convertLatex: boolean },
+  options: { convertLatex: boolean; existingPaths?: string[] },
 ): Promise<BuiltProjectFiles> {
   const projectFiles: ProjectFile[] = []
   const warnings: ConversionWarning[] = []
-  const usedPaths = new Set<string>()
-  const renames = new Map<string, string>()
   let texFilesConverted = 0
   let metadata: ConversionResult['metadata'] = { packages: [] }
+  const decodedEntries = entries.filter((entry) => !options.convertLatex || basename(entry.path) !== '.folder').map((entry) => ({
+    ...entry,
+    decoded: (entry.text ?? isKnownTextPath(entry.path)) ? decodeZipText(entry.data) : null,
+  }))
+  const texEntries = decodedEntries.filter((entry) => options.convertLatex && entry.decoded && isLatexPath(entry.path))
+  const documentEntries = texEntries.filter((entry) => /\\(?:documentclass\b|begin\s*\{document\})/.test(
+    entry.decoded!.content.replace(/(?<!\\)%[^\r\n]*/g, ''),
+  ))
+  const mainSource = resolveImportedMainFile((documentEntries.length ? documentEntries : texEntries).map((entry) => ({
+    path: toProjectPath(entry.path).replace(/\.tex$/i, '.typ'), content: '', isBinary: false, lastModified: 0,
+  })))
+  const mainEntry = texEntries.find((entry) => toProjectPath(entry.path).replace(/\.tex$/i, '.typ') === mainSource)
+  const mainDirectory = mainEntry ? dirname(toProjectPath(mainEntry.path)) : ''
+  const usedPaths = new Set(options.existingPaths ?? [])
+  const reserved = new Set(decodedEntries.flatMap((entry) => [
+    toProjectPath(entry.path),
+    ...(texEntries.includes(entry) ? [toProjectPath(entry.path).replace(/\.tex$/i, '.typ')] : []),
+  ]))
+  const convertedTargets = new Map<string, string>()
+  const nativeTargets = new Map<string, string>()
+  const bibliographyAliases = new Map<string, string>()
+  const convertedOutput = new Map<typeof decodedEntries[number], string>()
+  const originalOutput = new Map<typeof decodedEntries[number], string>()
 
-  // Prefer converted .tex → .typ for the canonical path when both exist.
-  const orderedEntries = [...entries].sort((a, b) => {
-    const aTex = options.convertLatex && isLatexPath(a.path) ? 0 : 1
-    const bTex = options.convertLatex && isLatexPath(b.path) ? 0 : 1
-    return aTex - bTex
-  })
+  // Plan every output before converting so references can target renamed files.
+  for (const entry of texEntries) {
+    const sourcePath = toProjectPath(entry.path)
+    const desired = sourcePath.replace(/\.tex$/i, '.typ')
+    const output = dedupeProjectPath(desired, usedPaths, reserved)
+    convertedOutput.set(entry, output)
+    if (!convertedTargets.has(sourcePath)) convertedTargets.set(sourcePath, output)
+    if (output !== desired) warnings.push({ message: `Renamed colliding import path ${desired} → ${output}`, construct: entry.path })
+  }
+  for (const entry of decodedEntries) {
+    const sourcePath = toProjectPath(entry.path)
+    const output = dedupeProjectPath(sourcePath, usedPaths, reserved)
+    originalOutput.set(entry, output)
+    if (!nativeTargets.has(sourcePath)) nativeTargets.set(sourcePath, output)
+    if (output !== sourcePath) warnings.push({ message: `Renamed colliding import path ${sourcePath} → ${output}`, construct: entry.path })
+  }
+  for (const path of options.existingPaths ?? []) {
+    if (!nativeTargets.has(path)) nativeTargets.set(path, path)
+  }
 
-  for (const { path, data } of orderedEntries) {
-    if (path.endsWith('.folder')) continue
-
-    const fullPath = toProjectPath(path)
-    const decoded = isKnownTextPath(path) ? decodeZipText(data) : null
-
-    if (decoded) {
-      if (decoded.encoding === 'windows-1252') {
-        warnings.push({
-          message: `${fullPath} is not valid UTF-8; decoded it as Windows-1252.`,
-          construct: path,
-        })
-      }
-      let content = decoded.content
-      let filePath = fullPath
-
-      if (options.convertLatex && isLatexPath(path)) {
-        const converted = await convertLatexSource(content, path)
-        content = converted.content
-        filePath = fullPath.replace(/\.tex$/i, '.typ')
-        warnings.push(...converted.warnings)
-        metadata = mergeConversionMetadata(metadata, converted.metadata)
-        texFilesConverted++
-      }
-
-      const uniquePath = dedupeProjectPath(filePath, usedPaths)
-      if (uniquePath !== filePath) {
-        warnings.push({
-          message: `Renamed colliding import path ${filePath} → ${uniquePath}`,
-          construct: path,
-        })
-        // If a native .typ lost to a converted .tex already at filePath, keep
-        // refs on filePath (the winner). Otherwise retarget refs to uniquePath.
-        const displacedByConvertedTex = options.convertLatex
-          && !isLatexPath(path)
-          && filePath.endsWith('.typ')
-          && projectFiles.some((f) => f.path === filePath)
-        if (!displacedByConvertedTex) {
-          renames.set(filePath, uniquePath)
+  const reachableSources = new Set<typeof decodedEntries[number]>()
+  const visitSource = (entry: typeof decodedEntries[number]): void => {
+    if (reachableSources.has(entry)) return
+    reachableSources.add(entry)
+    const source = entry.decoded!.content.replace(/(?<!\\)%[^\r\n]*/g, '')
+    for (const match of source.matchAll(/\\(?:input|include)\s*\{([^}]+)\}/g)) {
+      const reference = match[1].trim()
+      const filename = /\.[^/]+$/.test(reference) ? reference : `${reference}.tex`
+      const target = [mainDirectory, dirname(toProjectPath(entry.path))]
+        .map((directory) => resolveProjectReference(directory, filename))
+        .map((path) => texEntries.find((candidate) => toProjectPath(candidate.path) === path))
+        .find((candidate) => candidate !== undefined)
+      if (target) visitSource(target)
+    }
+  }
+  if (mainEntry) visitSource(mainEntry)
+  const hasManualBibliography = [...reachableSources].some((entry) => /\\begin\s*\{thebibliography\}/.test(
+    entry.decoded!.content.replace(/(?<!\\)%[^\r\n]*/g, ''),
+  ))
+  // Merge the chosen document's metadata last so auxiliary documents do not rename it.
+  const orderedEntries = [...decodedEntries.filter((entry) => entry !== mainEntry), ...(mainEntry ? [mainEntry] : [])]
+  for (const entry of orderedEntries) {
+    const sourcePath = toProjectPath(entry.path)
+    const originalPath = originalOutput.get(entry)!
+    if (entry.decoded?.encoding === 'windows-1252') {
+      warnings.push({ message: `${sourcePath} is not valid UTF-8; decoded it as Windows-1252.`, construct: entry.path })
+    }
+    const outputPath = convertedOutput.get(entry)
+    if (outputPath && entry.decoded) {
+      const resolvePath: NonNullable<ConversionOptions['resolvePath']> = (reference, kind) => {
+        const variants = kind === 'include'
+          ? /\.[^/]+$/.test(reference) ? [reference] : [`${reference}.tex`, reference]
+          : kind === 'bibliography' && !/\.[^/]+$/.test(reference)
+            ? [`${reference}.bib`, reference]
+          : kind === 'image' && !/\.[^/]+$/.test(reference)
+            ? [reference, ...['.png', '.jpg', '.jpeg', '.svg', '.pdf', '.webp'].map((extension) => `${reference}${extension}`)]
+            : [reference]
+        // TeX resolves paths from the compilation directory, even in nested inputs.
+        for (const directory of [mainDirectory, dirname(sourcePath)]) {
+          for (const variant of variants) {
+            const original = resolveProjectReference(directory, variant)
+            if (!original) continue
+            let target = kind === 'include'
+              ? convertedTargets.get(original) ?? nativeTargets.get(original)
+              : nativeTargets.get(original)
+            if (target && kind === 'bibliography' && /\.(bibtex|bib)$/i.test(target) && !target.endsWith('.bib')) {
+              const bibliography = decodedEntries.find((candidate) => originalOutput.get(candidate) === target)
+              if (bibliography?.decoded) {
+                let alias = bibliographyAliases.get(target)
+                if (!alias) {
+                  alias = dedupeProjectPath(target.replace(/\.(bibtex|bib)$/i, '.bib'), usedPaths, reserved)
+                  bibliographyAliases.set(target, alias)
+                  projectFiles.push({ path: alias, content: bibliography.decoded.content, isBinary: false, lastModified: Date.now() })
+                }
+                target = alias
+              }
+            }
+            if (target) return reference.startsWith('/') ? target : relativeProjectReference(outputPath, target)
+          }
         }
+        warnings.push({ message: `Could not find ${kind} file "${reference}" referenced by ${sourcePath}.`, construct: entry.path })
+        return reference
       }
-
+      const converted = await convertLatexSource(entry.decoded.content, entry.path, {
+        resolvePath,
+        ...(reachableSources.has(entry) ? { hasManualBibliography } : {}),
+      })
+      projectFiles.push({ path: outputPath, content: converted.content, isBinary: false, lastModified: Date.now() })
+      warnings.push(...converted.warnings)
+      metadata = mergeConversionMetadata(metadata, converted.metadata)
+      texFilesConverted++
+    }
+    if (entry.decoded) {
       projectFiles.push({
-        path: uniquePath,
-        content,
+        path: originalPath,
+        content: /\.typ$/i.test(entry.path)
+          ? rewriteNativeTypstPathRefs(entry.decoded.content, sourcePath, originalPath, nativeTargets)
+          : entry.decoded.content,
         isBinary: false,
         lastModified: Date.now(),
       })
     } else {
-      if (isKnownTextPath(path)) {
-        warnings.push({
-          message: `${fullPath} could not be decoded as text (invalid UTF-8 and Windows-1252); kept as binary.`,
-          construct: path,
-        })
+      if (entry.text ?? isKnownTextPath(entry.path)) {
+        warnings.push({ message: `${sourcePath} could not be decoded as text; preserved its original bytes as binary.`, construct: entry.path })
       }
-      const uniquePath = dedupeProjectPath(fullPath, usedPaths)
-      if (uniquePath !== fullPath) {
-        renames.set(fullPath, uniquePath)
-        warnings.push({
-          message: `Renamed colliding import path ${fullPath} → ${uniquePath}`,
-          construct: path,
-        })
-      }
-      projectFiles.push({
-        path: uniquePath,
-        content: '',
-        isBinary: true,
-        binaryData: data,
-        lastModified: Date.now(),
-      })
+      projectFiles.push({ path: originalPath, content: '', isBinary: true, binaryData: entry.data, lastModified: Date.now() })
     }
   }
 
-  applyPathRenames(projectFiles, renames)
-
-  return { projectFiles, texFilesConverted, warnings, metadata }
+  return {
+    projectFiles, texFilesConverted, warnings, metadata,
+    mainFile: mainEntry ? convertedTargets.get(toProjectPath(mainEntry.path)) ?? null : null,
+  }
 }
 
 async function createImportedProject(
@@ -465,7 +551,7 @@ async function createImportedProject(
   options?: { select?: boolean },
   manifestMainFile?: string | null,
 ): Promise<CreateProjectResult> {
-  const validManifestMainFile = manifestMainFile
+  const validManifestMainFile = manifestMainFile === '' ? '' : manifestMainFile
     && projectFiles.some((file) => file.path === manifestMainFile && !file.isBinary)
     ? manifestMainFile
     : null
@@ -476,13 +562,19 @@ async function createImportedProject(
       isBinary: file.isBinary,
       binaryData: file.binaryData,
     })),
-    mainFile: validManifestMainFile || resolveImportedMainFile(projectFiles),
+    mainFile: validManifestMainFile ?? resolveImportedMainFile(projectFiles),
   }
 
   if (options) {
     return useProjectStore.getState().createProject(projectName, scaffold, options)
   }
   return useProjectStore.getState().createProject(projectName, scaffold)
+}
+
+function assertImportedProjectPersisted(result: CreateProjectResult): void {
+  if (result.persisted) return
+  const reason = isQuotaExceededError(result.persistError) ? ' Browser storage is full.' : ''
+  throw new Error(`The imported project could not be saved.${reason} Export a backup before closing this tab.`)
 }
 
 /**
@@ -541,12 +633,12 @@ export async function exportProject(): Promise<void> {
   const project = useProjectStore.getState().getCurrentProject()
   if (!project) return
 
-  const files: Record<string, Uint8Array> = {}
+  const files: Record<string, Uint8Array> = Object.create(null)
   let skippedMissingBinary = 0
 
   for (const file of project.files) {
     const zipPath = file.path.startsWith('/') ? file.path.slice(1) : file.path
-    if (zipPath.endsWith('.folder')) continue
+    if (basename(zipPath) === '.folder') continue
 
     if (file.isBinary) {
       if (!file.binaryData) {
@@ -559,7 +651,7 @@ export async function exportProject(): Promise<void> {
       files[zipPath] = encodeTextForZip(file.content)
     }
   }
-  addProjectManifest(files, project.mainFile)
+  addProjectManifest(files, project.mainFile, project.name, project.files)
 
   let zipped: Uint8Array
   try {
@@ -583,7 +675,7 @@ export async function exportAllProjects(): Promise<void> {
   const projects = useProjectStore.getState().projects
   if (projects.length === 0) return
 
-  const files: Record<string, Uint8Array> = {}
+  const files: Record<string, Uint8Array> = Object.create(null)
   const folderNames = uniqueExportFolderNames(projects.map((project) => project.name))
   let skippedMissingBinary = 0
 
@@ -592,7 +684,7 @@ export async function exportAllProjects(): Promise<void> {
     const folderName = folderNames[i]
     for (const file of project.files) {
       const filePath = file.path.startsWith('/') ? file.path.slice(1) : file.path
-      if (filePath.endsWith('.folder')) continue
+      if (basename(filePath) === '.folder') continue
       const zipPath = `${folderName}/${filePath}`
       if (file.isBinary) {
         if (!file.binaryData) {
@@ -604,7 +696,7 @@ export async function exportAllProjects(): Promise<void> {
         files[zipPath] = encodeTextForZip(file.content)
       }
     }
-    addProjectManifest(files, project.mainFile, folderName)
+    addProjectManifest(files, project.mainFile, project.name, project.files, folderName)
   }
 
   let zipped: Uint8Array
@@ -662,14 +754,14 @@ export async function importAllProjects(file: File): Promise<number> {
 
   for (const [folderName, entries] of projectFolders) {
     const manifest = takeManifestMainFile(entries)
-    const { projectFiles } = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: true })
-    if (projectFiles.length === 0) continue
+    const { projectFiles, mainFile } = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: manifest.manifestMainFile === null })
+    if (projectFiles.length === 0 && manifest.manifestMainFile === null) continue
 
     const result = await createImportedProject(
-      folderName,
+      manifest.projectName || folderName,
       projectFiles,
       { select: false },
-      manifest.manifestMainFile,
+      manifest.manifestMainFile ?? mainFile,
     )
     if (result.persisted) {
       imported++
@@ -717,14 +809,15 @@ export async function importProject(file: File): Promise<ProjectImportResult | n
   const fallbackProjectName = file.name.replace(/\.zip$/i, '')
   const { projectName: folderName, entries } = normalizeSingleProjectZipEntries(unzipped, fallbackProjectName)
   const manifest = takeManifestMainFile(entries)
-  const built = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: true })
+  const built = await buildProjectFilesFromZipEntries(manifest.entries, { convertLatex: manifest.manifestMainFile === null })
 
-  if (built.projectFiles.length === 0) return null
+  if (built.projectFiles.length === 0 && manifest.manifestMainFile === null) return null
 
   // Toolbar/generic zip import keeps the archive/folder name. Dedicated LaTeX
   // importers may prefer \\title metadata instead.
-  const projectName = folderName
-  await createImportedProject(projectName, built.projectFiles, undefined, manifest.manifestMainFile)
+  const projectName = manifest.projectName || folderName
+  const created = await createImportedProject(projectName, built.projectFiles, undefined, manifest.manifestMainFile ?? built.mainFile)
+  assertImportedProjectPersisted(created)
 
   return {
     projectName,
@@ -770,114 +863,43 @@ function stripSharedRootFolder(relativePaths: string[]): string[] {
 export async function importLatexProject(
   files: Array<{ relativePath: string; file: File }>,
 ): Promise<LatexImportResult> {
-  const allWarnings: ConversionWarning[] = []
-  const projectFiles: ProjectFile[] = []
-  const usedPaths = new Set<string>()
-  const renames = new Map<string, string>()
-  let texCount = 0
-  let firstTexFileName: string | null = null
-  let lastMeta: ConversionResult['metadata'] = { packages: [] }
-
   const relativePaths = stripSharedRootFolder(files.map((entry) => entry.relativePath))
-  const indexed = files.map((entry, index) => ({
-    entry,
-    relativePath: relativePaths[index],
-    index,
-  }))
-  // Prefer converted .tex for canonical .typ paths when both exist.
-  indexed.sort((a, b) => {
-    const aTex = a.relativePath && isLatexPath(a.entry.file.name) ? 0 : 1
-    const bTex = b.relativePath && isLatexPath(b.entry.file.name) ? 0 : 1
-    return aTex - bTex
-  })
+  const built = await prepareUploadedFiles(files.map((entry, index) => ({ ...entry, relativePath: relativePaths[index] })))
+  if (built.projectFiles.length === 0) throw new Error('No files found to import')
+  if (built.texFilesConverted === 0) throw new Error('No .tex files found to convert')
 
-  for (const { entry, relativePath } of indexed) {
-    const { file } = entry
-    if (!relativePath) continue
-    const path = toProjectPath(relativePath)
-
-    if (isLatexPath(file.name)) {
-      const source = await file.text()
-      const desiredPath = path.replace(/\.tex$/i, '.typ')
-      const typPath = dedupeProjectPath(desiredPath, usedPaths)
-      if (typPath !== desiredPath) {
-        renames.set(desiredPath, typPath)
-        allWarnings.push({
-          message: `Renamed colliding import path ${desiredPath} → ${typPath}`,
-          construct: file.name,
-        })
-      }
-      const converted = await convertLatexSource(source, file.name)
-      projectFiles.push({
-        path: typPath,
-        content: converted.content,
-        isBinary: false,
-        lastModified: Date.now(),
-      })
-      allWarnings.push(...converted.warnings)
-      lastMeta = mergeConversionMetadata(lastMeta, converted.metadata)
-      texCount++
-      firstTexFileName ??= file.name
-    } else if (shouldTreatUploadAsText(file)) {
-      const content = await file.text()
-      const uniquePath = dedupeProjectPath(path, usedPaths)
-      if (uniquePath !== path) {
-        allWarnings.push({
-          message: `Renamed colliding import path ${path} → ${uniquePath}`,
-          construct: file.name,
-        })
-        const displacedByConvertedTex = path.endsWith('.typ')
-          && projectFiles.some((f) => f.path === path)
-        if (!displacedByConvertedTex) {
-          renames.set(path, uniquePath)
-        }
-      }
-      projectFiles.push({
-        path: uniquePath,
-        content,
-        isBinary: false,
-        lastModified: Date.now(),
-      })
-    } else {
-      const fileBuffer = await file.arrayBuffer()
-      const uniquePath = dedupeProjectPath(path, usedPaths)
-      if (uniquePath !== path) {
-        renames.set(path, uniquePath)
-        allWarnings.push({
-          message: `Renamed colliding import path ${path} → ${uniquePath}`,
-          construct: file.name,
-        })
-      }
-      projectFiles.push({
-        path: uniquePath,
-        content: '',
-        isBinary: true,
-        binaryData: new Uint8Array(fileBuffer),
-        lastModified: Date.now(),
-      })
-    }
-  }
-
-  if (projectFiles.length === 0) {
-    throw new Error('No files found to import')
-  }
-
-  applyPathRenames(projectFiles, renames)
-
-  const projectName = lastMeta.title
-    || (texCount === 1 && firstTexFileName
-      ? firstTexFileName.replace(/\.tex$/i, '')
-      : `LaTeX Import (${texCount} files)`)
-
-  await createImportedProject(projectName, projectFiles)
-
+  const sourceFile = relativePaths.find((path) => isLatexPath(path))
+  const projectName = built.metadata.title
+    || (built.texFilesConverted === 1 && sourceFile
+      ? basename(sourceFile).replace(/\.tex$/i, '')
+      : `LaTeX Import (${built.texFilesConverted} files)`)
+  const created = await createImportedProject(projectName, built.projectFiles, undefined, built.mainFile)
+  assertImportedProjectPersisted(created)
   return {
     projectName,
-    fileCount: projectFiles.length,
-    texFilesConverted: texCount,
-    warnings: allWarnings,
-    metadata: lastMeta,
+    fileCount: built.projectFiles.length,
+    texFilesConverted: built.texFilesConverted,
+    warnings: built.warnings,
+    metadata: built.metadata,
   }
+}
+
+/** Prepare a file upload without creating a project or replacing existing paths. */
+export async function prepareUploadedFiles(
+  files: Array<{ relativePath: string; file: File }>,
+  existingPaths: string[] = [],
+): Promise<BuiltProjectFiles> {
+  const entries: ZipImportEntry[] = []
+  for (const { relativePath, file } of files) {
+    const path = normalizeZipPath(relativePath)
+    if (!path || shouldSkipZipPath(path)) continue
+    const text = shouldTreatUploadAsText(file)
+    const data = typeof file.arrayBuffer === 'function'
+      ? new Uint8Array(await file.arrayBuffer())
+      : encodeTextForZip(await file.text())
+    entries.push({ path, data, text })
+  }
+  return buildProjectFilesFromZipEntries(entries, { convertLatex: true, existingPaths })
 }
 
 /** Import a LaTeX project from a .zip file containing .tex files. */
@@ -902,7 +924,8 @@ export async function importLatexZip(file: File): Promise<LatexImportResult> {
   }
 
   const projectName = built.metadata.title || folderName
-  await createImportedProject(projectName, built.projectFiles)
+  const created = await createImportedProject(projectName, built.projectFiles, undefined, built.mainFile)
+  assertImportedProjectPersisted(created)
 
   return {
     projectName,

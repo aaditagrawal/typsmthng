@@ -120,6 +120,7 @@ import {
   importProject,
   looksLikeImportableProject,
   normalizeSingleProjectZipEntries,
+  prepareUploadedFiles,
   uniqueExportFolderNames,
 } from '@/lib/project-io'
 
@@ -276,6 +277,7 @@ describe('project-io import classification', () => {
     const project = mocked.state.projects.find((p) => p.name === 'Paper')
     expect(project?.files.map((projectFile) => projectFile.path).sort()).toEqual([
       '/figs/note.txt',
+      '/main.tex',
       '/main.typ',
     ])
     expect(project?.files.find((f) => f.path === '/main.typ')?.content).toContain('Hello')
@@ -294,7 +296,9 @@ describe('project-io import classification', () => {
     expect(result.projectName).toBe('Thesis Title')
     const project = mocked.state.projects[0]
     expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.tex',
       '/chapters/one.typ',
+      '/main.tex',
       '/main.typ',
     ])
     expect(project.mainFile).toBe('/main.typ')
@@ -318,7 +322,7 @@ describe('project-io import classification', () => {
 
     const alpha = mocked.state.projects.find((p) => p.name === 'Alpha')
     const beta = mocked.state.projects.find((p) => p.name === 'Beta')
-    expect(alpha?.files.map((f) => f.path)).toEqual(['/main.typ'])
+    expect(alpha?.files.map((f) => f.path)).toEqual(['/main.typ', '/main.tex'])
     expect(alpha?.mainFile).toBe('/main.typ')
     expect(beta?.files.map((f) => f.path)).toEqual(['/main.typ'])
   })
@@ -333,6 +337,7 @@ describe('project-io import classification', () => {
     const project = mocked.state.projects[0]
     expect(project.name).toBe('Bundle')
     expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/Bundle/docs/notes.tex',
       '/Bundle/docs/notes.typ',
       '/Bundle/photos/readme.txt',
     ])
@@ -368,7 +373,7 @@ describe('project-io import classification', () => {
     ))).toBe(true)
   })
 
-  it('rewrites #import path literals after collision renames', async () => {
+  it('keeps ambiguous native references on the first canonical converted path', async () => {
     const zipped = zipSync({
       'one.tex': asciiBytes('\\section{First}'),
       'one.TEX': asciiBytes('\\section{Second}'),
@@ -379,9 +384,8 @@ describe('project-io import classification', () => {
     const project = mocked.state.projects[0]
     const byPath = Object.fromEntries(project.files.map((f) => [f.path, f.content]))
 
-    expect(Object.keys(byPath).sort()).toEqual(['/main.typ', '/one-2.typ', '/one.typ'])
-    expect(byPath['/main.typ']).toContain('#import "one-2.typ": *')
-    expect(byPath['/main.typ']).not.toContain('#import "one.typ"')
+    expect(Object.keys(byPath).sort()).toEqual(['/main.typ', '/one-2.typ', '/one.TEX', '/one.tex', '/one.typ'])
+    expect(byPath['/main.typ']).toContain('#import "one.typ": *')
   })
 
   it('counts only persisted projects in importAllProjects and alerts on failures', async () => {
@@ -519,7 +523,7 @@ describe('project-io export', () => {
 
     const result = await importProject(makeZipFileLike('Dup.zip', zipped))
     const project = mocked.state.projects[0]
-    expect(project.files.map((f) => f.path).sort()).toEqual(['/main-2.typ', '/main.typ'])
+    expect(project.files.map((f) => f.path).sort()).toEqual(['/main-2.typ', '/main.tex', '/main.typ'])
     expect(result?.warnings.some((w) => w.message.includes('colliding'))).toBe(true)
   })
 
@@ -534,7 +538,7 @@ describe('project-io export', () => {
     const result = await importProject(makeZipFileLike('PreferTex.zip', zipped))
     const project = mocked.state.projects[0]
     const byPath = Object.fromEntries(project.files.map((f) => [f.path, f.content]))
-    expect(Object.keys(byPath).sort()).toEqual(['/main.typ', '/shared-2.typ', '/shared.typ'])
+    expect(Object.keys(byPath).sort()).toEqual(['/main.tex', '/main.typ', '/shared-2.typ', '/shared.tex', '/shared.typ'])
     expect(byPath['/main.typ']).toContain('#include "shared.typ"')
     expect(byPath['/shared.typ']).toContain('Converted shared')
     expect(byPath['/shared-2.typ']).toContain('Native shared')
@@ -614,7 +618,9 @@ describe('project-io export', () => {
     await importLatexProject(files)
     const project = mocked.state.projects[0]
     expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.tex',
       '/chapters/one.typ',
+      '/main.tex',
       '/main.typ',
     ])
   })
@@ -635,7 +641,9 @@ describe('project-io export', () => {
     await importLatexProject(files)
     const project = mocked.state.projects[0]
     expect(project.files.map((f) => f.path).sort()).toEqual([
+      '/chapters/one.tex',
       '/chapters/one.typ',
+      '/main.tex',
       '/main.typ',
     ])
     expect(project.mainFile).toBe('/main.typ')
@@ -803,13 +811,13 @@ describe('project-io export', () => {
     expect(mocked.state.currentProjectId).toBeNull()
 
     const byName = Object.fromEntries(mocked.state.projects.map((p) => [p.name, p]))
-    expect(Object.keys(byName).sort()).toEqual(['A-2', 'A_B', 'A_B-2'])
-    expect(byName['A_B'].files.find((f) => f.path === '/img.png')?.binaryData).toEqual(imageBytes)
-    expect(byName['A_B-2'].mainFile).toBe('/paper.typ')
-    expect(byName['A_B-2'].files.find((file) => file.path === '/.typsmthng/project.json')?.content)
+    expect(Object.keys(byName).sort()).toEqual(['A-2', 'A/B', 'A_B'])
+    expect(byName['A/B'].files.find((f) => f.path === '/img.png')?.binaryData).toEqual(imageBytes)
+    expect(byName['A_B'].mainFile).toBe('/paper.typ')
+    expect(byName['A_B'].files.find((file) => file.path === '/.typsmthng/project.json')?.content)
       .toBe('{"keep":"me"}')
-    expect(byName['A-2'].files.map((f) => f.path)).toEqual(['/main.typ'])
-    expect(byName['A-2'].mainFile).toBe('/main.typ')
+    expect(byName['A-2'].files.map((f) => f.path)).toEqual(['/main.tex'])
+    expect(byName['A-2'].mainFile).toBe('/main.tex')
   })
 
   it('merges LaTeX metadata across files and keeps zip name for importProject', async () => {
@@ -877,5 +885,235 @@ describe('project-io export', () => {
     await expect(importAllProjects(makeZipFileLike('bad.zip', new Uint8Array([1, 2, 3])))).rejects.toThrow(
       'valid zip archive',
     )
+  })
+})
+
+describe('multifile import fidelity', () => {
+  beforeEach(() => {
+    mocked.state.projects = []
+    mocked.state.currentProjectId = null
+    mocked.state.currentFilePath = null
+    mocked.state.failPersistNames = []
+    mocked.createProject.mockClear()
+    vi.restoreAllMocks()
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:export')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  it('resolves nested TeX includes, bibliography and extensionless images from the document root', async () => {
+    const main = '\\documentclass{article}\n\\begin{document}\n\\input{chapters/intro}\n\\end{document}'
+    const intro = '\\section{Introduction}\n\\input{chapters/details}\n\\includegraphics{figures/chart}\n\\bibliography{refs/library}'
+    const image = new Uint8Array([137, 80, 78, 71])
+    const result = await importLatexZip(makeZipFileLike('Paper.zip', zipSync({
+      'Paper/main.tex': asciiBytes(main),
+      'Paper/chapters/intro.tex': asciiBytes(intro),
+      'Paper/chapters/details.tex': asciiBytes('Nested detail.'),
+      'Paper/figures/chart.png': image,
+      'Paper/refs/library.bib': asciiBytes('@article{key,title={Title},author={Author},year={2026}}'),
+    })))
+    const project = mocked.state.projects[0]
+    const content = project.files.find((file) => file.path === '/chapters/intro.typ')?.content
+    expect(content).toContain('#include "details.typ"')
+    expect(content).toContain('#image("../figures/chart.png")')
+    expect(content).toContain('#bibliography("../refs/library.bib")')
+    expect(project.files.find((file) => file.path === '/main.tex')?.content).toBe(main)
+    expect(project.files.find((file) => file.path === '/chapters/intro.tex')?.content).toBe(intro)
+    expect(project.files.find((file) => file.path === '/figures/chart.png')?.binaryData).toEqual(image)
+    expect(result.warnings).toEqual([])
+  })
+
+  it('chooses the document root before an alphabetically earlier helper and keeps its metadata', async () => {
+    const result = await importLatexZip(makeZipFileLike('Thesis.zip', zipSync({
+      'macros.tex': asciiBytes('\\title{Wrong auxiliary title}'),
+      'chapters/intro.tex': asciiBytes('Intro'),
+      'submission.tex': asciiBytes('\\documentclass{article}\\title{Actual title}\\begin{document}\\input{chapters/intro}\\end{document}'),
+    })))
+    expect(mocked.state.projects[0].mainFile).toBe('/submission.typ')
+    expect(result.projectName).toBe('Actual title')
+  })
+
+  it('distinguishes case-sensitive TeX references and reserves native collision suffixes', async () => {
+    await importProject(makeZipFileLike('Collision.zip', zipSync({
+      'one.tex': asciiBytes('First'),
+      'one.TEX': asciiBytes('Second'),
+      'one-2.typ': asciiBytes('Native suffix'),
+      'main.tex': asciiBytes('\\begin{document}\\input{one.tex}\\input{one.TEX}\\end{document}'),
+    })))
+    const project = mocked.state.projects[0]
+    const content = project.files.find((file) => file.path === '/main.typ')?.content
+    expect(content).toContain('#include "one.typ"')
+    expect(content).toContain('#include "one-3.typ"')
+    expect(project.files.find((file) => file.path === '/one-2.typ')?.content).toBe('Native suffix')
+    expect(project.files.find((file) => file.path === '/one-3.typ')?.content).toContain('Second')
+  })
+
+  it('retargets native Typst references to displaced native files without changing converted references', async () => {
+    await importProject(makeZipFileLike('Mixed.zip', zipSync({
+      'shared.tex': asciiBytes('Converted'),
+      'shared.typ': asciiBytes('Native'),
+      'chapters/native.typ': asciiBytes('#include "../shared.typ"'),
+      'main.tex': asciiBytes('\\begin{document}\\input{shared}\\end{document}'),
+    })))
+    const project = mocked.state.projects[0]
+    expect(project.files.find((file) => file.path === '/chapters/native.typ')?.content).toBe('#include "../shared-2.typ"')
+    expect(project.files.find((file) => file.path === '/main.typ')?.content).toContain('#include "shared.typ"')
+  })
+
+  it('warns about a missing dependency with the referring filename', async () => {
+    const result = await importLatexZip(makeZipFileLike('Missing.zip', zipSync({
+      'main.tex': asciiBytes('\\begin{document}\\input{absent}\\end{document}'),
+    })))
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ message: expect.stringContaining('"absent" referenced by /main.tex') }),
+    ]))
+  })
+
+  it('keeps converted edits, original sources and all file classifications through repeated exports', async () => {
+    await importProject(makeZipFileLike('Research.zip', zipSync({
+      'main.tex': asciiBytes('\\begin{document}Original\\end{document}'),
+      'library.bib': asciiBytes('@article{sample,title={Sample}}'),
+    })))
+    const project = mocked.state.projects[0]
+    project.files.find((file) => file.path === '/main.typ')!.content = '= Edited Typst'
+    project.files.push(
+      { path: '/LICENSE', content: 'License text', isBinary: false, lastModified: 1 },
+      { path: '/raw.txt', content: '', isBinary: true, binaryData: new Uint8Array([0, 255, 1]), lastModified: 1 },
+      { path: '/notes.folder', content: 'Real file', isBinary: false, lastModified: 1 },
+    )
+    for (let round = 0; round < 2; round++) {
+      vi.mocked(URL.createObjectURL).mockClear()
+      await exportProject()
+      const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+      mocked.state.projects = []
+      const imported = await importProject(makeZipFileLike('RenamedArchive.zip', new Uint8Array(await blob.arrayBuffer())))
+      const restored = mocked.state.projects[0]
+      expect(imported?.texFilesConverted).toBe(0)
+      expect(restored.name).toBe('Research')
+      expect(restored.files.find((file) => file.path === '/main.typ')?.content).toBe('= Edited Typst')
+      expect(restored.files.find((file) => file.path === '/main.tex')?.content).toContain('Original')
+      expect(restored.files.find((file) => file.path === '/LICENSE')).toMatchObject({ isBinary: false, content: 'License text' })
+      expect(restored.files.find((file) => file.path === '/raw.txt')?.binaryData).toEqual(new Uint8Array([0, 255, 1]))
+      expect(restored.files.find((file) => file.path === '/notes.folder')?.content).toBe('Real file')
+      expect(restored.files).toHaveLength(6)
+    }
+  })
+
+  it('decodes folder-picked legacy text and UTF-16 source with the same rules as ZIP imports', async () => {
+    const source = '\\begin{document}Hello\\end{document}'
+    const utf16 = new Uint8Array(2 + source.length * 2)
+    utf16.set([0xff, 0xfe])
+    for (let index = 0; index < source.length; index++) utf16[2 + index * 2] = source.charCodeAt(index)
+    const result = await importLatexProject([
+      { relativePath: 'main.tex', file: makeZipFileLike('main.tex', utf16) },
+      { relativePath: 'notes.txt', file: makeZipFileLike('notes.txt', new Uint8Array([0x63, 0x61, 0x66, 0xe9])) },
+    ])
+    expect(mocked.state.projects[0].files.find((file) => file.path === '/main.typ')?.content).toContain('Hello')
+    expect(mocked.state.projects[0].files.find((file) => file.path === '/notes.txt')?.content).toBe('café')
+    expect(result.warnings.some((warning) => warning.message.includes('Windows-1252'))).toBe(true)
+  })
+
+  it('preserves legitimate metadata-like names while rejecting unsafe paths', async () => {
+    await importProject(makeZipFileLike('Paths.zip', zipSync({
+      'main.typ': asciiBytes('Main'),
+      'notes.DS_Store.txt': asciiBytes('Keep me'),
+      'contains__MACOSX/data.txt': asciiBytes('Keep me too'),
+      '../escape.typ': asciiBytes('Unsafe'),
+      'C:/escape.typ': asciiBytes('Unsafe'),
+      'bad\u0000name.typ': asciiBytes('Unsafe'),
+      '__MACOSX/._main.typ': asciiBytes('Junk'),
+    })))
+    expect(mocked.state.projects[0].files.map((file) => file.path).sort()).toEqual([
+      '/contains__MACOSX/data.txt', '/main.typ', '/notes.DS_Store.txt',
+    ])
+  })
+
+  it('throws when a single imported project could not be saved', async () => {
+    mocked.state.failPersistNames = ['Unsaved']
+    await expect(importProject(makeZipFileLike('Unsaved.zip', zipSync({ 'main.typ': asciiBytes('Main') }))))
+      .rejects.toThrow('Browser storage is full')
+    await expect(importLatexZip(makeZipFileLike('Unsaved.zip', zipSync({ 'main.tex': asciiBytes('Text') }))))
+      .rejects.toThrow('could not be saved')
+  })
+
+  it('prepares uploads without overwriting existing files and retargets their includes', async () => {
+    const prepared = await prepareUploadedFiles([
+      { relativePath: 'main.tex', file: makeZipFileLike('main.tex', asciiBytes('\\begin{document}\\input{chapters/intro}\\end{document}')) },
+      { relativePath: 'chapters/intro.tex', file: makeZipFileLike('intro.tex', asciiBytes('Introduction')) },
+    ], ['/main.typ', '/main.tex', '/chapters/intro.typ'])
+    const paths = prepared.projectFiles.map((file) => file.path).sort()
+    expect(paths).toEqual(['/chapters/intro-2.typ', '/chapters/intro.tex', '/main-2.tex', '/main-2.typ'])
+    expect(prepared.projectFiles.find((file) => file.path === '/main-2.typ')?.content).toContain('#include "chapters/intro-2.typ"')
+    expect(mocked.createProject).not.toHaveBeenCalled()
+  })
+
+  it('round-trips empty projects and empty folders using native metadata', async () => {
+    mocked.state.projects = [
+      { id: 'empty', name: 'Empty', files: [], mainFile: '', createdAt: 1, updatedAt: 1 },
+      { id: 'folders', name: 'Folders', files: [
+        { path: '/drafts/.folder', content: '', isBinary: false, lastModified: 1 },
+        { path: '/main.typ', content: 'Main', isBinary: false, lastModified: 1 },
+      ], mainFile: '/main.typ', createdAt: 1, updatedAt: 1 },
+    ]
+    await exportAllProjects()
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob
+    mocked.state.projects = []
+    const imported = await importAllProjects(makeZipFileLike('backup.zip', new Uint8Array(await blob.arrayBuffer())))
+    expect(imported).toBe(2)
+    expect(mocked.state.projects.find((project) => project.name === 'Empty')).toMatchObject({ files: [], mainFile: '' })
+    expect(mocked.state.projects.find((project) => project.name === 'Folders')?.files.map((file) => file.path).sort())
+      .toEqual(['/drafts/.folder', '/main.typ'])
+  })
+
+  it('retargets bibliography tuples and code-mode references but leaves comments and strings alone', async () => {
+    const source = [
+      '#bibliography(("a.bib", "b.bib"))',
+      '#let body = include "helper.typ"',
+      '// #include "helper.typ"',
+      '#let example = "include \\"helper.typ\\""',
+    ].join('\n')
+    const prepared = await prepareUploadedFiles([
+      { relativePath: 'main.typ', file: makeZipFileLike('main.typ', asciiBytes(source)) },
+      { relativePath: 'helper.typ', file: makeZipFileLike('helper.typ', asciiBytes('Body')) },
+      { relativePath: 'a.bib', file: makeZipFileLike('a.bib', asciiBytes('@article{a,title={A}}')) },
+      { relativePath: 'b.bib', file: makeZipFileLike('b.bib', asciiBytes('@article{b,title={B}}')) },
+    ], ['/helper.typ', '/a.bib', '/b.bib'])
+    const content = prepared.projectFiles.find((file) => file.path === '/main.typ')?.content
+    expect(content).toContain('#bibliography(("a-2.bib", "b-2.bib"))')
+    expect(content).toContain('#let body = include "helper-2.typ"')
+    expect(content).toContain('// #include "helper.typ"')
+    expect(content).toContain('#let example = "include \\"helper.typ\\""')
+  })
+
+  it('does not let unused or commented manual bibliographies change real bibliography citations', async () => {
+    await importLatexZip(makeZipFileLike('Citations.zip', zipSync({
+      'main.tex': asciiBytes('\\begin{document}\n% \\begin{thebibliography}\n\\cite{key}\\bibliography{refs}\\end{document}'),
+      'unused.tex': asciiBytes('\\begin{thebibliography}{1}\\bibitem{other}Other\\end{thebibliography}'),
+      'refs.bib': asciiBytes('@article{key,title={Title}}'),
+    })))
+    const content = mocked.state.projects[0].files.find((file) => file.path === '/main.typ')?.content
+    expect(content).toContain('@key')
+    expect(content).not.toContain('#link(label')
+  })
+
+  it('creates usable bibliography aliases without overwriting native .bib files or dropping sources', async () => {
+    const bibtex = '@book{extended,title={Extended},author={Writer},year={2026}}'
+    const upper = '@book{upper,title={Uppercase},author={Writer},year={2026}}'
+    const result = await importLatexZip(makeZipFileLike('Aliases.zip', zipSync({
+      'main.tex': asciiBytes('\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs/library.bibtex}\\addbibresource{refs/OTHER.BIB}\\begin{document}\\cite{extended}\\cite{upper}\\printbibliography\\end{document}'),
+      'refs/library.bibtex': asciiBytes(bibtex),
+      'refs/library.bib': asciiBytes('@book{native,title={Preserve}}'),
+      'refs/OTHER.BIB': asciiBytes(upper),
+    })))
+    const project = mocked.state.projects[0]
+    const content = project.files.find((file) => file.path === '/main.typ')?.content
+    expect(content).toContain('#bibliography(("refs/library-2.bib", "refs/OTHER.bib"))')
+    expect(project.files.find((file) => file.path === '/refs/library.bibtex')?.content).toBe(bibtex)
+    expect(project.files.find((file) => file.path === '/refs/library-2.bib')?.content).toBe(bibtex)
+    expect(project.files.find((file) => file.path === '/refs/library.bib')?.content).toContain('Preserve')
+    expect(project.files.find((file) => file.path === '/refs/OTHER.BIB')?.content).toBe(upper)
+    expect(project.files.find((file) => file.path === '/refs/OTHER.bib')?.content).toBe(upper)
+    expect(result.warnings).toEqual([])
   })
 })

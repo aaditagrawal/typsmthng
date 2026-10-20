@@ -4,8 +4,8 @@ import { useShallow } from 'zustand/react/shallow'
 import { useProjectStore, type ProjectFile } from '@/stores/project-store'
 import { useUIStore } from '@/stores/ui-store'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'
-import { shouldTreatUploadAsText, isLatexPath, isImagePath } from '@/lib/file-classification'
-import { convertUploadedLatexFile } from '@/lib/project-io'
+import { isImagePath } from '@/lib/file-classification'
+import { prepareUploadedFiles } from '@/lib/project-io'
 import { getProjectFileIndex, isHiddenInternalPath } from '@/lib/file-index'
 import { basename, dirname } from '@/lib/paths'
 import {
@@ -1148,20 +1148,23 @@ export function FileTree() {
   const handleNewItemSubmit = useCallback(async (name: string) => {
     if (!newItem) return
     const parentPath = newItem.parentPath
-    if (newItem.type === 'file') {
-      const filePath = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`
-      await createFile(filePath)
-    } else {
-      const folderPath = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`
-      await createFolder(folderPath)
-      // Auto-expand the new folder
-      setExpandedFolders((prev) => {
-        const next = new Set(prev)
-        next.add(folderPath)
-        return next
-      })
+    const targetPath = parentPath === '/' ? `/${name}` : `${parentPath}/${name}`
+    const files = useProjectStore.getState().getCurrentProject()?.files ?? []
+    if (files.some((file) => file.path === targetPath || file.path.startsWith(`${targetPath}/`))) {
+      window.alert('A file or folder with that name already exists.')
+      return
     }
-    setNewItem(null)
+    try {
+      if (newItem.type === 'file') {
+        await createFile(targetPath)
+      } else {
+        await createFolder(targetPath)
+        setExpandedFolders((prev) => new Set(prev).add(targetPath))
+      }
+      setNewItem(null)
+    } catch (error) {
+      window.alert(`Could not create ${newItem.type}: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
   }, [newItem, createFile, createFolder])
 
   const handleRootNewFile = useCallback(() => {
@@ -1177,34 +1180,45 @@ export function FileTree() {
     if (importingRef.current) return
     importingRef.current = true
     setImporting(true)
+    const importProject = useProjectStore.getState().getCurrentProject()
     try {
+      if (!importProject) return
+      const result = await prepareUploadedFiles(
+        entries.map(({ path, file }) => ({ relativePath: path, file })),
+        importProject.files.map((file) => file.path),
+      )
+      const requireAvailableDestinations = (paths: string[]) => {
+        if (useProjectStore.getState().currentProjectId !== importProject.id) {
+          throw new Error('The open project changed during upload. Open the original project and try again.')
+        }
+        const currentFiles = useProjectStore.getState().getCurrentProject()?.files ?? []
+        if (currentFiles.some((file) => paths.includes(file.path))) {
+          throw new Error('A destination file was created during upload. Try again to keep both files.')
+        }
+      }
+      requireAvailableDestinations(result.projectFiles.map((file) => file.path))
       const textEntries: Array<{ path: string; content: string }> = []
       const binaryEntries: Array<{ path: string; data: Uint8Array }> = []
-      const latexWarnings: string[] = []
+      const latexWarnings = result.warnings.map((warning) => warning.message)
 
-      for (const entry of entries) {
-        if (shouldTreatUploadAsText(entry.file)) {
-          const text = await entry.file.text()
-          if (isLatexPath(entry.file.name)) {
-            const result = await convertUploadedLatexFile(text, entry.file.name)
-            const typPath = entry.path.replace(/\.tex$/i, '.typ')
-            textEntries.push({ path: typPath, content: result.content })
-            for (const warning of result.warnings) {
-              latexWarnings.push(warning.message)
-            }
-          } else {
-            textEntries.push({ path: entry.path, content: text })
-          }
+      for (const file of result.projectFiles) {
+        if (file.isBinary && file.binaryData) {
+          binaryEntries.push({ path: file.path, data: file.binaryData })
         } else {
-          const buffer = await entry.file.arrayBuffer()
-          binaryEntries.push({ path: entry.path, data: new Uint8Array(buffer) })
+          textEntries.push({ path: file.path, content: file.content })
         }
+      }
+
+      if (result.mainFile && !importProject.files.some((file) => file.path === importProject.mainFile && !file.isBinary)) {
+        // The store picks the first Typst source when restoring an empty project.
+        textEntries.sort((a, b) => Number(b.path === result.mainFile) - Number(a.path === result.mainFile))
       }
 
       if (textEntries.length > 0) {
         await createFilesBatch(textEntries)
       }
       if (binaryEntries.length > 0) {
+        requireAvailableDestinations(binaryEntries.map((file) => file.path))
         await addBinaryFilesBatch(binaryEntries)
       }
       if (latexWarnings.length > 0) {
@@ -1220,6 +1234,8 @@ export function FileTree() {
           `Imported with ${latexWarnings.length} LaTeX conversion warning(s):\n\n${preview}${extra}`,
         )
       }
+    } catch (error) {
+      window.alert(`Could not upload files: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       importingRef.current = false
       setImporting(false)
