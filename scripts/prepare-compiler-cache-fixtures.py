@@ -1,4 +1,4 @@
-"""Run with uv run --no-project --with fonttools==4.66.1 this-file."""
+"""Run with uv run --no-project --with fonttools==4.67.0 this-file."""
 import hashlib
 import json
 from pathlib import Path

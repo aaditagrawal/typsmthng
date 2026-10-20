@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
@@ -29,43 +29,25 @@ function getMimeType(path: string): string {
 export function ImagePreviewModal() {
   const imagePreviewPath = useUIStore((s) => s.imagePreviewPath)
   const setImagePreviewPath = useUIStore((s) => s.setImagePreviewPath)
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => setImagePreviewPath(null), [setImagePreviewPath])
 
   useModalA11y(panelRef, Boolean(imagePreviewPath), close)
 
-  // Create/cleanup blob URL for binary images
-  useEffect(() => {
-    let createdUrl: string | null = null
+  const file = useProjectStore((s) => s.getCurrentProject()?.files.find((f) => f.path === imagePreviewPath))
 
-    if (!imagePreviewPath) {
-      setBlobUrl(null)
-    } else {
-      const project = useProjectStore.getState().getCurrentProject()
-      const file = project?.files.find((f) => f.path === imagePreviewPath)
+  // The DOM node owns its object URL. React runs the cleanup on file changes
+  // and unmount, including Strict Mode's setup/cleanup cycle.
+  const attachImage = useCallback((image: HTMLImageElement | null) => {
+    if (!image || !file?.isBinary || !file.binaryData || !imagePreviewPath) return
+    const blob = new Blob([new Uint8Array(file.binaryData)], { type: getMimeType(imagePreviewPath) })
+    const url = URL.createObjectURL(blob)
+    image.src = url
+    return () => URL.revokeObjectURL(url)
+  }, [file, imagePreviewPath])
 
-      if (file?.isBinary && file.binaryData) {
-        const mime = getMimeType(imagePreviewPath)
-        const blob = new Blob([new Uint8Array(file.binaryData)], { type: mime })
-        createdUrl = URL.createObjectURL(blob)
-        setBlobUrl(createdUrl)
-      } else {
-        setBlobUrl(null)
-      }
-    }
-
-    return () => {
-      if (createdUrl) URL.revokeObjectURL(createdUrl)
-    }
-  }, [imagePreviewPath])
-
-  if (!imagePreviewPath) return null
-
-  const project = useProjectStore.getState().getCurrentProject()
-  const file = project?.files.find((f) => f.path === imagePreviewPath)
-  if (!file) return null
+  if (!imagePreviewPath || !file) return null
 
   const filename = basename(imagePreviewPath) || imagePreviewPath
   const isSvg = /\.svg$/i.test(imagePreviewPath)
@@ -73,8 +55,6 @@ export function ImagePreviewModal() {
   let imgSrc: string | null = null
   if (isSvg && !file.isBinary && file.content) {
     imgSrc = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(file.content)))}`
-  } else if (blobUrl) {
-    imgSrc = blobUrl
   }
 
   return (
@@ -150,9 +130,10 @@ export function ImagePreviewModal() {
       </div>
 
       {/* Image */}
-      {imgSrc ? (
+      {imgSrc || (file.isBinary && file.binaryData) ? (
         <img
-          src={imgSrc}
+          ref={attachImage}
+          src={imgSrc ?? undefined}
           alt={filename}
           onClick={(e) => e.stopPropagation()}
           style={{

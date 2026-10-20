@@ -61,9 +61,7 @@ describe('WorkspaceShell responsive layout', () => {
     const { container } = render(<WorkspaceShell />)
 
     expect(screen.getByTestId('panel-group')).toHaveAttribute('data-orientation', 'vertical')
-    expect(container.querySelector<HTMLElement>('.workspace-sidebar')).toHaveStyle({
-      width: 'min(85vw, 320px)',
-    })
+    expect(container.querySelector<HTMLElement>('.workspace-sidebar')?.style.width).toBe('min(85vw, 320px)')
 
     act(() => {
       narrow = false

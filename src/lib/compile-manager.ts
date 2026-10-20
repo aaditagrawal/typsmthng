@@ -39,7 +39,7 @@ function findPreviewImportSpecsFast(source: string): string[] {
   if (!source.includes('@preview/')) return []
 
   const found = new Set<string>()
-  let match: RegExpExecArray | null = null
+  let match: RegExpExecArray | null
   previewImportRegex.lastIndex = 0
   while ((match = previewImportRegex.exec(source)) !== null) {
     found.add(match[0])
