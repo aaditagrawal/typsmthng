@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CommandSearch } from '@/components/search/command-search'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'
@@ -14,7 +14,19 @@ const { forceCompile, exportCurrentProjectPdf } = vi.hoisted(() => ({
 vi.mock('@/lib/compile-manager', () => ({ forceCompile }))
 vi.mock('@/lib/pdf-export', () => ({ exportCurrentProjectPdf }))
 
+vi.mock('idb-keyval', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('idb-keyval')>()
+  return { ...actual, set: vi.fn().mockResolvedValue(undefined) }
+})
+
 describe('CommandSearch actions', () => {
+  afterEach(async () => {
+    // Persist pending theme changes before jsdom is torn down.
+    window.dispatchEvent(new Event('pagehide'))
+    await Promise.resolve()
+    vi.restoreAllMocks()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.spyOn(window, 'alert').mockImplementation(() => {})

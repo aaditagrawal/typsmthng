@@ -67,7 +67,7 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null
 let pendingSettings: Settings | null = null
 const PERSIST_DEBOUNCE_MS = 300
 
-function flushPendingSettings() {
+async function flushPendingSettings() {
   if (persistTimer) {
     clearTimeout(persistTimer)
     persistTimer = null
@@ -75,9 +75,11 @@ function flushPendingSettings() {
   const settings = pendingSettings
   pendingSettings = null
   if (!settings) return
-  idbSet(SETTINGS_KEY, settings, settingsDb).catch((err) => {
+  try {
+    await idbSet(SETTINGS_KEY, settings, settingsDb)
+  } catch (err) {
     console.warn('Failed to persist settings to IDB:', err)
-  })
+  }
 }
 
 function persistSettings(settings: Settings) {
