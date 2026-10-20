@@ -97,21 +97,9 @@ function CanvasPreviewPage({
       ref={hostRef}
       className="canvas-preview-page"
       data-page-index={pageIndex}
-      style={{
-        background: '#ffffff',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.08)',
-        width: '100%',
-        aspectRatio: `${page.width} / ${page.height}`,
-      }}
+      style={{ '--page-aspect': `${page.width} / ${page.height}` }}
     >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: 'block',
-          width: '100%',
-          height: 'auto',
-        }}
-      />
+      <canvas ref={canvasRef} className="block w-full h-auto" />
     </div>
   )
 }
@@ -159,14 +147,7 @@ export function CanvasPreviewSurface({
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        width: '100%',
-      }}
-    >
+    <div ref={containerRef} className="flex flex-col w-full">
       {pageDimensions.map((page, pageIndex) => (
         <CanvasPreviewPage
           key={`${page.pageOffset ?? pageIndex}-${page.width}-${page.height}`}

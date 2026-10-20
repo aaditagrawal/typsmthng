@@ -57,17 +57,10 @@ export function Toolbar() {
   }
 
   return (
-    <header
-      className="flex items-center h-10 shrink-0 select-none"
-      style={{
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-default)',
-      }}
-    >
+    <header className="flex items-center h-10 shrink-0 select-none bg-(--bg-surface) border-b border-b-(color:--border-default)">
       {/* Left section */}
       <div className="flex items-center gap-1 px-3">
         <button
-          className="inline-flex items-center justify-center shrink-0"
           onClick={() => {
             const projectStore = useProjectStore.getState()
             const currentPath = projectStore.currentFilePath
@@ -77,24 +70,12 @@ export function Toolbar() {
             projectStore.goHome()
           }}
           title="Back to projects"
-          style={{
-            width: '24px',
-            height: '24px',
-            background: 'var(--accent)',
-            color: '#fff',
-            fontFamily: 'var(--font-mono)',
-            fontWeight: 700,
-            fontSize: '12px',
-            lineHeight: 1,
-            borderRadius: '1px',
-            letterSpacing: '-0.01em',
-            border: 'none',
-            cursor: 'pointer',
-          }}
+          className="inline-flex items-center justify-center shrink-0 size-6 bg-(--accent) text-white font-mono font-bold fs-12 leading-none rounded-(--r) tracking-(--ls) border-none cursor-pointer"
+          style={{ '--r': '1px', '--ls': '-0.01em' }}
         >
           t.
         </button>
-        <div style={{ width: '4px' }} />
+        <div className="w-1" />
         <button
           className="toolbar-button"
           title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
@@ -114,20 +95,7 @@ export function Toolbar() {
 
       {/* Center -- file tab */}
       <div className="flex-1 flex justify-center">
-        <div
-          className="flex items-center"
-          style={{
-            padding: '4px 12px',
-            background: 'var(--bg-elevated)',
-            border: '1px solid var(--border-strong)',
-            borderRadius: '2px',
-            color: 'var(--text-primary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase' as const,
-          }}
-        >
+        <div className="flex items-center py-1 px-3 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 tracking-wider uppercase">
           {fileName}
         </div>
       </div>
@@ -184,8 +152,7 @@ export function Toolbar() {
           {exportBusy ? <Loader2 size={16} className="animate-spin" /> : <FolderOutput size={16} />}
         </button>
         <button
-          className="toolbar-button"
-          style={{ marginRight: '8px' }}
+          className="toolbar-button mr-2"
           title="Download PDF"
           disabled={pdfBusy}
           onClick={() => { void handlePdfExport() }}

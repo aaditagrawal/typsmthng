@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { UniverseMarketplacePackage } from '@/lib/universe-registry'
 
 vi.mock('idb-keyval', () => {
@@ -128,4 +128,23 @@ describe('ProjectPicker marketplace', () => {
     expect(await screen.findByTestId('marketplace-init-error')).toHaveTextContent('network down')
     expect(screen.getByTestId('marketplace-modal')).toBeInTheDocument()
   })
+  it('ignores a pending search after its query is cleared', async () => {
+    let resolveSearch: ((results: UniverseMarketplacePackage[]) => void) | undefined
+    searchUniverseMarketplaceMock.mockReturnValueOnce(new Promise((resolve) => { resolveSearch = resolve }))
+    render(<ProjectPicker onShowGuide={() => {}} />)
+    fireEvent.click(screen.getByTestId('template-init-reveal-button'))
+    fireEvent.click(screen.getByTestId('marketplace-open-button'))
+    fireEvent.change(screen.getByTestId('marketplace-search-input'), { target: { value: 'ae' } })
+    await waitFor(() => expect(searchUniverseMarketplaceMock).toHaveBeenCalledWith('ae'))
+    fireEvent.change(screen.getByTestId('marketplace-search-input'), { target: { value: '' } })
+    await act(async () => {
+      resolveSearch?.([{
+        name: 'stale-search', latestVersion: '0.1.1', latestResolvedSpec: '@preview/stale-search:0.1.1',
+        initCommand: 'typst init @preview/stale-search:0.1.1', isTemplate: true, templateEntrypoint: 'main.typ',
+      }])
+    })
+    expect(screen.queryByTestId('marketplace-prefill-stale-search')).not.toBeInTheDocument()
+    expect(screen.getByTestId('marketplace-search-input')).toHaveValue('')
+  })
+
 })

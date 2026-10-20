@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -45,28 +45,11 @@ function formatPackageTitle(name: string): string {
   return name.replace(/-/g, ' ').toUpperCase()
 }
 
-/* ── Shared inline link-button style ── */
-const linkBtnBase: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: '5px',
-  border: 'none',
-  background: 'transparent',
-  color: 'var(--text-tertiary)',
-  fontFamily: 'var(--font-mono)',
-  fontSize: '11px',
-  letterSpacing: '0.04em',
-  cursor: 'pointer',
-  padding: 0,
-}
-
-function LinkBtn({ children, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+function LinkBtn({ children, className, ...rest }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       type="button"
-      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)' }}
-      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)' }}
-      style={linkBtnBase}
+      className={`link-btn ${className ?? ''}`}
       {...rest}
     >
       {children}
@@ -196,47 +179,27 @@ function ProjectCard({
       role="button"
       aria-label={selectionMode ? `${selected ? 'Deselect' : 'Select'} project ${project.name}` : `Open project ${project.name}`}
       tabIndex={0}
+      className="project-card"
+      data-hoverable={!editing && !confirmDelete}
       style={{
-        background: 'var(--bg-surface)',
-        border: selected ? '1px solid var(--accent)' : '1px solid var(--border-default)',
-        borderRadius: '2px',
-        padding: '14px 16px',
-        cursor: editing || confirmDelete ? 'default' : 'pointer',
-        transition: 'background 100ms ease, border-color 100ms ease, box-shadow 100ms ease',
-        fontFamily: 'var(--font-mono)',
-        position: 'relative',
-        boxShadow: selected ? '0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent)' : 'none',
-      }}
-      onMouseEnter={(e) => {
-        onPreloadWorkspace?.()
-        if (!editing && !confirmDelete) {
-          e.currentTarget.style.background = 'var(--bg-hover)'
-          e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-strong)'
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'var(--bg-surface)'
-        e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-default)'
-        if (confirmDelete) setConfirmDelete(false)
-      }}
+        '--card-bc': selected ? 'var(--accent)' : 'var(--border-default)',
+        '--card-hover-bc': selected ? 'var(--accent)' : 'var(--border-strong)',
+        '--card-cursor': editing || confirmDelete ? 'default' : 'pointer',
+        '--card-shadow': selected ? 'var(--shadow-accent)' : 'none',
+      } as React.CSSProperties}
+      onMouseEnter={() => { onPreloadWorkspace?.() }}
+      onMouseLeave={() => { if (confirmDelete) setConfirmDelete(false) }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           {selectionMode && (
             <span
               aria-hidden="true"
+              className="inline-flex items-center justify-center size-4.5 rounded-xs border border-(color:--cb-bc) bg-(--cb-bg) text-(--accent-text) shrink-0"
               style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '18px',
-                height: '18px',
-                borderRadius: '2px',
-                border: selected ? '1px solid var(--accent)' : '1px solid var(--border-strong)',
-                background: selected ? 'var(--accent)' : 'transparent',
-                color: '#fff',
-                flexShrink: 0,
-              }}
+                '--cb-bc': selected ? 'var(--accent)' : 'var(--border-strong)',
+                '--cb-bg': selected ? 'var(--accent)' : 'transparent',
+              } as React.CSSProperties}
             >
               {selected && <Check size={11} />}
             </span>
@@ -255,19 +218,7 @@ function ProjectCard({
                 }
               }}
               onClick={(e) => e.stopPropagation()}
-              style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--accent)',
-                borderRadius: '2px',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '13px',
-                fontWeight: 700,
-                padding: '2px 8px',
-                outline: 'none',
-                flex: 1,
-                minWidth: 0,
-              }}
+              className="bg-(--bg-elevated) border border-(color:--accent) rounded-xs text-(--text-primary) font-mono fs-13 font-bold py-0.5 px-2 outline-none flex-1 min-w-0"
             />
           ) : (
             <span
@@ -277,16 +228,8 @@ function ProjectCard({
                 setEditName(project.name)
                 setEditing(true)
               }}
-              style={{
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-                fontWeight: 700,
-                letterSpacing: '0.01em',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
-              }}
+              className="text-(--text-primary) fs-13 font-bold tracking-(--ls) overflow-hidden text-ellipsis whitespace-nowrap flex-1"
+              style={{ '--ls': '0.01em' } as React.CSSProperties}
             >
               {project.name}
             </span>
@@ -302,20 +245,8 @@ function ProjectCard({
               setConfirmDelete(true)
             }
           }}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '24px',
-            height: '24px',
-            border: '1px solid transparent',
-            borderRadius: '2px',
-            background: 'transparent',
-            color: confirmDelete ? 'var(--status-error)' : 'var(--text-tertiary)',
-            cursor: 'pointer',
-            transition: 'color 100ms ease',
-            flexShrink: 0,
-          }}
+          className="inline-flex items-center justify-center size-6 border border-(color:transparent) rounded-xs bg-transparent text-(--del-fg) cursor-pointer transition-colors duration-100 shrink-0"
+          style={{ '--del-fg': confirmDelete ? 'var(--status-error)' : 'var(--text-tertiary)' } as React.CSSProperties}
           title={confirmDelete ? 'Click again to confirm delete' : 'Delete project'}
         >
           <Trash2 size={14} />
@@ -323,23 +254,16 @@ function ProjectCard({
       </div>
 
       {confirmDelete && (
-        <div style={{ marginTop: '6px', fontSize: '10px', color: 'var(--status-error)', letterSpacing: '0.04em' }}>
+        <div className="mt-1.5 fs-10 text-(--status-error) tracking-(--ls)" style={{ '--ls': '0.04em' } as React.CSSProperties}>
           Click trash again to delete
         </div>
       )}
 
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          marginTop: '10px',
-          fontSize: '11px',
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.02em',
-        }}
+        className="flex items-center gap-2.5 mt-2.5 fs-11 text-(--text-tertiary) tracking-(--ls)"
+        style={{ '--ls': '0.02em' } as React.CSSProperties}
       >
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <span className="inline-flex items-center gap-1">
           <FileText size={11} />
           {fileCount} {fileCount === 1 ? 'file' : 'files'}
         </span>
@@ -371,53 +295,19 @@ function LatexImportMenu({
   onFolder: () => void
   onClose: () => void
 }) {
-  const menuItemStyle: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    width: '100%',
-    padding: '7px 12px',
-    background: 'transparent',
-    border: 'none',
-    color: 'var(--text-secondary)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '11px',
-    letterSpacing: '0.03em',
-    cursor: 'pointer',
-    textAlign: 'left',
-  }
-
-  const handleHover = (e: React.MouseEvent<HTMLButtonElement>, enter: boolean) => {
-    e.currentTarget.style.background = enter ? 'var(--bg-hover)' : 'transparent'
-    e.currentTarget.style.color = enter ? 'var(--text-primary)' : 'var(--text-secondary)'
-  }
-
   return (
     <>
-      <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={onClose} />
-      <div
-        style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          marginTop: '4px',
-          zIndex: 50,
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: '2px',
-          padding: '4px 0',
-          minWidth: '160px',
-        }}
-      >
-        <button style={menuItemStyle} onMouseEnter={(e) => handleHover(e, true)} onMouseLeave={(e) => handleHover(e, false)} onClick={onTexFiles}>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute top-full left-0 mt-1 z-50 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs py-1 min-w-40">
+        <button className="dropdown-item" onClick={onTexFiles}>
           <FileUp size={12} /> .tex files
         </button>
-        <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
-        <button style={menuItemStyle} onMouseEnter={(e) => handleHover(e, true)} onMouseLeave={(e) => handleHover(e, false)} onClick={onZip}>
+        <div className="h-px bg-(--border-default) my-0.5" />
+        <button className="dropdown-item" onClick={onZip}>
           <FileArchive size={12} /> .zip archive
         </button>
-        <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
-        <button style={menuItemStyle} onMouseEnter={(e) => handleHover(e, true)} onMouseLeave={(e) => handleHover(e, false)} onClick={onFolder}>
+        <div className="h-px bg-(--border-default) my-0.5" />
+        <button className="dropdown-item" onClick={onFolder}>
           <FolderUp size={12} /> Folder
         </button>
       </div>
@@ -457,9 +347,19 @@ export function ProjectPicker({
   const [showTemplateInit, setShowTemplateInit] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
   const [marketplaceQuery, setMarketplaceQuery] = useState('')
-  const [marketplaceBusy, setMarketplaceBusy] = useState(false)
-  const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
-  const [marketplaceResults, setMarketplaceResults] = useState<UniverseMarketplacePackage[]>([])
+  const marketplaceRequest = useMemo(() => ({
+    query: marketplaceQuery.trim(),
+    open: marketplaceOpen,
+  }), [marketplaceQuery, marketplaceOpen])
+  const [marketplaceResponse, setMarketplaceResponse] = useState<{
+    request: typeof marketplaceRequest | null
+    results: UniverseMarketplacePackage[]
+    error: string | null
+  }>({ request: null, results: [], error: null })
+  const marketplaceSearchable = marketplaceRequest.query.length >= MIN_MARKETPLACE_QUERY_LENGTH
+  const marketplaceBusy = marketplaceSearchable && marketplaceResponse.request !== marketplaceRequest
+  const marketplaceError = marketplaceSearchable && !marketplaceBusy ? marketplaceResponse.error : null
+  const marketplaceResults = marketplaceSearchable && !marketplaceBusy ? marketplaceResponse.results : []
   const newInputRef = useRef<HTMLInputElement>(null)
   const latexFileInputRef = useRef<HTMLInputElement>(null)
   const latexFolderInputRef = useRef<HTMLInputElement>(null)
@@ -473,13 +373,12 @@ export function ProjectPicker({
   const [importAllResult, setImportAllResult] = useState<string | null>(null)
   const [importAllError, setImportAllError] = useState<string | null>(null)
   const [selectionMode, setSelectionMode] = useState(false)
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
+  const [selectedProjectIdsState, setSelectedProjectIds] = useState<string[]>([])
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false)
   const [workspaceName, setWorkspaceName] = useState('')
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null)
   const [workspaceQuickAddOpen, setWorkspaceQuickAddOpen] = useState(false)
   const [workspaceContextMenu, setWorkspaceContextMenu] = useState<{ workspaceId: string; x: number; y: number } | null>(null)
-  const marketplaceSearchToken = useRef(0)
   const workspaceSheetRef = useRef<HTMLDivElement>(null)
   const marketplaceModalRef = useRef<HTMLDivElement>(null)
   const builtInTemplates = listBuiltInTemplates()
@@ -494,41 +393,33 @@ export function ProjectPicker({
   useModalA11y(marketplaceModalRef, marketplaceOpen, () => setMarketplaceOpen(false))
 
   useEffect(() => {
-    if (!marketplaceOpen) return
+    const { query, open } = marketplaceRequest
+    if (!open || query.length < MIN_MARKETPLACE_QUERY_LENGTH) return
 
-    const query = marketplaceQuery.trim()
-    if (query.length < MIN_MARKETPLACE_QUERY_LENGTH) {
-      setMarketplaceBusy(false)
-      setMarketplaceError(null)
-      setMarketplaceResults([])
-      return
-    }
-
-    const token = ++marketplaceSearchToken.current
-    setMarketplaceBusy(true)
-    setMarketplaceError(null)
-
+    let cancelled = false
     const timer = setTimeout(() => {
       void searchUniverseMarketplace(query)
         .then((results) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceResults(results)
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceResponse({ request: marketplaceRequest, results, error: null })
         })
         .catch((err) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceError(err instanceof Error ? err.message : 'Failed to fetch marketplace packages')
-          setMarketplaceResults([])
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceResponse({
+            request: marketplaceRequest,
+            results: [],
+            error: err instanceof Error ? err.message : 'Failed to fetch marketplace packages',
+          })
         })
     }, 160)
 
-    return () => clearTimeout(timer)
-  }, [marketplaceOpen, marketplaceQuery])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [marketplaceRequest])
 
-  useEffect(() => {
-    setSelectedProjectIds((current) => current.filter((id) => projects.some((project) => project.id === id)))
-  }, [projects])
+  const selectedProjectIds = selectedProjectIdsState.filter((id) => projects.some((project) => project.id === id))
 
   const quickInitCommands = [
     { label: 'IEEE Journal', command: 'typst init @preview/charged-ieee' },
@@ -618,7 +509,10 @@ export function ProjectPicker({
     })
   }
 
-  const handleLatexFiles = async (files: FileList) => {
+  const handleLatexFiles = async (fileList: FileList) => {
+    // Snapshot before any await: resetting the input's value (done right after
+    // this handler is invoked) empties the live FileList it passed us.
+    const files = Array.from(fileList)
     if (files.length === 0 || latexBusy) return
     setLatexBusy(true)
     setLatexResult(null)
@@ -635,11 +529,11 @@ export function ProjectPicker({
       }
 
       const entries: Array<{ relativePath: string; file: File }> = []
-      const hasRelativePaths = Array.from(files).some(
+      const hasRelativePaths = files.some(
         (f) => (f as File & { webkitRelativePath?: string }).webkitRelativePath,
       )
 
-      for (const file of Array.from(files)) {
+      for (const file of files) {
         const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath
         const path = hasRelativePaths && relPath ? relPath : file.name
         entries.push({ relativePath: path, file })
@@ -750,44 +644,20 @@ export function ProjectPicker({
     : []
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-app)',
-        width: '100%',
-        height: '100%',
-        overflow: 'auto',
-        fontFamily: 'var(--font-mono)',
-      }}
-    >
-      <div style={{ maxWidth: '760px', margin: '0 auto', padding: '48px 24px 36px' }}>
+    <div className="bg-(--bg-app) w-full h-full overflow-auto font-mono">
+      <div className="max-w-190 mx-auto pt-12 px-6 pb-9">
 
         {/* ── Header ── */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '32px',
-                height: '32px',
-                background: 'var(--accent)',
-                color: '#fff',
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 700,
-                fontSize: '18px',
-                lineHeight: 1,
-                borderRadius: '2px',
-                letterSpacing: '-0.02em',
-              }}
-            >
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-2.5">
+            <span className="inline-flex items-center justify-center size-8 bg-(--accent) text-(--accent-text) font-mono font-bold fs-18 leading-none rounded-xs tracking-(--ls)" style={{ '--ls': '-0.02em' } as React.CSSProperties}>
               T
             </span>
-            <span style={{ fontSize: '17px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-primary)' }}>
+            <span className="fs-17 font-bold tracking-(--ls) text-(--text-primary)" style={{ '--ls': '0.08em' } as React.CSSProperties}>
               TYPSMTHNG
             </span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <div className="flex items-center gap-4 flex-wrap justify-end">
             <ThemeToggle />
             <LinkBtn onClick={onShowGuide}>
               <BookOpen size={12} />
@@ -797,49 +667,29 @@ export function ProjectPicker({
         </div>
 
         <div
-          style={{
-            background: 'color-mix(in srgb, var(--bg-surface) 88%, transparent)',
-            border: '1px solid var(--border-default)',
-            borderRadius: '2px',
-            padding: '10px 12px',
-            marginBottom: '20px',
-            display: 'grid',
-            gap: '8px',
-            backdropFilter: 'blur(14px)',
-          }}
+          className="home-panel py-2.5 px-3 mb-5 grid gap-2"
+          style={{ '--panel-tint': '88%', '--panel-blur': '14px' } as React.CSSProperties}
         >
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'minmax(0, 1fr) auto',
-              gap: '12px',
-              alignItems: 'start',
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.08em', marginBottom: '8px' }}>
+          <div className="workspace-bar">
+            <div className="min-w-0">
+              <div className="fs-10 text-(--text-tertiary) tracking-(--ls) mb-2" style={{ '--ls': '0.08em' } as React.CSSProperties}>
                 WORKSPACES
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setSelectedHomeWorkspace(null)}
+                  className="border border-(color:--ws-bc) bg-(--ws-bg) text-(--ws-fg) rounded-xs py-1.75 px-3 font-mono fs-11 cursor-pointer whitespace-nowrap"
                   style={{
-                    border: selectedHomeWorkspaceId === null ? '1px solid var(--accent)' : '1px solid var(--border-default)',
-                    background: selectedHomeWorkspaceId === null ? 'var(--accent)' : 'var(--bg-inset)',
-                    color: selectedHomeWorkspaceId === null ? '#fff' : 'var(--text-secondary)',
-                    borderRadius: '2px',
-                    padding: '7px 12px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
+                    '--ws-bc': selectedHomeWorkspaceId === null ? 'var(--accent)' : 'var(--border-default)',
+                    '--ws-bg': selectedHomeWorkspaceId === null ? 'var(--accent)' : 'var(--bg-inset)',
+                    '--ws-fg': selectedHomeWorkspaceId === null ? 'var(--accent-text)' : 'var(--text-secondary)',
+                  } as React.CSSProperties}
                 >
                   All
                 </button>
                 {homeWorkspaces.map((workspace) => (
-                  <div key={workspace.id} style={{ display: 'inline-flex', alignItems: 'stretch' }}>
+                  <div key={workspace.id} className="inline-flex items-stretch">
                     <button
                       type="button"
                       onClick={() => setSelectedHomeWorkspace(workspace.id)}
@@ -857,17 +707,12 @@ export function ProjectPicker({
                           y: event.clientY,
                         })
                       }}
+                      className="border border-(color:--ws-bc) bg-(--ws-bg) text-(--ws-fg) rounded-l-xs rounded-r-none py-1.75 px-3 font-mono fs-11 cursor-pointer whitespace-nowrap"
                       style={{
-                        border: selectedHomeWorkspaceId === workspace.id ? '1px solid var(--accent)' : '1px solid var(--border-default)',
-                        background: selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
-                        color: selectedHomeWorkspaceId === workspace.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        borderRadius: '2px 0 0 2px',
-                        padding: '7px 12px',
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: '11px',
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
+                        '--ws-bc': selectedHomeWorkspaceId === workspace.id ? 'var(--accent)' : 'var(--border-default)',
+                        '--ws-bg': selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
+                        '--ws-fg': selectedHomeWorkspaceId === workspace.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      } as React.CSSProperties}
                       title="Double-click to rename. Right-click to delete."
                     >
                       {workspace.name}
@@ -884,17 +729,11 @@ export function ProjectPicker({
                           y: rect.bottom + 4,
                         })
                       }}
+                      className="border border-(color:--ws-bc) border-l-0 bg-(--ws-bg) text-(--text-tertiary) rounded-r-xs rounded-l-none px-1.25 inline-flex items-center cursor-pointer"
                       style={{
-                        border: selectedHomeWorkspaceId === workspace.id ? '1px solid var(--accent)' : '1px solid var(--border-default)',
-                        borderLeft: 'none',
-                        background: selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
-                        color: 'var(--text-tertiary)',
-                        borderRadius: '0 2px 2px 0',
-                        padding: '0 5px',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        cursor: 'pointer',
-                      }}
+                        '--ws-bc': selectedHomeWorkspaceId === workspace.id ? 'var(--accent)' : 'var(--border-default)',
+                        '--ws-bg': selectedHomeWorkspaceId === workspace.id ? 'var(--accent-muted)' : 'var(--bg-inset)',
+                      } as React.CSSProperties}
                     >
                       <MoreHorizontal size={12} />
                     </button>
@@ -903,48 +742,22 @@ export function ProjectPicker({
               </div>
             </div>
 
-            <div
-              style={{
-                display: 'grid',
-                justifyItems: 'end',
-                alignContent: 'start',
-                gap: '14px',
-                minWidth: '140px',
-              }}
-            >
+            <div className="grid justify-items-end content-start gap-3.5 min-w-35">
               <button
                 type="button"
                 onClick={() => {
                   setWorkspaceQuickAddOpen((value) => !value)
                   setWorkspaceActionError(null)
                 }}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-inset)',
-                  color: 'var(--text-secondary)',
-                  borderRadius: '2px',
-                  padding: '6px 10px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '10px',
-                  letterSpacing: '0.04em',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
+                className="inline-flex items-center gap-1.5 border border-(color:--border-default) bg-(--bg-inset) text-(--text-secondary) rounded-xs py-1.5 px-2.5 font-mono fs-10 tracking-(--ls) cursor-pointer whitespace-nowrap"
+                style={{ '--ls': '0.04em' } as React.CSSProperties}
               >
                 <Plus size={12} />
                 Add Workspace
               </button>
               <div
-                style={{
-                  fontSize: '10px',
-                  color: 'var(--text-tertiary)',
-                  letterSpacing: '0.04em',
-                  textAlign: 'right',
-                  whiteSpace: 'nowrap',
-                }}
+                className="fs-10 text-(--text-tertiary) tracking-(--ls) text-right whitespace-nowrap"
+                style={{ '--ls': '0.04em' } as React.CSSProperties}
               >
                 {activeWorkspace ? `${visibleProjects.length} in ${activeWorkspace.name}` : `${projects.length} total`}
               </div>
@@ -952,16 +765,8 @@ export function ProjectPicker({
           </div>
 
           {workspaceQuickAddOpen && (
-            <div
-              style={{
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                padding: '10px',
-                display: 'grid',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div className="border border-(color:--border-default) rounded-xs p-2.5 grid gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <input
                   value={workspaceName}
                   onChange={(event) => setWorkspaceName(event.target.value)}
@@ -972,55 +777,35 @@ export function ProjectPicker({
                       void handleQuickCreateWorkspace()
                     }
                   }}
-                  style={{
-                    flex: 1,
-                    minWidth: '220px',
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: '2px',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '12px',
-                    padding: '8px 10px',
-                    outline: 'none',
-                  }}
+                  className="flex-1 min-w-55 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 py-2 px-2.5 outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => { void handleQuickCreateWorkspace() }}
-                  style={{
-                    border: '1px solid var(--accent)',
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    borderRadius: '2px',
-                    padding: '0 12px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                  }}
+                  className="border border-(color:--accent) bg-(--accent) text-(--accent-text) rounded-xs px-3 font-mono fs-11 cursor-pointer"
                 >
                   Create
                 </button>
               </div>
               {workspaceActionError && (
-                <div style={{ fontSize: '10px', color: 'var(--status-error)' }}>{workspaceActionError}</div>
+                <div className="fs-10 text-(--status-error)">{workspaceActionError}</div>
               )}
             </div>
           )}
         </div>
 
         {/* ── Hidden file inputs ── */}
-        <input ref={latexFileInputRef} type="file" accept=".tex" multiple style={{ display: 'none' }}
+        <input ref={latexFileInputRef} type="file" accept=".tex" multiple className="hidden"
           onChange={(e) => { if (e.target.files && e.target.files.length > 0) void handleLatexFiles(e.target.files); e.target.value = '' }}
         />
-        <input ref={latexFolderInputRef} type="file" multiple style={{ display: 'none' }}
+        <input ref={latexFolderInputRef} type="file" multiple className="hidden"
           {...({ webkitdirectory: '', directory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
           onChange={(e) => { if (e.target.files && e.target.files.length > 0) void handleLatexFiles(e.target.files); e.target.value = '' }}
         />
-        <input ref={latexZipInputRef} type="file" accept=".zip" style={{ display: 'none' }}
+        <input ref={latexZipInputRef} type="file" accept=".zip" className="hidden"
           onChange={(e) => { if (e.target.files && e.target.files.length > 0) void handleLatexFiles(e.target.files); e.target.value = '' }}
         />
-        <input ref={importAllInputRef} type="file" accept=".zip" style={{ display: 'none' }}
+        <input ref={importAllInputRef} type="file" accept=".zip" className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0]
             if (!file) return
@@ -1042,8 +827,8 @@ export function ProjectPicker({
         />
 
         {/* ── Action row ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative' }}>
+        <div className="flex items-center gap-4 mb-5 flex-wrap">
+          <div className="relative">
             <LinkBtn
               data-testid="template-init-reveal-button"
               onClick={() => setShowTemplateInit((v) => !v)}
@@ -1052,11 +837,12 @@ export function ProjectPicker({
               Templates
             </LinkBtn>
           </div>
-          <div style={{ position: 'relative' }}>
+          <div className="relative">
             <LinkBtn
               onClick={() => setLatexMenuOpen((v) => !v)}
               disabled={latexBusy}
-              style={{ ...linkBtnBase, opacity: latexBusy ? 0.6 : 1 }}
+              className="opacity-(--op)"
+              style={{ '--op': latexBusy ? '0.6' : '1' } as React.CSSProperties}
             >
               {latexBusy ? <Loader2 size={12} className="animate-spin" /> : <FileUp size={12} />}
               {latexBusy ? 'Converting...' : 'Import LaTeX'}
@@ -1087,20 +873,10 @@ export function ProjectPicker({
 
         {selectionMode && (
           <div
-            style={{
-              background: 'color-mix(in srgb, var(--bg-surface) 90%, transparent)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '2px',
-              padding: '12px 14px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '10px',
-              flexWrap: 'wrap',
-              backdropFilter: 'blur(16px)',
-            }}
+            className="home-panel py-3 px-3.5 mb-4 flex items-center gap-2.5 flex-wrap"
+            style={{ '--panel-tint': '90%', '--panel-blur': '16px' } as React.CSSProperties}
           >
-            <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+            <div className="fs-11 text-(--text-secondary)">
               {selectedCount === 0 ? 'Choose documents to group.' : `${selectedCount} selected`}
             </div>
             <button
@@ -1110,17 +886,11 @@ export function ProjectPicker({
                 setWorkspaceSheetOpen(true)
                 setWorkspaceActionError(null)
               }}
+              className="border border-(color:--accent) bg-(--accent) text-(--accent-text) rounded-xs py-1.75 px-3 font-mono fs-11 cursor-(--cur) opacity-(--op)"
               style={{
-                border: '1px solid var(--accent)',
-                background: 'var(--accent)',
-                color: '#fff',
-                borderRadius: '2px',
-                padding: '7px 12px',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                cursor: selectedCount === 0 ? 'default' : 'pointer',
-                opacity: selectedCount === 0 ? 0.5 : 1,
-              }}
+                '--cur': selectedCount === 0 ? 'default' : 'pointer',
+                '--op': selectedCount === 0 ? '0.5' : '1',
+              } as React.CSSProperties}
             >
               Add to Workspace
             </button>
@@ -1128,16 +898,7 @@ export function ProjectPicker({
               <button
                 type="button"
                 onClick={() => { void handleWorkspaceAssignment(null) }}
-                style={{
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-inset)',
-                  color: 'var(--text-secondary)',
-                  borderRadius: '2px',
-                  padding: '7px 12px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                }}
+                className="border border-(color:--border-default) bg-(--bg-inset) text-(--text-secondary) rounded-xs py-1.75 px-3 font-mono fs-11 cursor-pointer"
               >
                 Remove from Workspace
               </button>
@@ -1147,16 +908,8 @@ export function ProjectPicker({
 
         {/* ── Template init panel (collapsible) ── */}
         {showTemplateInit && (
-          <div
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-default)',
-              borderRadius: '2px',
-              padding: '14px 16px',
-              marginBottom: '20px',
-            }}
-          >
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '10px' }}>
+          <div className="bg-(--bg-surface) border border-(color:--border-default) rounded-xs py-3.5 px-4 mb-5">
+            <div className="flex gap-2 items-center mb-2.5">
               <input
                 value={marketplaceQuery}
                 onFocus={() => setMarketplaceOpen(true)}
@@ -1164,50 +917,29 @@ export function ProjectPicker({
                 aria-label="Search templates"
                 placeholder="Search templates (ieee, acm, thesis...)"
                 disabled={initBusy}
-                style={{
-                  flex: 1,
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: '2px',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  padding: '6px 8px',
-                  outline: 'none',
-                }}
+                className="flex-1 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 py-1.5 px-2 outline-none"
               />
               <button
                 data-testid="marketplace-open-button"
                 type="button"
                 onClick={() => setMarketplaceOpen(true)}
                 disabled={initBusy}
+                className="inline-flex items-center justify-center gap-1.25 h-7 rounded-xs border border-(color:--border-strong) bg-(--bg-elevated) text-(--text-primary) px-2 font-mono fs-10 tracking-(--ls) cursor-(--cur) opacity-(--op)"
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  height: '28px',
-                  borderRadius: '2px',
-                  border: '1px solid var(--border-strong)',
-                  background: 'var(--bg-elevated)',
-                  color: 'var(--text-primary)',
-                  padding: '0 8px',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '10px',
-                  letterSpacing: '0.04em',
-                  cursor: initBusy ? 'default' : 'pointer',
-                  opacity: initBusy ? 0.7 : 1,
-                }}
+                  '--ls': '0.04em',
+                  '--cur': initBusy ? 'default' : 'pointer',
+                  '--op': initBusy ? '0.7' : '1',
+                } as React.CSSProperties}
               >
                 <Store size={12} />
                 Browse
               </button>
             </div>
 
-            <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.03em', marginBottom: '6px' }}>
+            <div className="fs-10 text-(--text-tertiary) tracking-(--ls) mb-1.5" style={{ '--ls': '0.03em' } as React.CSSProperties}>
               Or run directly: typst init @preview/name[:version]
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div className="flex gap-2 items-center">
               <input
                 value={initCommand}
                 onChange={(e) => setInitCommand(e.target.value)}
@@ -1215,63 +947,36 @@ export function ProjectPicker({
                 placeholder="typst init @preview/aero-check:0.1.1"
                 onKeyDown={(e) => { if (e.key === 'Enter') void handleInitFromCommand() }}
                 disabled={initBusy}
-                style={{
-                  flex: 1,
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: '2px',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  padding: '6px 8px',
-                  outline: 'none',
-                }}
+                className="flex-1 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 py-1.5 px-2 outline-none"
               />
               <button
                 type="button"
                 onClick={() => { void handleInitFromCommand() }}
                 disabled={initBusy || !initCommand.trim()}
+                className="inline-flex items-center justify-center gap-1.25 min-w-18 h-7.5 rounded-xs border border-(color:--accent) bg-(--accent) text-(--accent-text) font-mono fs-11 tracking-(--ls) cursor-(--cur) opacity-(--op)"
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '5px',
-                  minWidth: '72px',
-                  height: '30px',
-                  borderRadius: '2px',
-                  border: '1px solid var(--accent)',
-                  background: 'var(--accent)',
-                  color: '#fff',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '11px',
-                  letterSpacing: '0.04em',
-                  cursor: initBusy ? 'default' : 'pointer',
-                  opacity: initBusy || !initCommand.trim() ? 0.6 : 1,
-                }}
+                  '--ls': '0.04em',
+                  '--cur': initBusy ? 'default' : 'pointer',
+                  '--op': initBusy || !initCommand.trim() ? '0.6' : '1',
+                } as React.CSSProperties}
               >
                 {initBusy ? <Loader2 size={12} className="animate-spin" /> : <Terminal size={12} />}
                 {initBusy ? 'Init...' : 'Run'}
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+            <div className="flex gap-1.5 flex-wrap mt-2">
               {quickInitCommands.map((item) => (
                 <button
                   key={item.label}
                   type="button"
                   onClick={() => setInitCommand(item.command)}
                   disabled={initBusy}
+                  className="border border-(color:--border-default) bg-(--bg-inset) text-(--text-secondary) rounded-xs py-0.75 px-1.75 font-mono fs-10 tracking-(--ls) cursor-(--cur)"
                   style={{
-                    border: '1px solid var(--border-default)',
-                    background: 'var(--bg-inset)',
-                    color: 'var(--text-secondary)',
-                    borderRadius: '2px',
-                    padding: '3px 7px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '10px',
-                    letterSpacing: '0.03em',
-                    cursor: initBusy ? 'default' : 'pointer',
-                  }}
+                    '--ls': '0.03em',
+                    '--cur': initBusy ? 'default' : 'pointer',
+                  } as React.CSSProperties}
                 >
                   {item.label}
                 </button>
@@ -1279,12 +984,12 @@ export function ProjectPicker({
             </div>
 
             {initError && (
-              <div style={{ marginTop: '8px', color: 'var(--status-error)', fontSize: '11px' }}>
+              <div className="mt-2 text-(--status-error) fs-11">
                 {initError}
               </div>
             )}
             {initSuccess && (
-              <div style={{ marginTop: '8px', color: 'var(--status-success)', fontSize: '11px' }}>
+              <div className="mt-2 text-(--status-success) fs-11">
                 {initSuccess}
               </div>
             )}
@@ -1293,25 +998,13 @@ export function ProjectPicker({
 
         {/* ── Inline feedback banners ── */}
         {latexError && (
-          <div
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid color-mix(in srgb, var(--status-error) 50%, transparent)',
-              borderRadius: '2px',
-              padding: '10px 14px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-            }}
-          >
-            <div style={{ fontSize: '11px', color: 'var(--status-error)' }}>{latexError}</div>
+          <div className="banner-error">
+            <div className="fs-11 text-(--status-error)">{latexError}</div>
             <button
               type="button"
               onClick={() => setLatexError(null)}
               aria-label="Dismiss import error"
-              style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0 }}
+              className="size-5 inline-flex items-center justify-center border-none bg-transparent text-(--text-tertiary) cursor-pointer shrink-0"
             >
               <X size={12} />
             </button>
@@ -1319,39 +1012,31 @@ export function ProjectPicker({
         )}
 
         {latexResult && (
-          <div
-            style={{
-              background: 'var(--bg-surface)',
-              border: '1px solid color-mix(in srgb, var(--status-success) 50%, transparent)',
-              borderRadius: '2px',
-              padding: '10px 14px',
-              marginBottom: '16px',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <div className="banner-success">
+            <div className="flex items-center justify-between gap-2">
               <div>
-                <div style={{ fontSize: '11px', color: 'var(--status-success)' }}>
+                <div className="fs-11 text-(--status-success)">
                   Created &ldquo;{latexResult.projectName}&rdquo; &mdash;{' '}
                   {latexResult.texFilesConverted} .tex {latexResult.texFilesConverted === 1 ? 'file' : 'files'} converted
                   {latexResult.fileCount > latexResult.texFilesConverted && (
-                    <span style={{ color: 'var(--text-tertiary)' }}>
+                    <span className="text-(--text-tertiary)">
                       {' '}+ {latexResult.fileCount - latexResult.texFilesConverted} other {latexResult.fileCount - latexResult.texFilesConverted === 1 ? 'file' : 'files'}
                     </span>
                   )}
                   {latexResult.metadata.documentclass && (
-                    <span style={{ color: 'var(--text-tertiary)', marginLeft: '6px' }}>
+                    <span className="text-(--text-tertiary) ml-1.5">
                       ({latexResult.metadata.documentclass})
                     </span>
                   )}
                 </div>
                 {latexResult.warnings.length > 0 && (
-                  <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '4px', lineHeight: 1.5 }}>
+                  <div className="fs-10 text-(--text-tertiary) mt-1 leading-(--lh)" style={{ '--lh': '1.5' } as React.CSSProperties}>
                     {latexResult.warnings.length} {latexResult.warnings.length === 1 ? 'warning' : 'warnings'}:
                     {latexResult.warnings.slice(0, 5).map((w, i) => (
-                      <div key={i} style={{ paddingLeft: '8px' }}>&bull; {w.message}</div>
+                      <div key={i} className="pl-2">&bull; {w.message}</div>
                     ))}
                     {latexResult.warnings.length > 5 && (
-                      <div style={{ paddingLeft: '8px' }}>&hellip; and {latexResult.warnings.length - 5} more</div>
+                      <div className="pl-2">&hellip; and {latexResult.warnings.length - 5} more</div>
                     )}
                   </div>
                 )}
@@ -1360,7 +1045,7 @@ export function ProjectPicker({
                 type="button"
                 onClick={() => setLatexResult(null)}
                 aria-label="Dismiss import result"
-                style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-start' }}
+                className="size-5 inline-flex items-center justify-center border-none bg-transparent text-(--text-tertiary) cursor-pointer shrink-0 self-start"
               >
                 <X size={12} />
               </button>
@@ -1369,24 +1054,18 @@ export function ProjectPicker({
         )}
 
         {importAllResult && (
-          <div style={{ marginBottom: '12px', fontSize: '11px', color: 'var(--status-success)', textAlign: 'center' }}>
+          <div className="mb-3 fs-11 text-(--status-success) text-center">
             {importAllResult}
           </div>
         )}
         {importAllError && (
-          <div style={{ marginBottom: '12px', fontSize: '11px', color: 'var(--status-error)', textAlign: 'center' }}>
+          <div className="mb-3 fs-11 text-(--status-error) text-center">
             {importAllError}
           </div>
         )}
 
         {/* ── Project grid ── */}
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-            gap: '10px',
-          }}
-        >
+        <div className="project-grid">
           {visibleProjects.map((project) => (
             <ProjectCard
               key={project.id}
@@ -1434,16 +1113,8 @@ export function ProjectPicker({
 
           {/* New project card */}
           {showNewInput ? (
-            <div
-              style={{
-                background: 'var(--bg-surface)',
-                border: '1px solid var(--accent)',
-                borderRadius: '2px',
-                padding: '14px 16px',
-                fontFamily: 'var(--font-mono)',
-              }}
-            >
-              <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.04em', marginBottom: '6px' }}>
+            <div className="bg-(--bg-surface) border border-(color:--accent) rounded-xs py-3.5 px-4 font-mono">
+              <div className="fs-10 text-(--text-tertiary) tracking-(--ls) mb-1.5" style={{ '--ls': '0.04em' } as React.CSSProperties}>
                 Project name
               </div>
               <input
@@ -1456,18 +1127,7 @@ export function ProjectPicker({
                   if (e.key === 'Escape') { setShowNewInput(false); setNewName('') }
                 }}
                 placeholder="My Document"
-                style={{
-                  width: '100%',
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: '2px',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  padding: '5px 8px',
-                  outline: 'none',
-                }}
+                className="w-full bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-13 font-bold py-1.25 px-2 outline-none"
               />
             </div>
           ) : (
@@ -1475,30 +1135,8 @@ export function ProjectPicker({
               type="button"
               onClick={() => setShowNewInput(true)}
               onFocus={() => onPreloadWorkspace?.()}
-              style={{
-                background: 'transparent',
-                border: '1px dashed var(--border-default)',
-                borderRadius: '2px',
-                padding: '14px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                color: 'var(--text-tertiary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '12px',
-                fontWeight: 600,
-                letterSpacing: '0.03em',
-                transition: 'color 100ms ease, border-color 100ms ease',
-                minHeight: '80px',
-              }}
-              onMouseEnter={(e) => {
-                onPreloadWorkspace?.()
-                e.currentTarget.style.color = 'var(--accent)'
-                e.currentTarget.style.borderColor = 'var(--accent)'
-              }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-tertiary)'; e.currentTarget.style.borderColor = 'var(--border-default)' }}
+              className="new-project-btn"
+              onMouseEnter={() => { onPreloadWorkspace?.() }}
             >
               <Plus size={14} />
               New Project
@@ -1507,17 +1145,7 @@ export function ProjectPicker({
         </div>
 
         {/* ── Footer: export / import ── */}
-        <div
-          style={{
-            marginTop: '28px',
-            paddingTop: '16px',
-            borderTop: '1px solid var(--border-default)',
-            display: 'flex',
-            justifyContent: 'center',
-            gap: '16px',
-            flexWrap: 'wrap',
-          }}
-        >
+        <div className="mt-7 pt-4 border-t border-t-(color:--border-default) flex justify-center gap-4 flex-wrap">
           {projects.length > 0 && (
             <LinkBtn onClick={() => { void loadProjectIo().then(({ exportAllProjects }) => exportAllProjects()) }}>
               <Download size={12} />
@@ -1527,7 +1155,8 @@ export function ProjectPicker({
           <LinkBtn
             onClick={() => importAllInputRef.current?.click()}
             disabled={importAllBusy}
-            style={{ ...linkBtnBase, opacity: importAllBusy ? 0.6 : 1 }}
+            className="opacity-(--op)"
+            style={{ '--op': importAllBusy ? '0.6' : '1' } as React.CSSProperties}
           >
             {importAllBusy ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
             {importAllBusy ? 'Importing...' : 'Import all'}
@@ -1540,16 +1169,7 @@ export function ProjectPicker({
           onClick={(event) => {
             if (event.target === event.currentTarget) setWorkspaceSheetOpen(false)
           }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1000,
-            background: 'rgba(0, 0, 0, 0.32)',
-            display: 'flex',
-            alignItems: 'flex-end',
-            justifyContent: 'center',
-            padding: '24px',
-          }}
+          className="sheet-overlay"
         >
           <div
             ref={workspaceSheetRef}
@@ -1557,23 +1177,12 @@ export function ProjectPicker({
             aria-modal="true"
             aria-label="Assign workspace"
             tabIndex={-1}
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              background: 'color-mix(in srgb, var(--bg-surface) 94%, transparent)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: '2px',
-              padding: '16px',
-              backdropFilter: 'blur(18px)',
-              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.18)',
-              display: 'grid',
-              gap: '12px',
-            }}
+            className="workspace-sheet"
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <div style={{ fontSize: '12px', color: 'var(--text-primary)', fontWeight: 700 }}>Assign Workspace</div>
-                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                <div className="fs-12 text-(--text-primary) font-bold">Assign Workspace</div>
+                <div className="fs-10 text-(--text-tertiary) mt-0.5">
                   Group selected documents on the homepage.
                 </div>
               </div>
@@ -1581,37 +1190,20 @@ export function ProjectPicker({
                 type="button"
                 onClick={() => setWorkspaceSheetOpen(false)}
                 aria-label="Close workspace sheet"
-                style={{
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '2px',
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-inset)',
-                  color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                }}
+                className="size-7 rounded-xs border border-(color:--border-default) bg-(--bg-inset) text-(--text-secondary) cursor-pointer"
               >
                 <X size={14} />
               </button>
             </div>
 
             {homeWorkspaces.length > 0 && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <div className="flex gap-2 flex-wrap">
                 {homeWorkspaces.map((workspace) => (
                   <button
                     key={workspace.id}
                     type="button"
                     onClick={() => { void handleWorkspaceAssignment(workspace.id) }}
-                    style={{
-                      border: '1px solid var(--border-default)',
-                      background: 'var(--bg-inset)',
-                      color: 'var(--text-primary)',
-                      borderRadius: '2px',
-                      padding: '8px 12px',
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                    }}
+                    className="border border-(color:--border-default) bg-(--bg-inset) text-(--text-primary) rounded-xs py-2 px-3 font-mono fs-11 cursor-pointer"
                   >
                     {workspace.name}
                   </button>
@@ -1619,20 +1211,12 @@ export function ProjectPicker({
               </div>
             )}
 
-            <div
-              style={{
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                padding: '12px',
-                display: 'grid',
-                gap: '8px',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div className="border border-(color:--border-default) rounded-xs p-3 grid gap-2">
+              <div className="flex items-center gap-2">
                 <FolderPlus size={14} color="var(--text-secondary)" />
-                <div style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>New workspace</div>
+                <div className="fs-11 text-(--text-secondary)">New workspace</div>
               </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div className="flex gap-2">
                 <input
                   value={workspaceName}
                   onChange={(event) => setWorkspaceName(event.target.value)}
@@ -1643,37 +1227,18 @@ export function ProjectPicker({
                       void handleCreateWorkspace()
                     }
                   }}
-                  style={{
-                    flex: 1,
-                    background: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-strong)',
-                    borderRadius: '2px',
-                    color: 'var(--text-primary)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '12px',
-                    padding: '8px 10px',
-                    outline: 'none',
-                  }}
+                  className="flex-1 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 py-2 px-2.5 outline-none"
                 />
                 <button
                   type="button"
                   onClick={() => { void handleCreateWorkspace() }}
-                  style={{
-                    border: '1px solid var(--accent)',
-                    background: 'var(--accent)',
-                    color: '#fff',
-                    borderRadius: '2px',
-                    padding: '0 12px',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '11px',
-                    cursor: 'pointer',
-                  }}
+                  className="border border-(color:--accent) bg-(--accent) text-(--accent-text) rounded-xs px-3 font-mono fs-11 cursor-pointer"
                 >
                   Create
                 </button>
               </div>
               {workspaceActionError && (
-                <div style={{ fontSize: '10px', color: 'var(--status-error)' }}>{workspaceActionError}</div>
+                <div className="fs-10 text-(--status-error)">{workspaceActionError}</div>
               )}
             </div>
           </div>
@@ -1693,16 +1258,7 @@ export function ProjectPicker({
       {marketplaceOpen && (
         <div
           onClick={(event) => { if (event.target === event.currentTarget) setMarketplaceOpen(false) }}
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(0, 0, 0, 0.6)',
-            padding: '24px',
-          }}
+          className="modal-overlay"
         >
           <div
             data-testid="marketplace-modal"
@@ -1711,33 +1267,14 @@ export function ProjectPicker({
             aria-modal="true"
             aria-label="Template marketplace"
             tabIndex={-1}
-            style={{
-              width: '100%',
-              maxWidth: '720px',
-              maxHeight: 'calc(100vh - 48px)',
-              background: 'var(--bg-surface)',
-              border: '1px solid var(--border-strong)',
-              borderRadius: '2px',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
+            className="marketplace-modal"
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '10px',
-                padding: '12px 14px',
-                borderBottom: '1px solid var(--border-default)',
-              }}
-            >
+            <div className="flex items-center justify-between gap-2.5 py-3 px-3.5 border-b border-b-(color:--border-default)">
               <div>
-                <div style={{ fontSize: '12px', letterSpacing: '0.06em', color: 'var(--text-primary)', fontWeight: 700 }}>
+                <div className="fs-12 tracking-(--ls) text-(--text-primary) font-bold" style={{ '--ls': '0.06em' } as React.CSSProperties}>
                   Template Marketplace
                 </div>
-                <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginTop: '2px' }}>
+                <div className="fs-10 text-(--text-tertiary) mt-0.5">
                   Typst Universe packages and built-in starters
                 </div>
               </div>
@@ -1745,19 +1282,14 @@ export function ProjectPicker({
                 type="button"
                 onClick={() => setMarketplaceOpen(false)}
                 aria-label="Close marketplace"
-                style={{
-                  width: '28px', height: '28px',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  border: 'none', borderRadius: '2px', background: 'transparent',
-                  color: 'var(--text-secondary)', cursor: 'pointer',
-                }}
+                className="size-7 inline-flex items-center justify-center border-none rounded-xs bg-transparent text-(--text-secondary) cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-default)', display: 'grid', gap: '6px' }}>
-              <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.03em' }}>
+            <div className="py-3 px-3.5 border-b border-b-(color:--border-default) grid gap-1.5">
+              <div className="fs-10 text-(--text-tertiary) tracking-(--ls)" style={{ '--ls': '0.03em' } as React.CSSProperties}>
                 Search packages (min {MIN_MARKETPLACE_QUERY_LENGTH} characters)
               </div>
               <input
@@ -1766,54 +1298,36 @@ export function ProjectPicker({
                 onChange={(event) => setMarketplaceQuery(event.target.value)}
                 aria-label="Search Typst Universe packages"
                 placeholder="ieee, acm, thesis, conference..."
-                style={{
-                  width: '100%',
-                  background: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-strong)',
-                  borderRadius: '2px',
-                  color: 'var(--text-primary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '12px',
-                  padding: '7px 8px',
-                  outline: 'none',
-                }}
+                className="w-full bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs text-(--text-primary) font-mono fs-12 py-1.75 px-2 outline-none"
               />
               {initError && (
                 <div
                   data-testid="marketplace-init-error"
-                  style={{ color: 'var(--status-error)', fontSize: '11px', lineHeight: 1.4 }}
+                  className="text-(--status-error) fs-11 leading-(--lh)"
+                  style={{ '--lh': '1.4' } as React.CSSProperties}
                 >
                   {initError}
                 </div>
               )}
             </div>
 
-            <div style={{ overflowY: 'auto', padding: '12px 14px', display: 'grid', gap: '14px' }}>
+            <div className="overflow-y-auto py-3 px-3.5 grid gap-3.5">
               {/* Built-in section */}
               <div>
-                <div style={{ fontSize: '10px', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                <div className="fs-10 tracking-(--ls) text-(--text-tertiary) mb-1.5" style={{ '--ls': '0.06em' } as React.CSSProperties}>
                   BUILT-IN
                 </div>
-                <div style={{ display: 'grid', gap: '6px' }}>
+                <div className="grid gap-1.5">
                   {builtInTemplates.map((template) => (
                     <div
                       key={template.id}
-                      style={{
-                        border: '1px solid var(--border-default)',
-                        borderRadius: '2px',
-                        background: 'var(--bg-inset)',
-                        padding: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        gap: '8px',
-                      }}
+                      className="border border-(color:--border-default) rounded-xs bg-(--bg-inset) p-2.5 flex items-center justify-between gap-2"
                     >
                       <div>
-                        <div style={{ fontSize: '11px', letterSpacing: '0.03em', color: 'var(--text-primary)', fontWeight: 700 }}>
+                        <div className="fs-11 tracking-(--ls) text-(--text-primary) font-bold" style={{ '--ls': '0.03em' } as React.CSSProperties}>
                           {template.label}
                         </div>
-                        <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginTop: '2px', lineHeight: 1.4 }}>
+                        <div className="fs-10 text-(--text-secondary) mt-0.5 leading-(--lh)" style={{ '--lh': '1.4' } as React.CSSProperties}>
                           {template.description}
                         </div>
                       </div>
@@ -1822,13 +1336,12 @@ export function ProjectPicker({
                         type="button"
                         onClick={() => { void handleImportBuiltInTemplate(template.id) }}
                         disabled={initBusy}
+                        className="inline-flex items-center justify-center gap-1.25 border border-(color:--accent) bg-(--accent) text-(--accent-text) rounded-xs h-6.5 px-2 font-mono fs-10 tracking-(--ls) cursor-(--cur) opacity-(--op) shrink-0"
                         style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '5px',
-                          border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff',
-                          borderRadius: '2px', height: '26px', padding: '0 8px',
-                          fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.04em',
-                          cursor: initBusy ? 'default' : 'pointer', opacity: initBusy ? 0.7 : 1, flexShrink: 0,
-                        }}
+                          '--ls': '0.04em',
+                          '--cur': initBusy ? 'default' : 'pointer',
+                          '--op': initBusy ? '0.7' : '1',
+                        } as React.CSSProperties}
                       >
                         <Download size={11} />
                         Import
@@ -1840,82 +1353,75 @@ export function ProjectPicker({
 
               {/* Universe section */}
               <div>
-                <div style={{ fontSize: '10px', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: '6px' }}>
+                <div className="fs-10 tracking-(--ls) text-(--text-tertiary) mb-1.5" style={{ '--ls': '0.06em' } as React.CSSProperties}>
                   TYPST UNIVERSE
                 </div>
 
                 {marketplaceQuery.trim().length < MIN_MARKETPLACE_QUERY_LENGTH && (
-                  <div style={{ border: '1px dashed var(--border-default)', borderRadius: '2px', padding: '10px', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                  <div className="dashed-note">
                     Type at least {MIN_MARKETPLACE_QUERY_LENGTH} characters to search.
                   </div>
                 )}
 
                 {marketplaceBusy && (
-                  <div style={{ border: '1px solid var(--border-default)', borderRadius: '2px', padding: '10px', color: 'var(--text-secondary)', fontSize: '11px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <div className="border border-(color:--border-default) rounded-xs p-2.5 text-(--text-secondary) fs-11 inline-flex items-center gap-1.5">
                     <Loader2 size={12} className="animate-spin" />
                     Searching...
                   </div>
                 )}
 
                 {!marketplaceBusy && marketplaceError && (
-                  <div style={{ border: '1px solid color-mix(in srgb, var(--status-error) 60%, transparent)', borderRadius: '2px', padding: '10px', color: 'var(--status-error)', fontSize: '11px' }}>
+                  <div className="marketplace-error-box">
                     {marketplaceError}
                   </div>
                 )}
 
                 {!marketplaceBusy && !marketplaceError && marketplaceQuery.trim().length >= MIN_MARKETPLACE_QUERY_LENGTH && marketplaceResults.length === 0 && (
-                  <div style={{ border: '1px dashed var(--border-default)', borderRadius: '2px', padding: '10px', color: 'var(--text-tertiary)', fontSize: '11px' }}>
+                  <div className="dashed-note">
                     No packages matched your query.
                   </div>
                 )}
 
                 {!marketplaceBusy && marketplaceResults.length > 0 && (
-                  <div style={{ display: 'grid', gap: '6px' }}>
+                  <div className="grid gap-1.5">
                     {marketplaceResults.map((item) => (
                       <div
                         key={`${item.name}:${item.latestVersion}`}
-                        style={{
-                          border: '1px solid var(--border-default)',
-                          borderRadius: '2px',
-                          background: 'var(--bg-inset)',
-                          padding: '10px',
-                          display: 'grid',
-                          gap: '6px',
-                        }}
+                        className="border border-(color:--border-default) rounded-xs bg-(--bg-inset) p-2.5 grid gap-1.5"
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', flexWrap: 'wrap' }}>
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div>
-                            <span style={{ fontSize: '11px', color: 'var(--text-primary)', letterSpacing: '0.03em', fontWeight: 700 }}>
+                            <span className="fs-11 text-(--text-primary) tracking-(--ls) font-bold" style={{ '--ls': '0.03em' } as React.CSSProperties}>
                               {formatPackageTitle(item.name)}
                             </span>
-                            <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', marginLeft: '8px' }}>
+                            <span className="fs-10 text-(--text-tertiary) ml-2">
                               @preview/{item.name}:{item.latestVersion}
                             </span>
                           </div>
                           {item.isTemplate ? (
-                            <span style={{ fontSize: '10px', padding: '1px 5px', border: '1px solid color-mix(in srgb, var(--status-success) 50%, transparent)', color: 'var(--status-success)', borderRadius: '2px', letterSpacing: '0.03em' }}>
+                            <span className="badge-template">
                               Template
                             </span>
                           ) : (
-                            <span style={{ fontSize: '10px', padding: '1px 5px', border: '1px solid var(--border-default)', color: 'var(--text-tertiary)', borderRadius: '2px', letterSpacing: '0.03em' }}>
+                            <span className="badge-package">
                               Package
                             </span>
                           )}
                         </div>
 
                         {item.isTemplate ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <div className="flex items-center gap-1.5">
                             <button
                               data-testid={`marketplace-import-${item.name}`}
                               type="button"
                               onClick={() => { void handleMarketplaceImport(item) }}
                               disabled={initBusy}
+                              className="border border-(color:--accent) bg-(--accent) text-(--accent-text) rounded-xs h-6.25 px-2 font-mono fs-10 tracking-(--ls) cursor-(--cur) opacity-(--op)"
                               style={{
-                                border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff',
-                                borderRadius: '2px', height: '25px', padding: '0 8px',
-                                fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.04em',
-                                cursor: initBusy ? 'default' : 'pointer', opacity: initBusy ? 0.7 : 1,
-                              }}
+                                '--ls': '0.04em',
+                                '--cur': initBusy ? 'default' : 'pointer',
+                                '--op': initBusy ? '0.7' : '1',
+                              } as React.CSSProperties}
                             >
                               Import
                             </button>
@@ -1924,18 +1430,18 @@ export function ProjectPicker({
                               type="button"
                               onClick={() => handleMarketplacePrefill(item)}
                               disabled={initBusy}
+                              className="border border-(color:--border-strong) bg-(--bg-elevated) text-(--text-primary) rounded-xs h-6.25 px-2 font-mono fs-10 tracking-(--ls) cursor-(--cur) opacity-(--op)"
                               style={{
-                                border: '1px solid var(--border-strong)', background: 'var(--bg-elevated)', color: 'var(--text-primary)',
-                                borderRadius: '2px', height: '25px', padding: '0 8px',
-                                fontFamily: 'var(--font-mono)', fontSize: '10px', letterSpacing: '0.04em',
-                                cursor: initBusy ? 'default' : 'pointer', opacity: initBusy ? 0.7 : 1,
-                              }}
+                                '--ls': '0.04em',
+                                '--cur': initBusy ? 'default' : 'pointer',
+                                '--op': initBusy ? '0.7' : '1',
+                              } as React.CSSProperties}
                             >
                               Prefill
                             </button>
                           </div>
                         ) : (
-                          <div style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>
+                          <div className="text-(--text-tertiary) fs-10">
                             {item.disabledReason}
                           </div>
                         )}

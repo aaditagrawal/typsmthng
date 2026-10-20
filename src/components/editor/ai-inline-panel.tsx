@@ -29,27 +29,6 @@ function clampPosition(left: number, top: number): { left: number; top: number }
   }
 }
 
-const labelStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: '10px',
-  fontWeight: 600,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--text-tertiary)',
-}
-
-const buttonStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: '11px',
-  letterSpacing: '0.04em',
-  padding: '4px 10px',
-  border: '1px solid var(--border-default)',
-  borderRadius: '2px',
-  background: 'var(--bg-inset)',
-  color: 'var(--text-secondary)',
-  cursor: 'pointer',
-}
-
 export function AiInlinePanel() {
   const [open, setOpen] = useState(false)
   const [status, setStatus] = useState<PanelStatus>('input')
@@ -287,25 +266,15 @@ export function AiInlinePanel() {
       role="dialog"
       aria-label="AI edit"
       onKeyDown={handleKeyDown}
+      className="ai-panel"
       style={{
-        position: 'fixed',
-        left: position.left,
-        top: position.top,
-        width: `${PANEL_WIDTH}px`,
-        zIndex: 900,
-        background: 'var(--bg-elevated)',
-        border: '1px solid var(--border-strong)',
-        borderRadius: '2px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.35)',
-        padding: '10px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
+        '--panel-l': `${position.left}px`,
+        '--panel-t': `${position.top}px`,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={labelStyle}>AI Edit — {isInsertion ? 'Insert at cursor' : 'Replace selection'}</span>
-        {busy && <span style={{ ...labelStyle, color: 'var(--accent)' }}>Streaming…</span>}
+      <div className="flex items-center justify-between">
+        <span className="ai-label">AI Edit — {isInsertion ? 'Insert at cursor' : 'Replace selection'}</span>
+        {busy && <span className="ai-label" style={{ '--lbl-fg': 'var(--accent)' }}>Streaming…</span>}
       </div>
 
       <input
@@ -316,38 +285,15 @@ export function AiInlinePanel() {
         aria-label="AI edit instruction"
         placeholder={isInsertion ? 'e.g. continue writing this section' : 'e.g. convert this to a table'}
         disabled={busy}
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          padding: '6px 8px',
-          background: 'var(--bg-inset)',
-          border: '1px solid var(--border-default)',
-          borderRadius: '2px',
-          color: 'var(--text-primary)',
-          outline: 'none',
-          width: '100%',
-          boxSizing: 'border-box',
-          opacity: busy ? 0.6 : 1,
-        }}
+        className="font-mono fs-12 py-1.5 px-2 bg-(--bg-inset) border border-(color:--border-default) rounded-xs text-(--text-primary) outline-none w-full box-border opacity-(--op)"
+        style={{ '--op': busy ? '0.6' : '1' }}
       />
 
       {preview.length > 0 && (
         <div
           ref={previewRef}
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            lineHeight: 1.5,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            maxHeight: '180px',
-            overflowY: 'auto',
-            padding: '6px 8px',
-            background: 'var(--bg-inset)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '2px',
-            color: 'var(--text-primary)',
-          }}
+          className="font-mono fs-11 leading-(--lh) whitespace-pre-wrap wrap-break-word max-h-45 overflow-y-auto py-1.5 px-2 bg-(--bg-inset) border border-(color:--border-subtle) rounded-xs text-(--text-primary)"
+          style={{ '--lh': '1.5' }}
         >
           {preview}
         </div>
@@ -355,32 +301,27 @@ export function AiInlinePanel() {
 
       {status === 'error' && error && (
         <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            lineHeight: 1.4,
-            color: 'var(--status-error)',
-            wordBreak: 'break-word',
-          }}
+          className="font-mono fs-11 leading-(--lh) text-(--status-error) wrap-break-word"
+          style={{ '--lh': '1.4' }}
         >
           {error}
         </div>
       )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'flex-end' }}>
+      <div className="flex items-center gap-1.5 justify-end">
         {status === 'done' ? (
           <>
-            <button type="button" onClick={() => closePanel(true)} style={buttonStyle}>
+            <button type="button" onClick={() => closePanel(true)} className="ai-btn">
               Reject · Esc
             </button>
             <button
               type="button"
               onClick={accept}
+              className="ai-btn"
               style={{
-                ...buttonStyle,
-                background: 'var(--accent)',
-                color: 'var(--accent-text)',
-                borderColor: 'var(--accent)',
+                '--ab-bg': 'var(--accent)',
+                '--ab-fg': 'var(--accent-text)',
+                '--ab-bc': 'var(--accent)',
               }}
             >
               Accept · ⌘↵
@@ -388,19 +329,19 @@ export function AiInlinePanel() {
           </>
         ) : (
           <>
-            <button type="button" onClick={cancel} style={buttonStyle}>
+            <button type="button" onClick={cancel} className="ai-btn">
               {busy ? 'Stop · Esc' : 'Cancel · Esc'}
             </button>
             <button
               type="button"
               onClick={submit}
               disabled={busy || instruction.trim().length === 0}
+              className="ai-btn"
               style={{
-                ...buttonStyle,
-                background: busy || instruction.trim().length === 0 ? 'var(--bg-inset)' : 'var(--accent)',
-                color: busy || instruction.trim().length === 0 ? 'var(--text-disabled)' : 'var(--accent-text)',
-                borderColor: busy || instruction.trim().length === 0 ? 'var(--border-default)' : 'var(--accent)',
-                cursor: busy || instruction.trim().length === 0 ? 'default' : 'pointer',
+                '--ab-bg': busy || instruction.trim().length === 0 ? 'var(--bg-inset)' : 'var(--accent)',
+                '--ab-fg': busy || instruction.trim().length === 0 ? 'var(--text-disabled)' : 'var(--accent-text)',
+                '--ab-bc': busy || instruction.trim().length === 0 ? 'var(--border-default)' : 'var(--accent)',
+                '--ab-cur': busy || instruction.trim().length === 0 ? 'default' : 'pointer',
               }}
             >
               {status === 'error' ? 'Retry · ↵' : 'Generate · ↵'}

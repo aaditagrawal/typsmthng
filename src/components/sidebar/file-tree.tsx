@@ -60,14 +60,9 @@ function IndentGuides({ depth }: { depth: number }) {
       {Array.from({ length: depth }, (_, i) => (
         <span
           key={i}
+          className="absolute top-0 bottom-0 w-px bg-(--indent-guide) pointer-events-none left-(--guide-left)"
           style={{
-            position: 'absolute',
-            left: `${BORDER_LEFT + INDENT_BASE + i * INDENT_STEP + 6}px`,
-            top: 0,
-            bottom: 0,
-            width: '1px',
-            background: 'var(--indent-guide)',
-            pointerEvents: 'none',
+            '--guide-left': `${BORDER_LEFT + INDENT_BASE + i * INDENT_STEP + 6}px`,
           }}
         />
       ))}
@@ -193,13 +188,6 @@ function ProjectDropdown({
     onClose()
   }
 
-  const menuStyle = {
-    fontSize: '11px',
-    fontFamily: 'var(--font-mono)',
-    textTransform: 'uppercase' as const,
-    letterSpacing: '0.03em',
-  }
-
   const itemHover = (e: React.MouseEvent<HTMLButtonElement>, enter: boolean, danger = false) => {
     e.currentTarget.style.background = enter ? 'var(--bg-hover)' : 'transparent'
     if (!danger) {
@@ -210,26 +198,14 @@ function ProjectDropdown({
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div
-        className="absolute left-0 right-0 z-50 py-1"
-        style={{
-          top: '40px',
-          background: 'var(--bg-elevated)',
-          border: '2px solid var(--border-strong)',
-          borderRadius: '2px',
-          fontFamily: 'var(--font-mono)',
-          maxHeight: '300px',
-          overflowY: 'auto',
-        }}
-      >
+      <div className="absolute left-0 right-0 z-50 py-1 top-10 bg-(--bg-elevated) border-2 border-(color:--border-strong) rounded-xs font-mono max-h-75 overflow-y-auto">
         {/* Project list */}
         {projects.map((p) => (
           <button
             key={p.id}
-            className="flex items-center gap-2 w-full px-3 py-1.5"
+            className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--fg)"
             style={{
-              ...menuStyle,
-              color: p.id === currentProjectId ? 'var(--accent)' : 'var(--text-secondary)',
+              '--fg': p.id === currentProjectId ? 'var(--accent)' : 'var(--text-secondary)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-hover)'
@@ -240,17 +216,16 @@ function ProjectDropdown({
             onClick={() => handleSelectProject(p.id)}
           >
             {p.id === currentProjectId && <Check size={11} className="shrink-0" />}
-            {p.id !== currentProjectId && <span style={{ width: '11px' }} className="shrink-0" />}
-            <span className="truncate" style={{ textTransform: 'none' }}>{p.name}</span>
+            {p.id !== currentProjectId && <span className="w-2.75 shrink-0" />}
+            <span className="truncate normal-case">{p.name}</span>
           </button>
         ))}
 
-        <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
+        <div className="h-px bg-(--border-default) my-0.5" />
 
         {/* Rename */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
-          style={{ ...menuStyle, color: 'var(--text-secondary)' }}
+          className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--text-secondary)"
           onMouseEnter={(e) => itemHover(e, true)}
           onMouseLeave={(e) => itemHover(e, false)}
           onClick={() => {
@@ -264,8 +239,7 @@ function ProjectDropdown({
 
         {/* New project */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
-          style={{ ...menuStyle, color: 'var(--text-secondary)' }}
+          className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--text-secondary)"
           onMouseEnter={(e) => itemHover(e, true)}
           onMouseLeave={(e) => itemHover(e, false)}
           onClick={handleNewProject}
@@ -274,16 +248,15 @@ function ProjectDropdown({
           NEW PROJECT
         </button>
 
-        <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
+        <div className="h-px bg-(--border-default) my-0.5" />
 
         {/* Delete */}
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
+          className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--fg) cursor-(--cur) opacity-(--op)"
           style={{
-            ...menuStyle,
-            color: projects.length <= 1 ? 'var(--text-tertiary)' : 'var(--status-error)',
-            cursor: projects.length <= 1 ? 'not-allowed' : 'pointer',
-            opacity: projects.length <= 1 ? 0.5 : 1,
+            '--fg': projects.length <= 1 ? 'var(--text-tertiary)' : 'var(--status-error)',
+            '--cur': projects.length <= 1 ? 'not-allowed' : 'pointer',
+            '--op': projects.length <= 1 ? '0.5' : '1',
           }}
           disabled={projects.length <= 1}
           onMouseEnter={(e) => {
@@ -348,19 +321,15 @@ function InlineNameInput({
 
   return (
     <div
-      className="flex items-center"
+      className="flex items-center relative h-8 pr-3 gap-2 pl-(--indent)"
       style={{
-        position: 'relative',
-        height: '32px',
-        paddingLeft: `${INDENT_BASE + depth * INDENT_STEP + (isFolder ? 0 : INDENT_STEP)}px`,
-        paddingRight: '12px',
-        gap: '8px',
+        '--indent': `${INDENT_BASE + depth * INDENT_STEP + (isFolder ? 0 : INDENT_STEP)}px`,
       }}
     >
       <IndentGuides depth={depth} />
       {isFolder
-        ? <FolderOpen size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-        : <File size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+        ? <FolderOpen size={14} className="shrink-0 text-(--accent)" />
+        : <File size={14} className="shrink-0 text-(--text-tertiary)" />
       }
       <input
         ref={inputRef}
@@ -371,16 +340,7 @@ function InlineNameInput({
           if (e.key === 'Enter') handleSubmit()
           if (e.key === 'Escape') onCancel()
         }}
-        className="bg-transparent outline-none w-full"
-        style={{
-          color: 'var(--text-primary)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          padding: '2px 4px',
-          border: '1px solid var(--accent)',
-          borderRadius: '2px',
-          background: 'var(--bg-inset)',
-        }}
+        className="bg-transparent outline-none w-full text-(--text-primary) font-mono fs-12 py-0.5 px-1 border border-(color:--accent) rounded-xs bg-(--bg-inset)"
       />
     </div>
   )
@@ -476,23 +436,10 @@ function FolderItem({
   ]
 
   return (
-    <div style={{ contentVisibility: 'auto', containIntrinsicSize: '32px' }}>
+    <div className="tree-item">
       <button
-        className="flex items-center w-full text-left"
-        style={{
-          position: 'relative',
-          height: '32px',
-          paddingLeft: `${INDENT_BASE + depth * INDENT_STEP}px`,
-          paddingRight: '12px',
-          gap: '6px',
-          background: 'transparent',
-          color: 'var(--text-secondary)',
-          borderLeft: `${BORDER_LEFT}px solid transparent`,
-          borderRadius: '0',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          transition: 'background 80ms ease, color 80ms ease',
-        }}
+        className="flex items-center w-full text-left relative h-8 pr-3 gap-1.5 pl-(--indent) bg-transparent text-(--text-secondary) border-l-3 border-l-transparent rounded-none font-mono fs-12 transition-colors duration-80"
+        style={{ '--indent': `${INDENT_BASE + depth * INDENT_STEP}px` }}
         onClick={onToggle}
         onContextMenu={handleContextMenu}
         onKeyDown={(e) => {
@@ -514,18 +461,14 @@ function FolderItem({
         <IndentGuides depth={depth} />
         <ChevronRight
           size={12}
-          className="shrink-0"
-          style={{
-            color: 'var(--text-tertiary)',
-            transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 120ms ease',
-          }}
+          className="shrink-0 text-(--text-tertiary) rotate-(--rot) transition-transform duration-120"
+          style={{ '--rot': isOpen ? '90deg' : '0deg' }}
         />
         {isOpen
-          ? <FolderOpen size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-          : <Folder size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+          ? <FolderOpen size={14} className="shrink-0 text-(--accent)" />
+          : <Folder size={14} className="shrink-0 text-(--text-tertiary)" />
         }
-        <span className="truncate" style={{ textTransform: 'none' }}>{node.name}</span>
+        <span className="truncate normal-case">{node.name}</span>
       </button>
 
       {isOpen && node.children && (
@@ -701,22 +644,14 @@ function FileItem({
   ]
 
   return (
-    <div className="relative" style={{ contentVisibility: 'auto', containIntrinsicSize: '32px' }}>
+    <div className="relative tree-item">
       <button
-        className="flex items-center w-full text-left"
+        className="flex items-center w-full text-left relative h-8 pl-(--indent) pr-3 gap-2 bg-(--row-bg) text-(--row-fg) border-l-3 border-l-(color:--row-border) rounded-none font-mono fs-12 transition-colors duration-80"
         style={{
-          position: 'relative',
-          height: '32px',
-          paddingLeft: `${INDENT_BASE + depth * INDENT_STEP + INDENT_STEP}px`,
-          paddingRight: '12px',
-          gap: '8px',
-          background: isActive ? 'var(--accent-muted)' : 'transparent',
-          color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-          borderLeft: isActive ? `${BORDER_LEFT}px solid var(--accent)` : `${BORDER_LEFT}px solid transparent`,
-          borderRadius: '0',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          transition: 'background 80ms ease, color 80ms ease',
+          '--indent': `${INDENT_BASE + depth * INDENT_STEP + INDENT_STEP}px`,
+          '--row-bg': isActive ? 'var(--accent-muted)' : 'transparent',
+          '--row-fg': isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+          '--row-border': isActive ? 'var(--accent)' : 'transparent',
         }}
         onClick={() => {
           if (isImagePath(name)) {
@@ -747,7 +682,7 @@ function FileItem({
         }}
       >
         <IndentGuides depth={depth} />
-        <File size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+        <File size={14} className="shrink-0 text-(--text-tertiary)" />
         <span className="truncate">{name}</span>
       </button>
 
@@ -809,19 +744,15 @@ function NewItemInput({
 
   return (
     <div
-      className="flex items-center"
+      className="flex items-center relative h-8 pl-(--indent) pr-3 gap-2"
       style={{
-        position: 'relative',
-        height: '32px',
-        paddingLeft: `${INDENT_BASE + depth * INDENT_STEP + (type === 'file' ? INDENT_STEP : 0)}px`,
-        paddingRight: '12px',
-        gap: '8px',
+        '--indent': `${INDENT_BASE + depth * INDENT_STEP + (type === 'file' ? INDENT_STEP : 0)}px`,
       }}
     >
       <IndentGuides depth={depth} />
       {type === 'folder'
-        ? <FolderPlus size={14} className="shrink-0" style={{ color: 'var(--accent)' }} />
-        : <FilePlus size={14} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+        ? <FolderPlus size={14} className="shrink-0 text-(--accent)" />
+        : <FilePlus size={14} className="shrink-0 text-(--text-tertiary)" />
       }
       <input
         ref={inputRef}
@@ -833,16 +764,7 @@ function NewItemInput({
           if (e.key === 'Enter') handleSubmit()
           if (e.key === 'Escape') onCancel()
         }}
-        className="bg-transparent outline-none w-full"
-        style={{
-          color: 'var(--text-primary)',
-          fontFamily: 'var(--font-mono)',
-          fontSize: '12px',
-          padding: '2px 4px',
-          border: '1px solid var(--accent)',
-          borderRadius: '2px',
-          background: 'var(--bg-inset)',
-        }}
+        className="bg-transparent outline-none w-full text-(--text-primary) font-mono fs-12 py-0.5 px-1 border border-(color:--accent) rounded-xs bg-(--bg-inset)"
       />
     </div>
   )
@@ -867,25 +789,14 @@ function NewDropdown({
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
       <div
-        className="fixed z-50 py-1 min-w-[140px]"
+        className="fixed z-50 py-1 min-w-35 bg-(--bg-elevated) border-2 border-(color:--border-strong) rounded-xs font-mono left-(--menu-x) top-(--menu-y)"
         style={{
-          left: anchorRect.left,
-          top: anchorRect.bottom + 4,
-          background: 'var(--bg-elevated)',
-          border: '2px solid var(--border-strong)',
-          borderRadius: '2px',
-          fontFamily: 'var(--font-mono)',
+          '--menu-x': `${anchorRect.left}px`,
+          '--menu-y': `${anchorRect.bottom + 4}px`,
         }}
       >
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
-          style={{
-            color: 'var(--text-secondary)',
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.03em',
-          }}
+          className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--text-secondary)"
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'var(--bg-hover)'
             e.currentTarget.style.color = 'var(--text-primary)'
@@ -901,16 +812,9 @@ function NewDropdown({
         >
           <FilePlus size={12} /> NEW FILE
         </button>
-        <div style={{ height: '1px', background: 'var(--border-default)', margin: '2px 0' }} />
+        <div className="h-px bg-(--border-default) my-0.5" />
         <button
-          className="flex items-center gap-2 w-full px-3 py-1.5"
-          style={{
-            color: 'var(--text-secondary)',
-            fontSize: '11px',
-            fontFamily: 'var(--font-mono)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.03em',
-          }}
+          className="flex items-center gap-2 w-full px-3 py-1.5 menu-text text-(--text-secondary)"
           onMouseEnter={(e) => {
             e.currentTarget.style.background = 'var(--bg-hover)'
             e.currentTarget.style.color = 'var(--text-primary)'
@@ -1365,23 +1269,16 @@ export function FileTree() {
 
   return (
     <div
-      className="h-full flex flex-col"
-      style={{ background: 'var(--bg-surface)' }}
+      className="h-full flex flex-col bg-(--bg-surface)"
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Project header */}
-      <div className="relative shrink-0" style={{ borderBottom: '1px solid var(--border-default)' }}>
+      <div className="relative shrink-0 border-b border-b-(color:--border-default)">
         {renamingProject ? (
-          <div
-            className="flex items-center"
-            style={{
-              height: '40px',
-              padding: '0 12px',
-            }}
-          >
+          <div className="flex items-center h-10 px-3">
             <input
               ref={projectNameInputRef}
               value={projectNameValue}
@@ -1391,32 +1288,13 @@ export function FileTree() {
                 if (e.key === 'Enter') handleProjectRenameSubmit()
                 if (e.key === 'Escape') setRenamingProject(false)
               }}
-              className="bg-transparent outline-none w-full"
-              style={{
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '13px',
-                fontWeight: 500,
-                padding: '2px 4px',
-                border: '1px solid var(--accent)',
-                borderRadius: '2px',
-                background: 'var(--bg-inset)',
-              }}
+              className="bg-transparent outline-none w-full text-(--text-primary) font-mono fs-13 font-medium py-0.5 px-1 border border-(color:--accent) rounded-xs bg-(--bg-inset)"
             />
           </div>
         ) : (
           <button
-            className="flex items-center justify-between w-full"
-            style={{
-              height: '40px',
-              padding: '0 12px',
-              background: projectDropdownOpen ? 'var(--bg-hover)' : 'transparent',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '13px',
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-            }}
+            className="flex items-center justify-between w-full h-10 px-3 bg-(--hd-bg) cursor-pointer font-mono fs-13 font-medium text-(--text-primary)"
+            style={{ '--hd-bg': projectDropdownOpen ? 'var(--bg-hover)' : 'transparent' }}
             onClick={() => setProjectDropdownOpen((v) => !v)}
             onMouseEnter={(e) => {
               if (!projectDropdownOpen) e.currentTarget.style.background = 'var(--bg-hover)'
@@ -1430,12 +1308,8 @@ export function FileTree() {
             </span>
             <ChevronDown
               size={13}
-              style={{
-                color: 'var(--text-tertiary)',
-                flexShrink: 0,
-                transform: projectDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 120ms ease',
-              }}
+              className="text-(--text-tertiary) shrink-0 rotate-(--rot) transition-transform duration-120"
+              style={{ '--rot': projectDropdownOpen ? '180deg' : '0deg' }}
             />
           </button>
         )}
@@ -1449,68 +1323,27 @@ export function FileTree() {
       </div>
 
       {/* Files tab indicator */}
-      <div
-        className="shrink-0"
-        style={{
-          borderBottom: '1px solid var(--border-default)',
-        }}
-      >
-        <div
-          style={{
-            padding: '0 12px',
-            height: '32px',
-            display: 'flex',
-            alignItems: 'center',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            fontWeight: 600,
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: 'var(--text-primary)',
-            borderBottom: '2px solid var(--accent)',
-          }}
-        >
+      <div className="shrink-0 border-b border-b-(color:--border-default)">
+        <div className="px-3 h-8 flex items-center font-mono fs-10 font-semibold uppercase tracking-wider text-(--text-primary) border-b-2 border-b-(color:--accent)">
           FILES
         </div>
       </div>
 
       {/* Search + actions row */}
-      <div
-        className="shrink-0 flex items-center gap-1"
-        style={{
-          padding: '8px 8px 8px 8px',
-          borderBottom: '1px solid var(--border-subtle)',
-        }}
-      >
-        <div
-          className="flex items-center gap-1.5 flex-1"
-          style={{
-            height: '28px',
-            padding: '0 8px',
-            background: 'var(--bg-inset)',
-            border: '1px solid var(--border-default)',
-            borderRadius: '2px',
-          }}
-        >
-          <Search size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />
+      <div className="shrink-0 flex items-center gap-1 p-2 border-b border-b-(color:--border-subtle)">
+        <div className="flex items-center gap-1.5 flex-1 h-7 px-2 bg-(--bg-inset) border border-(color:--border-default) rounded-xs">
+          <Search size={12} className="text-(--text-tertiary) shrink-0" />
           <input
             type="text"
             placeholder="SEARCH FILES..."
             aria-label="Search files"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-transparent border-none outline-none w-full"
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-primary)',
-              padding: 0,
-            }}
+            className="bg-transparent border-none outline-none w-full font-mono fs-11 text-(--text-primary) p-0"
           />
         </div>
         <button
-          className="toolbar-button"
-          style={{ width: '28px', height: '28px' }}
+          className="toolbar-button size-7"
           onClick={() => fileInputRef.current?.click()}
           title="Upload file"
           disabled={!currentProjectId || importing}
@@ -1518,8 +1351,7 @@ export function FileTree() {
           <Upload size={13} />
         </button>
         <button
-          className="toolbar-button"
-          style={{ width: '28px', height: '28px' }}
+          className="toolbar-button size-7"
           onClick={() => folderInputRef.current?.click()}
           title="Upload folder"
           disabled={!currentProjectId || importing}
@@ -1528,8 +1360,7 @@ export function FileTree() {
         </button>
         <button
           ref={newButtonRef}
-          className="toolbar-button"
-          style={{ width: '28px', height: '28px' }}
+          className="toolbar-button size-7"
           onClick={() => {
             if (dropdownRect) {
               setDropdownRect(null)
@@ -1561,25 +1392,12 @@ export function FileTree() {
 
       {/* File tree */}
       <div
-        className="flex-1 overflow-auto"
-        style={{
-          paddingTop: '4px',
-          paddingBottom: '4px',
-          opacity: importing ? 0.5 : 1,
-          pointerEvents: importing ? 'none' : 'auto',
-        }}
+        className={importing
+          ? 'flex-1 overflow-auto py-1 opacity-50 pointer-events-none'
+          : 'flex-1 overflow-auto py-1 opacity-100 pointer-events-auto'}
       >
         {importing && (
-          <div
-            style={{
-              padding: '8px 12px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.05em',
-            }}
-          >
+          <div className="px-3 py-2 font-mono fs-11 text-(--text-tertiary) uppercase tracking-wider">
             IMPORTING…
           </div>
         )}
@@ -1597,31 +1415,15 @@ export function FileTree() {
         )}
 
         {filteredTree.length === 0 && searchQuery && (
-          <div
-            style={{
-              padding: '12px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              textAlign: 'center',
-              textTransform: 'uppercase',
-            }}
-          >
+          <div className="p-3 font-mono fs-11 text-(--text-tertiary) text-center uppercase">
             NO FILES MATCH "{searchQuery}"
           </div>
         )}
 
         {filteredTree.length === 0 && !searchQuery && (
           <div
-            style={{
-              padding: '24px 12px',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              textAlign: 'center',
-              textTransform: 'uppercase',
-              lineHeight: '1.6',
-            }}
+            className="px-3 py-6 font-mono fs-11 text-(--text-tertiary) text-center uppercase leading-(--lh)"
+            style={{ '--lh': '1.6' }}
           >
             DROP FILES HERE
             <br />

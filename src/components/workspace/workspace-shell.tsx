@@ -36,10 +36,10 @@ export default function WorkspaceShell() {
 
   return (
     <ErrorBoundary fallbackMessage="The application encountered an unexpected error.">
-      <div className="flex flex-col h-full w-full" style={{ background: 'var(--bg-app)' }}>
+      <div className="flex flex-col h-full w-full bg-(--bg-app)">
         <SafariBanner />
         <Toolbar />
-        <div className="workspace-main flex flex-1 min-h-0 relative">
+        <div className="flex flex-1 min-h-0 relative">
           {narrow && sidebarOpen && (
             <div
               className="workspace-scrim"
@@ -50,13 +50,11 @@ export default function WorkspaceShell() {
           )}
           {/* Keep mounted so expand/search/rename state survives hide/show. */}
           <div
-            className="workspace-sidebar shrink-0 overflow-hidden"
+            className="workspace-sidebar shrink-0 overflow-hidden bg-(--bg-surface) w-(--sidebar-w)"
             hidden={!sidebarOpen}
             inert={!sidebarOpen ? true : undefined}
             style={{
-              width: sidebarOpen ? (narrow ? 'min(85vw, 320px)' : '240px') : 0,
-              borderRight: sidebarOpen ? '1px solid var(--border-default)' : 'none',
-              background: 'var(--bg-surface)',
+              '--sidebar-w': sidebarOpen ? (narrow ? 'min(85vw, 320px)' : '240px') : '0px',
             }}
           >
             <FileTree />

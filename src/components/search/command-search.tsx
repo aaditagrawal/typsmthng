@@ -212,16 +212,7 @@ export function CommandSearch() {
       onClick={(e) => {
         if (e.target === backdropRef.current) close()
       }}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingTop: '80px',
-        background: 'rgba(0, 0, 0, 0.6)',
-      }}
+      className="fixed inset-0 z-1000 flex justify-center items-start pt-20 bg-black/60"
     >
       <div
         ref={panelRef}
@@ -229,25 +220,14 @@ export function CommandSearch() {
         aria-modal="true"
         aria-label="Command palette"
         tabIndex={-1}
+        className="w-(--panel-w) max-w-125 bg-(--bg-elevated) border border-(color:--border-strong) rounded-xs flex flex-col overflow-hidden max-h-(--panel-maxh)"
         style={{
-          width: 'calc(100% - 48px)',
-          maxWidth: '500px',
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-strong)',
-          borderRadius: '2px',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          maxHeight: 'calc(100vh - 160px)',
+          '--panel-w': 'calc(100% - 48px)',
+          '--panel-maxh': 'calc(100vh - 160px)',
         }}
         onKeyDown={handleKeyDown}
       >
-        <div
-          style={{
-            padding: '12px 16px',
-            borderBottom: '1px solid var(--border-default)',
-          }}
-        >
+        <div className="px-4 py-3 border-b border-b-(color:--border-default)">
           <input
             ref={inputRef}
             type="text"
@@ -264,16 +244,8 @@ export function CommandSearch() {
               setQuery(e.target.value)
               setSelectedIndex(0)
             }}
-            style={{
-              width: '100%',
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '14px',
-              letterSpacing: '0.04em',
-              color: 'var(--text-primary)',
-            }}
+            className="w-full bg-transparent border-none outline-none font-mono fs-14 tracking-(--ls) text-(--text-primary)"
+            style={{ '--ls': '0.04em' }}
           />
         </div>
 
@@ -283,28 +255,20 @@ export function CommandSearch() {
           role="listbox"
           aria-label="Command palette results"
           onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-          style={{
-            overflowY: 'auto',
-            flex: 1,
-            position: 'relative',
-          }}
+          className="overflow-y-auto flex-1 relative"
         >
           {filtered.length === 0 ? (
             <div
-              style={{
-                padding: '16px',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '12px',
-                color: 'var(--text-tertiary)',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-                textAlign: 'center',
-              }}
+              className="p-4 font-mono fs-12 text-(--text-tertiary) uppercase tracking-(--ls) text-center"
+              style={{ '--ls': '0.04em' }}
             >
               No results found
             </div>
           ) : (
-            <div style={{ height: shouldVirtualize ? `${totalHeight}px` : 'auto', position: 'relative' }}>
+            <div
+                className="relative h-(--list-h)"
+                style={{ '--list-h': shouldVirtualize ? `${totalHeight}px` : 'auto' }}
+              >
               {visibleRows.map((result, rowIndex) => {
                 const index = windowStart + rowIndex
                 const isSelected = index === effectiveSelectedIndex
@@ -317,38 +281,26 @@ export function CommandSearch() {
                     aria-selected={isSelected}
                     onClick={() => selectResult(result)}
                     onMouseEnter={() => setSelectedIndex(index)}
+                    className={`flex items-center gap-2.5 px-4 py-2 cursor-pointer border-l-2 border-l-(color:--row-bc) bg-(--row-bg) transition-colors duration-80 h-(--row-h) left-0 right-0 top-(--row-top) ${shouldVirtualize ? 'absolute' : 'relative'}`}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px',
-                      padding: '8px 16px',
-                      cursor: 'pointer',
-                      borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
-                      background: isSelected ? 'var(--accent-muted)' : 'transparent',
-                      transition: 'background 80ms ease',
-                      height: `${ROW_HEIGHT}px`,
-                      position: shouldVirtualize ? 'absolute' : 'relative',
-                      left: 0,
-                      right: 0,
-                      top: shouldVirtualize ? `${index * ROW_HEIGHT}px` : undefined,
+                      '--row-bc': isSelected ? 'var(--accent)' : 'transparent',
+                      '--row-bg': isSelected ? 'var(--accent-muted)' : 'transparent',
+                      '--row-h': `${ROW_HEIGHT}px`,
+                      '--row-top': shouldVirtualize ? `${index * ROW_HEIGHT}px` : 'auto',
                     }}
                   >
                     <Icon
                       size={14}
+                      className="shrink-0 text-(--icon-fg)"
                       style={{
-                        flexShrink: 0,
-                        color: isSelected ? 'var(--accent)' : 'var(--text-tertiary)',
+                        '--icon-fg': isSelected ? 'var(--accent)' : 'var(--text-tertiary)',
                       }}
                     />
                     <span
+                      className="font-mono fs-12 text-(--lbl-fg) tracking-(--ls) truncate"
                       style={{
-                        fontFamily: 'var(--font-mono)',
-                        fontSize: '12px',
-                        color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        letterSpacing: '0.02em',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                        '--lbl-fg': isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        '--ls': '0.02em',
                       }}
                     >
                       {result.type === 'action' ? result.label : result.path}
@@ -360,44 +312,15 @@ export function CommandSearch() {
           )}
         </div>
 
-        <div
-          style={{
-            padding: '8px 16px',
-            borderTop: '1px solid var(--border-default)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '16px',
-          }}
-        >
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              letterSpacing: '0.02em',
-            }}
-          >
-            <kbd style={{ opacity: 0.7 }}>&uarr;&darr;</kbd> NAVIGATE
+        <div className="px-4 py-2 border-t border-t-(color:--border-default) flex items-center gap-4">
+          <span className="palette-hint">
+            <kbd className="opacity-70">&uarr;&darr;</kbd> NAVIGATE
           </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              letterSpacing: '0.02em',
-            }}
-          >
-            <kbd style={{ opacity: 0.7 }}>ENTER</kbd> OPEN
+          <span className="palette-hint">
+            <kbd className="opacity-70">ENTER</kbd> OPEN
           </span>
-          <span
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              letterSpacing: '0.02em',
-            }}
-          >
-            <kbd style={{ opacity: 0.7 }}>ESC</kbd> CLOSE
+          <span className="palette-hint">
+            <kbd className="opacity-70">ESC</kbd> CLOSE
           </span>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import { X } from 'lucide-react'
 import { useUIStore } from '@/stores/ui-store'
 import { useProjectStore } from '@/stores/project-store'
@@ -29,43 +29,25 @@ function getMimeType(path: string): string {
 export function ImagePreviewModal() {
   const imagePreviewPath = useUIStore((s) => s.imagePreviewPath)
   const setImagePreviewPath = useUIStore((s) => s.setImagePreviewPath)
-  const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => setImagePreviewPath(null), [setImagePreviewPath])
 
   useModalA11y(panelRef, Boolean(imagePreviewPath), close)
 
-  // Create/cleanup blob URL for binary images
-  useEffect(() => {
-    let createdUrl: string | null = null
+  const file = useProjectStore((s) => s.getCurrentProject()?.files.find((f) => f.path === imagePreviewPath))
 
-    if (!imagePreviewPath) {
-      setBlobUrl(null)
-    } else {
-      const project = useProjectStore.getState().getCurrentProject()
-      const file = project?.files.find((f) => f.path === imagePreviewPath)
+  // The DOM node owns its object URL. React runs the cleanup on file changes
+  // and unmount, including Strict Mode's setup/cleanup cycle.
+  const attachImage = useCallback((image: HTMLImageElement | null) => {
+    if (!image || !file?.isBinary || !file.binaryData || !imagePreviewPath) return
+    const blob = new Blob([new Uint8Array(file.binaryData)], { type: getMimeType(imagePreviewPath) })
+    const url = URL.createObjectURL(blob)
+    image.src = url
+    return () => URL.revokeObjectURL(url)
+  }, [file, imagePreviewPath])
 
-      if (file?.isBinary && file.binaryData) {
-        const mime = getMimeType(imagePreviewPath)
-        const blob = new Blob([new Uint8Array(file.binaryData)], { type: mime })
-        createdUrl = URL.createObjectURL(blob)
-        setBlobUrl(createdUrl)
-      } else {
-        setBlobUrl(null)
-      }
-    }
-
-    return () => {
-      if (createdUrl) URL.revokeObjectURL(createdUrl)
-    }
-  }, [imagePreviewPath])
-
-  if (!imagePreviewPath) return null
-
-  const project = useProjectStore.getState().getCurrentProject()
-  const file = project?.files.find((f) => f.path === imagePreviewPath)
-  if (!file) return null
+  if (!imagePreviewPath || !file) return null
 
   const filename = basename(imagePreviewPath) || imagePreviewPath
   const isSvg = /\.svg$/i.test(imagePreviewPath)
@@ -73,8 +55,6 @@ export function ImagePreviewModal() {
   let imgSrc: string | null = null
   if (isSvg && !file.isBinary && file.content) {
     imgSrc = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(file.content)))}`
-  } else if (blobUrl) {
-    imgSrc = blobUrl
   }
 
   return (
@@ -84,58 +64,21 @@ export function ImagePreviewModal() {
       aria-modal="true"
       aria-label={`Image preview: ${filename}`}
       tabIndex={-1}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        background: 'rgba(0, 0, 0, 0.85)',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      className="fixed inset-0 z-100 bg-black/85 flex flex-col items-center justify-center"
       onClick={close}
     >
       {/* Header -- always light-on-dark: the backdrop is dark in both themes */}
       <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '12px 16px',
-        }}
+        className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 py-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-            color: '#fff',
-          }}
-        >
+        <span className="font-mono fs-12 uppercase tracking-wider text-white">
           {filename}
         </span>
         <button
           onClick={close}
           aria-label="Close image preview"
-          style={{
-            width: '28px',
-            height: '28px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            border: '1px solid rgba(255, 255, 255, 0.25)',
-            borderRadius: '2px',
-            background: 'transparent',
-            color: 'rgba(255, 255, 255, 0.7)',
-            cursor: 'pointer',
-          }}
+          className="size-7 flex items-center justify-center border border-white/25 rounded-xs bg-transparent text-white/70 cursor-pointer"
           onMouseEnter={(e) => {
             e.currentTarget.style.color = '#fff'
             e.currentTarget.style.background = 'rgba(255, 255, 255, 0.12)'
@@ -150,27 +93,17 @@ export function ImagePreviewModal() {
       </div>
 
       {/* Image */}
-      {imgSrc ? (
+      {imgSrc || (file.isBinary && file.binaryData) ? (
         <img
-          src={imgSrc}
+          ref={attachImage}
+          src={imgSrc ?? undefined}
           alt={filename}
           onClick={(e) => e.stopPropagation()}
-          style={{
-            maxWidth: '80vw',
-            maxHeight: '80vh',
-            objectFit: 'contain',
-            borderRadius: 0,
-          }}
+          className="max-w-(--img-w) max-h-(--img-h) object-contain rounded-none"
+          style={{ '--img-w': '80vw', '--img-h': '80vh' }}
         />
       ) : (
-        <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            color: 'rgba(255, 255, 255, 0.7)',
-            textTransform: 'uppercase',
-          }}
-        >
+        <div className="font-mono fs-12 text-white/70 uppercase">
           UNABLE TO PREVIEW
         </div>
       )}

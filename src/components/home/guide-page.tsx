@@ -14,62 +14,7 @@ function detectPlatform(): Platform {
   return 'win'
 }
 
-const paragraph: React.CSSProperties = {
-  fontSize: '12px',
-  lineHeight: 1.7,
-  color: 'var(--text-secondary)',
-  marginBottom: '12px',
-}
-
-const codeBlock: React.CSSProperties = {
-  background: 'var(--bg-inset)',
-  border: '1px solid var(--border-default)',
-  borderRadius: '2px',
-  padding: '12px 14px',
-  fontFamily: 'var(--font-mono)',
-  fontSize: '13px',
-  lineHeight: 1.6,
-  color: 'var(--text-primary)',
-  whiteSpace: 'pre',
-  overflowX: 'auto',
-}
-
-const divider: React.CSSProperties = {
-  height: '1px',
-  background: 'var(--border-default)',
-  margin: '32px 0',
-}
-
-const kbd: React.CSSProperties = {
-  background: 'var(--bg-elevated)',
-  border: '1px solid var(--border-strong)',
-  borderRadius: '2px',
-  padding: '2px 6px',
-  fontSize: '11px',
-  letterSpacing: '0.04em',
-  fontFamily: 'var(--font-mono)',
-}
-
-const inlineCode: React.CSSProperties = {
-  background: 'var(--bg-inset)',
-  border: '1px solid var(--border-default)',
-  borderRadius: '2px',
-  padding: '1px 5px',
-  fontSize: '11px',
-  fontFamily: 'var(--font-mono)',
-  color: 'var(--text-primary)',
-}
-
-const sectionLabel: React.CSSProperties = {
-  fontSize: '13px',
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  color: 'var(--text-primary)',
-  textTransform: 'uppercase',
-  marginBottom: '16px',
-}
-
-function CodeBlock({ children, style }: { children: string; style?: React.CSSProperties }) {
+function CodeBlock({ children, className }: { children: string; className?: string }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = () => {
@@ -80,27 +25,15 @@ function CodeBlock({ children, style }: { children: string; style?: React.CSSPro
   }
 
   return (
-    <div style={{ position: 'relative' }}>
-      <div style={{ ...codeBlock, paddingRight: '40px', ...style }}>{children}</div>
+    <div className="relative">
+      <div className={`guide-code-block pr-10 ${className ?? ''}`}>{children}</div>
       <button
         onClick={handleCopy}
         title="Copy"
+        className="absolute top-2 right-2 inline-flex items-center justify-center size-6 border border-(color:--border-default) rounded-xs bg-(--bg-elevated) text-(--copy-fg) cursor-pointer transition-colors duration-100"
         style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: '24px',
-          height: '24px',
-          border: '1px solid var(--border-default)',
-          borderRadius: '2px',
-          background: 'var(--bg-elevated)',
-          color: copied ? 'var(--status-success)' : 'var(--text-tertiary)',
-          cursor: 'pointer',
-          transition: 'color 100ms ease',
-        }}
+          '--copy-fg': copied ? 'var(--status-success)' : 'var(--text-tertiary)',
+        } as React.CSSProperties}
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
       </button>
@@ -120,38 +53,24 @@ function ChoiceRow<T extends string>({
   onChange: (v: T) => void
 }) {
   return (
-    <div style={{ marginBottom: '20px' }}>
-      <div
-        style={{
-          fontSize: '10px',
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginBottom: '8px',
-        }}
-      >
+    <div className="mb-5">
+      <div className="fs-10 text-(--text-tertiary) tracking-(--ls) uppercase mb-2" style={{ '--ls': '0.08em' } as React.CSSProperties}>
         {prompt}
       </div>
-      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+      <div className="flex gap-1 flex-wrap">
         {choices.map((c) => {
           const active = value === c.value
           return (
             <button
               key={c.value}
               onClick={() => onChange(c.value)}
+              className={`py-1 px-3 border border-(color:--ch-bc) rounded-xs bg-(--ch-bg) text-(--ch-fg) font-mono fs-11 tracking-(--ls) uppercase cursor-pointer ${active ? 'font-bold' : 'font-normal'}`}
               style={{
-                padding: '4px 12px',
-                border: `1px solid ${active ? 'var(--accent)' : 'var(--border-default)'}`,
-                borderRadius: '2px',
-                background: active ? 'var(--accent-muted)' : 'transparent',
-                color: active ? 'var(--accent)' : 'var(--text-tertiary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                fontWeight: active ? 700 : 400,
-              }}
+                '--ch-bc': active ? 'var(--accent)' : 'var(--border-default)',
+                '--ch-bg': active ? 'var(--accent-muted)' : 'transparent',
+                '--ch-fg': active ? 'var(--accent)' : 'var(--text-tertiary)',
+                '--ls': '0.05em',
+              } as React.CSSProperties}
             >
               {c.label}
             </button>
@@ -209,74 +128,81 @@ function HierarchyDiagram() {
     <div>
       {/* Interactive nested boxes */}
       <div
+        className="border border-(color:--lv-bc) rounded-xs p-2.5 cursor-pointer transition-colors duration-150 bg-(--lv-bg)"
         style={{
-          border: `1px solid ${active === 'workspace' ? 'var(--accent)' : 'var(--border-default)'}`,
-          borderRadius: '2px',
-          padding: '10px',
-          cursor: 'pointer',
-          transition: 'border-color 150ms ease',
-          background: active === 'workspace' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
-        }}
+          '--lv-bc': active === 'workspace' ? 'var(--accent)' : 'var(--border-default)',
+          '--lv-bg': active === 'workspace' ? 'var(--accent-faint)' : 'transparent',
+        } as React.CSSProperties}
         {...layerProps('workspace')}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-          <ChevronRight size={10} style={{ color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'workspace' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
-          <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)' }}>WORKSPACE</span>
-          <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>optional grouping</span>
+        <div className="flex items-center gap-1.5 mb-2.5">
+          <ChevronRight
+            size={10}
+            className="text-(--chv-fg) rotate-(--rot) transition-transform duration-150"
+            style={{
+              '--chv-fg': active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)',
+              '--rot': active === 'workspace' ? '90deg' : 'none',
+            } as React.CSSProperties}
+          />
+          <span
+            className="fs-10 tracking-widest font-bold text-(--lbl-fg)"
+            style={{ '--lbl-fg': active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)' } as React.CSSProperties}
+          >
+            WORKSPACE
+          </span>
+          <span className="fs-10 text-(--text-tertiary) italic">optional grouping</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div className="flex gap-2">
           {/* Project 1 */}
           <div
+            className="flex-1 border border-(color:--lv-bc) rounded-xs p-2.5 cursor-pointer transition-colors duration-150 bg-(--lv-bg)"
             style={{
-              flex: 1,
-              border: `1px solid ${active === 'project' ? 'var(--accent)' : 'var(--border-default)'}`,
-              borderRadius: '2px',
-              padding: '10px',
-              cursor: 'pointer',
-              transition: 'border-color 150ms ease',
-              background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
-            }}
+              '--lv-bc': active === 'project' ? 'var(--accent)' : 'var(--border-default)',
+              '--lv-bg': active === 'project' ? 'var(--accent-faint)' : 'var(--bg-surface)',
+            } as React.CSSProperties}
             {...layerProps('project')}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-              <ChevronRight size={10} style={{ color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'project' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
-              <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
-              <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>My Thesis</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <ChevronRight
+                size={10}
+                className="text-(--chv-fg) rotate-(--rot) transition-transform duration-150"
+                style={{
+                  '--chv-fg': active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)',
+                  '--rot': active === 'project' ? '90deg' : 'none',
+                } as React.CSSProperties}
+              />
+              <span
+                className="fs-10 tracking-widest font-bold text-(--lbl-fg)"
+                style={{ '--lbl-fg': active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' } as React.CSSProperties}
+              >
+                PROJECT
+              </span>
+              <span className="fs-10 text-(--text-tertiary)">My Thesis</span>
             </div>
 
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <div className="flex gap-1 flex-wrap">
               {['main.typ', 'chapter1.typ', 'refs.bib'].map((name) => (
                 <div
                   key={name}
+                  className="py-1 px-2 border border-(color:--chip-bc) rounded-xs fs-11 font-mono text-(--chip-fg) cursor-pointer transition-colors duration-150 bg-(--chip-bg)"
                   style={{
-                    padding: '4px 8px',
-                    border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                    borderRadius: '2px',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    transition: 'border-color 150ms ease, color 150ms ease',
-                    background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
-                  }}
+                    '--chip-bc': active === 'file' ? 'var(--accent)' : 'var(--border-subtle)',
+                    '--chip-fg': active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
+                    '--chip-bg': active === 'file' ? 'var(--accent-faint)' : 'transparent',
+                  } as React.CSSProperties}
                   {...layerProps('file')}
                 >
                   {name}
                 </div>
               ))}
               <div
+                className="py-1 px-2 border border-(color:--chip-bc) rounded-xs fs-11 font-mono text-(--chip-fg) cursor-pointer transition-colors duration-150 bg-(--chip-bg)"
                 style={{
-                  padding: '4px 8px',
-                  border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                  borderRadius: '2px',
-                  fontSize: '11px',
-                  fontFamily: 'var(--font-mono)',
-                  color: active === 'file' ? 'var(--accent)' : 'var(--text-tertiary)',
-                  cursor: 'pointer',
-                  transition: 'border-color 150ms ease, color 150ms ease',
-                  background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
-                }}
+                  '--chip-bc': active === 'file' ? 'var(--accent)' : 'var(--border-subtle)',
+                  '--chip-fg': active === 'file' ? 'var(--accent)' : 'var(--text-tertiary)',
+                  '--chip-bg': active === 'file' ? 'var(--accent-faint)' : 'transparent',
+                } as React.CSSProperties}
                 {...layerProps('file')}
               >
                 images/fig.png
@@ -286,36 +212,31 @@ function HierarchyDiagram() {
 
           {/* Project 2 (smaller) */}
           <div
+            className="flex-none min-w-30 border border-(color:--lv-bc) rounded-xs p-2.5 cursor-pointer transition-colors duration-150 bg-(--lv-bg)"
             style={{
-              flex: 0,
-              minWidth: '120px',
-              border: `1px solid ${active === 'project' ? 'var(--accent)' : 'var(--border-default)'}`,
-              borderRadius: '2px',
-              padding: '10px',
-              cursor: 'pointer',
-              transition: 'border-color 150ms ease',
-              background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
-            }}
+              '--lv-bc': active === 'project' ? 'var(--accent)' : 'var(--border-default)',
+              '--lv-bg': active === 'project' ? 'var(--accent-faint)' : 'var(--bg-surface)',
+            } as React.CSSProperties}
             {...layerProps('project')}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-              <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
+            <div className="flex items-center gap-1.5 mb-2">
+              <span
+                className="fs-10 tracking-widest font-bold text-(--lbl-fg)"
+                style={{ '--lbl-fg': active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' } as React.CSSProperties}
+              >
+                PROJECT
+              </span>
             </div>
-            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+            <div className="flex gap-1 flex-wrap">
               {['main.typ', 'cover.png'].map((name) => (
                 <div
                   key={name}
+                  className="py-1 px-2 border border-(color:--chip-bc) rounded-xs fs-11 font-mono text-(--chip-fg) cursor-pointer transition-colors duration-150 bg-(--chip-bg)"
                   style={{
-                    padding: '4px 8px',
-                    border: `1px solid ${active === 'file' ? 'var(--accent)' : 'var(--border-subtle)'}`,
-                    borderRadius: '2px',
-                    fontSize: '11px',
-                    fontFamily: 'var(--font-mono)',
-                    color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    transition: 'border-color 150ms ease, color 150ms ease',
-                    background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
-                  }}
+                    '--chip-bc': active === 'file' ? 'var(--accent)' : 'var(--border-subtle)',
+                    '--chip-fg': active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
+                    '--chip-bg': active === 'file' ? 'var(--accent-faint)' : 'transparent',
+                  } as React.CSSProperties}
                   {...layerProps('file')}
                 >
                   {name}
@@ -327,29 +248,20 @@ function HierarchyDiagram() {
       </div>
 
       {/* Instruction hint */}
-      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: '8px', textAlign: 'center' }}>
+      <div className="fs-10 text-(--text-tertiary) tracking-(--ls) uppercase mt-2 text-center" style={{ '--ls': '0.06em' } as React.CSSProperties}>
         Click any level to learn more
       </div>
 
       {/* Detail panel */}
       {active && (
-        <div
-          style={{
-            marginTop: '12px',
-            padding: '14px 16px',
-            background: 'var(--bg-inset)',
-            border: '1px solid var(--accent)',
-            borderLeft: '3px solid var(--accent)',
-            borderRadius: '2px',
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '6px' }}>
+        <div className="mt-3 py-3.5 px-4 bg-(--bg-inset) border border-(color:--accent) border-l-3 rounded-xs">
+          <div className="fs-11 font-bold tracking-(--ls) text-(--accent) uppercase mb-1.5" style={{ '--ls': '0.08em' } as React.CSSProperties}>
             {hierarchyData[active].label}
           </div>
-          <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+          <div className="fs-12 font-semibold text-(--text-primary) mb-2">
             {hierarchyData[active].description}
           </div>
-          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+          <div className="fs-12 leading-(--lh) text-(--text-secondary)" style={{ '--lh': '1.7' } as React.CSSProperties}>
             {hierarchyData[active].detail}
           </div>
         </div>
@@ -397,31 +309,23 @@ function WorkflowDiagram() {
   return (
     <div>
       {/* Horizontal flow */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0', justifyContent: 'center', flexWrap: 'wrap' }}>
+      <div className="flex items-center justify-center flex-wrap">
         {workflowSteps.map((step, i) => (
           <Fragment key={step.id}>
             <button
               onClick={() => setActive(active === step.id ? null : step.id)}
+              className={`py-2 px-4 border border-(color:--st-bc) rounded-xs bg-(--st-bg) text-(--st-fg) font-mono fs-11 tracking-(--ls) uppercase cursor-pointer transition-all duration-150 whitespace-nowrap ${active === step.id ? 'font-bold' : 'font-normal'}`}
               style={{
-                padding: '8px 16px',
-                border: `1px solid ${active === step.id ? 'var(--accent)' : 'var(--border-default)'}`,
-                borderRadius: '2px',
-                background: active === step.id ? 'var(--accent-muted)' : 'var(--bg-surface)',
-                color: active === step.id ? 'var(--accent)' : 'var(--text-secondary)',
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                fontWeight: active === step.id ? 700 : 400,
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                cursor: 'pointer',
-                transition: 'all 150ms ease',
-                whiteSpace: 'nowrap',
-              }}
+                '--st-bc': active === step.id ? 'var(--accent)' : 'var(--border-default)',
+                '--st-bg': active === step.id ? 'var(--accent-muted)' : 'var(--bg-surface)',
+                '--st-fg': active === step.id ? 'var(--accent)' : 'var(--text-secondary)',
+                '--ls': '0.08em',
+              } as React.CSSProperties}
             >
               {step.label}
             </button>
             {i < workflowSteps.length - 1 && (
-              <div style={{ padding: '0 4px', color: 'var(--text-tertiary)', fontSize: '12px', flexShrink: 0 }}>
+              <div className="px-1 text-(--text-tertiary) fs-12 shrink-0">
                 <ChevronRight size={14} />
               </div>
             )}
@@ -430,26 +334,17 @@ function WorkflowDiagram() {
       </div>
 
       {/* Hint */}
-      <div style={{ fontSize: '10px', color: 'var(--text-tertiary)', letterSpacing: '0.06em', textTransform: 'uppercase', marginTop: '8px', textAlign: 'center' }}>
+      <div className="fs-10 text-(--text-tertiary) tracking-(--ls) uppercase mt-2 text-center" style={{ '--ls': '0.06em' } as React.CSSProperties}>
         Click a step to see details
       </div>
 
       {/* Detail panel */}
       {activeStep && (
-        <div
-          style={{
-            marginTop: '12px',
-            padding: '14px 16px',
-            background: 'var(--bg-inset)',
-            border: '1px solid var(--accent)',
-            borderLeft: '3px solid var(--accent)',
-            borderRadius: '2px',
-          }}
-        >
-          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', color: 'var(--accent)', textTransform: 'uppercase', marginBottom: '8px' }}>
+        <div className="mt-3 py-3.5 px-4 bg-(--bg-inset) border border-(color:--accent) border-l-3 rounded-xs">
+          <div className="fs-11 font-bold tracking-(--ls) text-(--accent) uppercase mb-2" style={{ '--ls': '0.08em' } as React.CSSProperties}>
             {activeStep.label}
           </div>
-          <div style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
+          <div className="fs-12 leading-(--lh) text-(--text-secondary)" style={{ '--lh': '1.7' } as React.CSSProperties}>
             {activeStep.description}
           </div>
         </div>
@@ -469,42 +364,13 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
   const mod = platform === 'mac' ? '⌘' : 'Ctrl'
 
   return (
-    <div
-      style={{
-        background: 'var(--bg-app)',
-        width: '100%',
-        height: '100%',
-        overflow: 'auto',
-        fontFamily: 'var(--font-mono)',
-      }}
-    >
-      <div
-        style={{
-          maxWidth: '720px',
-          margin: '0 auto',
-          padding: '48px 24px',
-        }}
-      >
+    <div className="bg-(--bg-app) w-full h-full overflow-auto font-mono">
+      <div className="max-w-180 mx-auto px-6 py-12">
         {/* Back button */}
         <button
           onClick={onBack}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '6px',
-            height: '28px',
-            padding: '0 10px',
-            border: '1px solid var(--border-default)',
-            borderRadius: '2px',
-            background: 'var(--bg-surface)',
-            color: 'var(--text-secondary)',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            letterSpacing: '0.06em',
-            textTransform: 'uppercase',
-            cursor: 'pointer',
-            marginBottom: '32px',
-          }}
+          className="inline-flex items-center gap-1.5 h-7 px-2.5 border border-(color:--border-default) rounded-xs bg-(--bg-surface) text-(--text-secondary) font-mono fs-11 tracking-(--ls) uppercase cursor-pointer mb-8"
+          style={{ '--ls': '0.06em' } as React.CSSProperties}
         >
           <ChevronLeft size={14} />
           BACK
@@ -512,50 +378,33 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
 
         {/* Header */}
         <h1
-          style={{
-            fontSize: '24px',
-            fontWeight: 700,
-            letterSpacing: '0.1em',
-            color: 'var(--accent)',
-            textTransform: 'uppercase',
-            margin: 0,
-            lineHeight: 1.2,
-          }}
+          className="fs-24 font-bold tracking-widest text-(--accent) uppercase m-0 leading-(--lh)"
+          style={{ '--lh': '1.2' } as React.CSSProperties}
         >
           HOW TO USE TYPSMTHNG
         </h1>
         <p
-          style={{
-            fontSize: '12px',
-            lineHeight: 1.6,
-            color: 'var(--text-secondary)',
-            marginTop: '10px',
-            marginBottom: 0,
-          }}
+          className="fs-12 leading-(--lh) text-(--text-secondary) mt-2.5 mb-0"
+          style={{ '--lh': '1.6' } as React.CSSProperties}
         >
           A browser-based Typst typesetting editor. Files are stored locally in your browser.
         </p>
 
         {/* Platform toggle */}
-        <div style={{ display: 'flex', gap: '4px', marginTop: '20px' }}>
+        <div className="flex gap-1 mt-5">
           {(['mac', 'win', 'linux'] as const).map((p) => {
             const active = platform === p
             return (
               <button
                 key={p}
                 onClick={() => setPlatform(p)}
+                className="py-0.75 px-2.5 border border-(color:--pl-bc) rounded-xs bg-(--pl-bg) text-(--pl-fg) font-mono fs-10 tracking-(--ls) uppercase cursor-pointer"
                 style={{
-                  padding: '3px 10px',
-                  border: `1px solid ${active ? 'var(--border-strong)' : 'var(--border-default)'}`,
-                  borderRadius: '2px',
-                  background: active ? 'var(--bg-elevated)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                  fontFamily: 'var(--font-mono)',
-                  fontSize: '10px',
-                  letterSpacing: '0.06em',
-                  textTransform: 'uppercase',
-                  cursor: 'pointer',
-                }}
+                  '--pl-bc': active ? 'var(--border-strong)' : 'var(--border-default)',
+                  '--pl-bg': active ? 'var(--bg-elevated)' : 'transparent',
+                  '--pl-fg': active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                  '--ls': '0.06em',
+                } as React.CSSProperties}
               >
                 {p === 'mac' ? 'macOS' : p === 'win' ? 'Windows' : 'Linux'}
               </button>
@@ -563,28 +412,28 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
           })}
         </div>
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── HOW IT ALL FITS TOGETHER ── */}
-        <div style={sectionLabel}>HOW IT ALL FITS TOGETHER</div>
-        <p style={{ ...paragraph, marginBottom: '16px' }}>
+        <div className="guide-section-label">HOW IT ALL FITS TOGETHER</div>
+        <p className="guide-paragraph mb-4">
           typsmthng organizes your work into three levels. Click each layer in the diagram to learn what it is and how it works.
         </p>
         <HierarchyDiagram />
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── YOUR WORKFLOW ── */}
-        <div style={sectionLabel}>YOUR WORKFLOW</div>
-        <p style={{ ...paragraph, marginBottom: '16px' }}>
+        <div className="guide-section-label">YOUR WORKFLOW</div>
+        <p className="guide-paragraph mb-4">
           The typical editing flow from start to finish. Click any step to see what happens.
         </p>
         <WorkflowDiagram />
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── GETTING STARTED ── */}
-        <div style={sectionLabel}>GETTING STARTED</div>
+        <div className="guide-section-label">GETTING STARTED</div>
 
         <ChoiceRow
           prompt="How are you starting your project?"
@@ -599,34 +448,34 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
 
         {projectStart === 'blank' && (
           <>
-            <p style={paragraph}>
-              Click <strong style={{ color: 'var(--text-primary)' }}>+ NEW PROJECT</strong> on the home screen. Type a name and press Enter. The project opens immediately in the editor.
+            <p className="guide-paragraph">
+              Click <strong className="text-(--text-primary)">+ NEW PROJECT</strong> on the home screen. Type a name and press Enter. The project opens immediately in the editor.
             </p>
-            <p style={paragraph}>
+            <p className="guide-paragraph">
               The editor is split: source on the left, live preview on the right. The preview recompiles as you type after a short delay. Use the drag handle between the panels to resize them.
             </p>
-            <p style={{ ...paragraph, marginBottom: 0 }}>
-              <span style={kbd}>{mod}+S</span> saves manually. Auto-save runs 2 seconds after you stop typing.
+            <p className="guide-paragraph mb-0">
+              <span className="guide-kbd">{mod}+S</span> saves manually. Auto-save runs 2 seconds after you stop typing.
             </p>
           </>
         )}
 
         {projectStart === 'template' && (
           <>
-            <p style={paragraph}>
-              Click <strong style={{ color: 'var(--text-primary)' }}>Initiate from Templates</strong> on the home screen. Two sources are available:
+            <p className="guide-paragraph">
+              Click <strong className="text-(--text-primary)">Initiate from Templates</strong> on the home screen. Two sources are available:
             </p>
-            <p style={paragraph}>
-              <strong style={{ color: 'var(--text-primary)' }}>Built-in starters</strong> are offline templates for common formats (IEEE journal, conference, generic research paper). Click Import to create a project from one; it opens with a working document already inside.
+            <p className="guide-paragraph">
+              <strong className="text-(--text-primary)">Built-in starters</strong> are offline templates for common formats (IEEE journal, conference, generic research paper). Click Import to create a project from one; it opens with a working document already inside.
             </p>
-            <p style={paragraph}>
-              <strong style={{ color: 'var(--text-primary)' }}>Typst Universe</strong> lets you search for community-published templates. Type at least 3 characters to search. Entries marked Template can be imported directly; click Import and a project is created from that template's scaffold. Entries marked Package Only are libraries, not starters — you'd add them to a project with <span style={inlineCode}>#import "@preview/name:version": *</span>.
+            <p className="guide-paragraph">
+              <strong className="text-(--text-primary)">Typst Universe</strong> lets you search for community-published templates. Type at least 3 characters to search. Entries marked Template can be imported directly; click Import and a project is created from that template's scaffold. Entries marked Package Only are libraries, not starters — you'd add them to a project with <span className="guide-inline-code">#import "@preview/name:version": *</span>.
             </p>
-            <p style={paragraph}>
+            <p className="guide-paragraph">
               You can also paste an init command directly if you know the package spec:
             </p>
             <CodeBlock>typst init @preview/charged-ieee</CodeBlock>
-            <p style={{ ...paragraph, marginTop: '12px', marginBottom: 0 }}>
+            <p className="guide-paragraph mt-3 mb-0">
               After the project is created it opens in the editor. The preview updates as you edit.
             </p>
           </>
@@ -634,33 +483,33 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
 
         {projectStart === 'latex' && (
           <>
-            <p style={paragraph}>
-              Click <strong style={{ color: 'var(--text-primary)' }}>Import from LaTeX</strong> on the home screen. Three options appear:
+            <p className="guide-paragraph">
+              Click <strong className="text-(--text-primary)">Import from LaTeX</strong> on the home screen. Three options appear:
             </p>
-            <ul style={{ margin: '0 0 12px 0', paddingLeft: '18px' }}>
+            <ul className="mb-3 pl-4.5">
               {[
-                <><strong style={{ color: 'var(--text-primary)' }}>.tex files</strong> — pick one or more .tex files from your machine.</>,
-                <><strong style={{ color: 'var(--text-primary)' }}>.zip archive</strong> — a zip of your LaTeX project, including images and bibliography files.</>,
-                <><strong style={{ color: 'var(--text-primary)' }}>Folder</strong> — select a whole directory; the browser uploads everything inside.</>,
+                <><strong className="text-(--text-primary)">.tex files</strong> — pick one or more .tex files from your machine.</>,
+                <><strong className="text-(--text-primary)">.zip archive</strong> — a zip of your LaTeX project, including images and bibliography files.</>,
+                <><strong className="text-(--text-primary)">Folder</strong> — select a whole directory; the browser uploads everything inside.</>,
               ].map((item, i) => (
-                <li key={i} style={{ fontSize: '12px', lineHeight: 1.7, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                <li key={i} className="fs-12 leading-(--lh) text-(--text-secondary) mb-1" style={{ '--lh': '1.7' } as React.CSSProperties}>
                   {item}
                 </li>
               ))}
             </ul>
-            <p style={paragraph}>
+            <p className="guide-paragraph">
               The converter handles most standard LaTeX: amsmath, graphicx, hyperref, common sectioning and list commands. Custom macros defined in .sty files and TikZ diagrams will not convert correctly — they'll appear as comments or placeholder blocks.
             </p>
-            <p style={{ ...paragraph, marginBottom: 0 }}>
+            <p className="guide-paragraph mb-0">
               After import, check the result banner for warnings. It lists every construct that could not be converted. Open the project, find those spots, and fix them by hand. Treat the converted output as a starting draft, not a finished document.
             </p>
           </>
         )}
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── THE EDITOR ── */}
-        <div style={sectionLabel}>THE EDITOR</div>
+        <div className="guide-section-label">THE EDITOR</div>
 
         <ChoiceRow
           prompt="Which editing style do you use?"
@@ -674,16 +523,8 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
 
         {editorMode === 'normal' && (
           <>
-            <p style={paragraph}>Keyboard shortcuts:</p>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'auto 1fr',
-                gap: '8px 16px',
-                marginBottom: '16px',
-                alignItems: 'center',
-              }}
-            >
+            <p className="guide-paragraph">Keyboard shortcuts:</p>
+            <div className="shortcut-grid">
               {[
                 [`${mod}+S`, 'Save project'],
                 [`${mod}+K`, 'Open command palette'],
@@ -691,31 +532,23 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
                 [`${mod}+D`, 'Duplicate line'],
               ].map(([shortcut, desc]) => (
                 <Fragment key={shortcut}>
-                  <span style={kbd}>{shortcut}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{desc}</span>
+                  <span className="guide-kbd">{shortcut}</span>
+                  <span className="fs-12 text-(--text-secondary)">{desc}</span>
                 </Fragment>
               ))}
             </div>
-            <p style={{ ...paragraph, marginBottom: 0 }}>
-              The command palette (<span style={kbd}>{mod}+K</span>) lists all actions. The sidebar shows project files; click to open, right-click for options (rename, delete). You can also drag files and folders directly onto the sidebar to upload them.
+            <p className="guide-paragraph mb-0">
+              The command palette (<span className="guide-kbd">{mod}+K</span>) lists all actions. The sidebar shows project files; click to open, right-click for options (rename, delete). You can also drag files and folders directly onto the sidebar to upload them.
             </p>
           </>
         )}
 
         {editorMode === 'vim' && (
           <>
-            <p style={paragraph}>
-              Enable Vim mode in <strong style={{ color: 'var(--text-primary)' }}>Settings</strong> (gear icon in the toolbar) under the Vim Mode toggle. It's marked experimental. Once on, the editor starts in Normal mode on every load.
+            <p className="guide-paragraph">
+              Enable Vim mode in <strong className="text-(--text-primary)">Settings</strong> (gear icon in the toolbar) under the Vim Mode toggle. It's marked experimental. Once on, the editor starts in Normal mode on every load.
             </p>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'auto 1fr',
-                gap: '8px 16px',
-                marginBottom: '16px',
-                alignItems: 'center',
-              }}
-            >
+            <div className="shortcut-grid">
               {[
                 ['i', 'Enter Insert mode'],
                 ['Esc', 'Return to Normal mode'],
@@ -724,22 +557,22 @@ export function GuidePage({ onBack }: { onBack: () => void }) {
                 [`${mod}+K`, 'Open command palette (works in any mode)'],
               ].map(([shortcut, desc]) => (
                 <Fragment key={shortcut}>
-                  <span style={kbd}>{shortcut}</span>
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>{desc}</span>
+                  <span className="guide-kbd">{shortcut}</span>
+                  <span className="fs-12 text-(--text-secondary)">{desc}</span>
                 </Fragment>
               ))}
             </div>
-            <p style={{ ...paragraph, marginBottom: 0 }}>
+            <p className="guide-paragraph mb-0">
               Standard motions (hjkl, w, b, 0, $, gg, G, dd, yy, p) work as expected. Visual mode is supported. The status bar at the bottom shows the current Vim mode.
             </p>
           </>
         )}
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── WRITING TYPST ── */}
-        <div style={sectionLabel}>WRITING TYPST</div>
-        <p style={paragraph}>
+        <div className="guide-section-label">WRITING TYPST</div>
+        <p className="guide-paragraph">
           A minimal document:
         </p>
         <CodeBlock>{`#set page(margin: 2cm)
@@ -755,16 +588,16 @@ Regular paragraph text. *Bold*, _italic_, \`code\`.
 - Another item
 
 $ x^2 + y^2 = z^2 $`}</CodeBlock>
-        <p style={{ ...paragraph, marginTop: '14px', marginBottom: 0 }}>
-          <span style={inlineCode}>#set</span> rules configure document-wide defaults like margins and font size.{' '}
-          <span style={inlineCode}>#let</span> defines reusable functions and variables.{' '}
-          <span style={inlineCode}>#show</span> rules restyle elements across the whole document.
+        <p className="guide-paragraph mt-3.5 mb-0">
+          <span className="guide-inline-code">#set</span> rules configure document-wide defaults like margins and font size.{' '}
+          <span className="guide-inline-code">#let</span> defines reusable functions and variables.{' '}
+          <span className="guide-inline-code">#show</span> rules restyle elements across the whole document.
         </p>
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── EXPORTING ── */}
-        <div style={sectionLabel}>EXPORTING</div>
+        <div className="guide-section-label">EXPORTING</div>
 
         <ChoiceRow
           prompt="What are you trying to export?"
@@ -777,32 +610,32 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
         />
 
         {exportTarget === 'files' && (
-          <p style={{ ...paragraph, marginBottom: 0 }}>
-            Click the <strong style={{ color: 'var(--text-primary)' }}>folder-out icon</strong> in the toolbar. A <span style={inlineCode}>.zip</span> of all project files downloads immediately. The archive includes every file in the project: .typ sources, images, bibliography files, anything you have added. To restore it, click the folder-in icon and select the zip — it imports as a new project.
+          <p className="guide-paragraph mb-0">
+            Click the <strong className="text-(--text-primary)">folder-out icon</strong> in the toolbar. A <span className="guide-inline-code">.zip</span> of all project files downloads immediately. The archive includes every file in the project: .typ sources, images, bibliography files, anything you have added. To restore it, click the folder-in icon and select the zip — it imports as a new project.
           </p>
         )}
 
         {exportTarget === 'pdf' && (
-          <p style={{ ...paragraph, marginBottom: 0 }}>
-            Click the <strong style={{ color: 'var(--text-primary)' }}>download icon</strong> in the toolbar. The document compiles to PDF and downloads as <span style={inlineCode}>document.pdf</span> immediately. If the compile fails, the status bar at the bottom will show the error; fix it in the editor and try again.
+          <p className="guide-paragraph mb-0">
+            Click the <strong className="text-(--text-primary)">download icon</strong> in the toolbar. The document compiles to PDF and downloads as <span className="guide-inline-code">document.pdf</span> immediately. If the compile fails, the status bar at the bottom will show the error; fix it in the editor and try again.
           </p>
         )}
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── STORAGE AND DATA ── */}
-        <div style={sectionLabel}>STORAGE AND DATA</div>
-        <p style={paragraph}>
+        <div className="guide-section-label">STORAGE AND DATA</div>
+        <p className="guide-paragraph">
           All projects live in IndexedDB in the browser. Nothing is sent to any server.
         </p>
-        <p style={paragraph}>
+        <p className="guide-paragraph">
           Clearing browser data or using incognito mode will delete your projects. Export projects as .zip before clearing browser data.
         </p>
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* ── FAQS ── */}
-        <div style={sectionLabel}>FAQS</div>
+        <div className="guide-section-label">FAQS</div>
 
         <div>
           {[
@@ -819,10 +652,10 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
               a: null,
               custom: (
                 <>
-                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '8px' }}>
+                  <div className="fs-12 text-(--text-secondary) leading-(--lh) mb-2" style={{ '--lh': '1.6' } as React.CSSProperties}>
                     Upload an image file via the sidebar, then reference it:
                   </div>
-                  <CodeBlock style={{ fontSize: '12px' }}>{`#image("filename.png")`}</CodeBlock>
+                  <CodeBlock className="fs-12">{`#image("filename.png")`}</CodeBlock>
                 </>
               ),
             },
@@ -830,9 +663,9 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
               q: 'Can I have multiple files in one project?',
               a: null,
               custom: (
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <div className="fs-12 text-(--text-secondary) leading-(--lh)" style={{ '--lh': '1.6' } as React.CSSProperties}>
                   Yes. Add files via the sidebar. Pull them into your main document with{' '}
-                  <span style={inlineCode}>{`#include "other-file.typ"`}</span>.
+                  <span className="guide-inline-code">{`#include "other-file.typ"`}</span>.
                 </div>
               ),
             },
@@ -840,9 +673,9 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
               q: 'What is the difference between Template and Package Only in the marketplace?',
               a: null,
               custom: (
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <div className="fs-12 text-(--text-secondary) leading-(--lh)" style={{ '--lh': '1.6' } as React.CSSProperties}>
                   Templates include a starter document and can be imported directly as a new project. Package-only entries are libraries for use inside existing documents. Add them with{' '}
-                  <span style={inlineCode}>{`#import "@preview/name:version": *`}</span>.
+                  <span className="guide-inline-code">{`#import "@preview/name:version": *`}</span>.
                 </div>
               ),
             },
@@ -861,17 +694,17 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
           ].map((faq, i, arr) => (
             <div
               key={i}
+              className="border-b-(length:--faq-bw) border-b-(color:--border-default) pb-4 mb-(--faq-mb)"
               style={{
-                borderBottom: i < arr.length - 1 ? '1px solid var(--border-default)' : 'none',
-                paddingBottom: '16px',
-                marginBottom: i < arr.length - 1 ? '16px' : 0,
-              }}
+                '--faq-bw': i < arr.length - 1 ? '1px' : '0px',
+                '--faq-mb': i < arr.length - 1 ? '16px' : '0px',
+              } as React.CSSProperties}
             >
-              <div style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
+              <div className="fs-13 font-bold text-(--text-primary) mb-1.5">
                 {faq.q}
               </div>
               {faq.a !== null && faq.a !== undefined ? (
-                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                <div className="fs-12 text-(--text-secondary) leading-(--lh)" style={{ '--lh': '1.6' } as React.CSSProperties}>
                   {faq.a}
                 </div>
               ) : (
@@ -881,16 +714,12 @@ $ x^2 + y^2 = z^2 $`}</CodeBlock>
           ))}
         </div>
 
-        <div style={divider} />
+        <div className="guide-divider" />
 
         {/* Footer */}
         <div
-          style={{
-            fontSize: '11px',
-            color: 'var(--text-tertiary)',
-            letterSpacing: '0.04em',
-            paddingBottom: '24px',
-          }}
+          className="fs-11 text-(--text-tertiary) tracking-(--ls) pb-6"
+          style={{ '--ls': '0.04em' } as React.CSSProperties}
         >
           typsmthng stores all data locally in your browser.
         </div>

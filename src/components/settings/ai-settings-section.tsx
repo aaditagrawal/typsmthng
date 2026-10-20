@@ -4,20 +4,6 @@ import { useAiStore, getAiConfig } from '@/stores/ai-store'
 import type { AiProtocol } from '@/stores/ai-store'
 import { testConnection } from '@/lib/ai/provider'
 
-const inputStyle: React.CSSProperties = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: '11px',
-  letterSpacing: '0.02em',
-  padding: '4px 8px',
-  background: 'var(--bg-inset)',
-  border: '1px solid var(--border-default)',
-  borderRadius: '2px',
-  color: 'var(--text-primary)',
-  outline: 'none',
-  width: '190px',
-  boxSizing: 'border-box',
-}
-
 function Row({
   label,
   description,
@@ -28,36 +14,16 @@ function Row({
   children: React.ReactNode
 }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 0',
-        borderBottom: '1px solid var(--border-subtle)',
-        gap: '12px',
-      }}
-    >
-      <div style={{ flex: 1, minWidth: 0 }}>
+    <div className="flex items-center justify-between py-2.5 border-b border-b-(color:--border-subtle) gap-3">
+      <div className="flex-1 min-w-0">
         <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            color: 'var(--text-primary)',
-            letterSpacing: '0.02em',
-          }}
+          className="font-mono fs-12 text-(--text-primary) tracking-(--ls)"
+          style={{ '--ls': '0.02em' }}
         >
           {label}
         </div>
         {description && (
-          <div
-            style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              color: 'var(--text-tertiary)',
-              marginTop: '2px',
-            }}
-          >
+          <div className="font-mono fs-11 text-(--text-tertiary) mt-0.5">
             {description}
           </div>
         )}
@@ -99,16 +65,8 @@ export function AiSettingsSection() {
   return (
     <>
       <div
-        style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
-          fontWeight: 600,
-          color: 'var(--text-tertiary)',
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          marginTop: '20px',
-          marginBottom: '4px',
-        }}
+        className="font-mono fs-11 font-semibold text-(--text-tertiary) tracking-(--ls) uppercase mt-5 mb-1"
+        style={{ '--ls': '0.08em' }}
       >
         AI Assist
       </div>
@@ -126,30 +84,12 @@ export function AiSettingsSection() {
               setEnabled(!enabled)
             }
           }}
-          style={{
-            position: 'relative',
-            width: '36px',
-            height: '20px',
-            borderRadius: '2px',
-            border: '1px solid var(--border-default)',
-            background: enabled ? 'var(--accent)' : 'var(--bg-inset)',
-            cursor: 'pointer',
-            transition: 'background 150ms ease',
-            flexShrink: 0,
-            padding: 0,
-          }}
+          className="relative w-9 h-5 rounded-xs border border-(color:--border-default) bg-(--tog-bg) cursor-pointer transition-colors duration-150 shrink-0 p-0"
+          style={{ '--tog-bg': enabled ? 'var(--accent)' : 'var(--bg-inset)' }}
         >
           <span
-            style={{
-              position: 'absolute',
-              top: '2px',
-              left: enabled ? '18px' : '2px',
-              width: '14px',
-              height: '14px',
-              borderRadius: '2px',
-              background: '#fff',
-              transition: 'left 150ms ease',
-            }}
+            className="absolute top-0.5 left-(--knob-l) size-3.5 rounded-xs bg-(--accent-text) transition-all duration-150"
+            style={{ '--knob-l': enabled ? '18px' : '2px' }}
           />
         </button>
       </Row>
@@ -158,7 +98,7 @@ export function AiSettingsSection() {
         <select
           value={protocol}
           onChange={(e) => setProtocol(e.target.value as AiProtocol)}
-          style={{ ...inputStyle, cursor: 'pointer' }}
+          className="ai-input cursor-pointer"
         >
           <option value="openai">OpenAI-compatible</option>
           <option value="anthropic">Anthropic-compatible</option>
@@ -173,7 +113,7 @@ export function AiSettingsSection() {
           placeholder={protocol === 'anthropic' ? 'https://api.anthropic.com' : 'http://localhost:11434/v1'}
           autoComplete="off"
           spellCheck={false}
-          style={inputStyle}
+          className="ai-input"
         />
       </Row>
 
@@ -184,7 +124,7 @@ export function AiSettingsSection() {
           onChange={(e) => setApiKey(e.target.value)}
           placeholder="sk-…"
           autoComplete="off"
-          style={inputStyle}
+          className="ai-input"
         />
       </Row>
 
@@ -196,7 +136,7 @@ export function AiSettingsSection() {
           placeholder={protocol === 'anthropic' ? 'claude-opus-5' : 'llama3, gpt-4o, …'}
           autoComplete="off"
           spellCheck={false}
-          style={inputStyle}
+          className="ai-input"
         />
       </Row>
 
@@ -207,38 +147,31 @@ export function AiSettingsSection() {
           step={256}
           value={maxTokens}
           onChange={(e) => setMaxTokens(Number(e.target.value))}
-          style={{ ...inputStyle, width: '90px' }}
+          className="ai-input ai-input--narrow"
         />
       </Row>
 
-      <div style={{ padding: '10px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div className="py-2.5 border-b border-b-(color:--border-subtle)">
+        <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={runTest}
             disabled={testing}
+            className="font-mono fs-11 tracking-(--ls) py-1 px-3 border border-(color:--border-default) rounded-xs bg-(--bg-inset) text-(--test-fg) cursor-(--cur)"
             style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
-              letterSpacing: '0.04em',
-              padding: '4px 12px',
-              border: '1px solid var(--border-default)',
-              borderRadius: '2px',
-              background: 'var(--bg-inset)',
-              color: testing ? 'var(--text-disabled)' : 'var(--text-secondary)',
-              cursor: testing ? 'default' : 'pointer',
+              '--ls': '0.04em',
+              '--test-fg': testing ? 'var(--text-disabled)' : 'var(--text-secondary)',
+              '--cur': testing ? 'default' : 'pointer',
             }}
           >
             {testing ? 'Testing…' : 'Test connection'}
           </button>
           {testResult && (
             <span
+              className="font-mono fs-11 leading-(--lh) text-(--res-fg) wrap-break-word"
               style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '11px',
-                lineHeight: 1.4,
-                color: testResult.ok ? 'var(--status-success)' : 'var(--status-error)',
-                wordBreak: 'break-word',
+                '--lh': '1.4',
+                '--res-fg': testResult.ok ? 'var(--status-success)' : 'var(--status-error)',
               }}
             >
               {testResult.message}
@@ -246,13 +179,8 @@ export function AiSettingsSection() {
           )}
         </div>
         <div
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            color: 'var(--text-tertiary)',
-            marginTop: '8px',
-            lineHeight: 1.5,
-          }}
+          className="font-mono fs-11 text-(--text-tertiary) mt-2 leading-(--lh)"
+          style={{ '--lh': '1.5' }}
         >
           Your key is stored locally in this browser and sent only to the server you configure above.
           The server must allow browser (CORS) requests: Anthropic&apos;s API supports direct browser access,

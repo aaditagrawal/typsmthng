@@ -17,50 +17,15 @@ import {
   ChevronDown, Scissors,
 } from 'lucide-react'
 
-const BRUTALIST_FONT = {
-  fontFamily: 'var(--font-mono)',
-  fontSize: '11px',
-  letterSpacing: '0.05em',
-  textTransform: 'uppercase' as const,
-}
-
-const dividerStyle = {
-  width: '1px',
-  height: '18px',
-  background: 'var(--border-default)',
-  flexShrink: 0,
-} as const
-
-const brutalistBtnBase: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  width: '28px',
-  height: '28px',
-  borderRadius: '2px',
-  border: '1px solid var(--border-default)',
-  background: 'transparent',
-  color: 'var(--text-secondary)',
-  cursor: 'pointer',
-  padding: 0,
-  flexShrink: 0,
-  fontFamily: 'var(--font-mono)',
-  transition: 'background 0.1s, color 0.1s',
-}
-
 function BrutalistBtn({
   children,
-  style,
+  className,
   ...props
 }: React.ComponentProps<'button'>) {
   return (
     <button
       {...props}
-      className={`preview-brutalist-btn${props.className ? ` ${props.className}` : ''}`}
-      style={{
-        ...brutalistBtnBase,
-        ...style,
-      }}
+      className={`preview-brutalist-btn${className ? ` ${className}` : ''}`}
     >
       {children}
     </button>
@@ -158,15 +123,6 @@ function useToolbarDropdown() {
   return { open, toggle, close, containerRef, triggerRef, menuPosition }
 }
 
-const toolbarMenuBaseStyle: React.CSSProperties = {
-  position: 'fixed',
-  background: 'var(--bg-elevated)',
-  border: '1px solid var(--border-strong)',
-  borderRadius: '2px',
-  zIndex: 50,
-  padding: '4px 0',
-}
-
 function ZoomDropdown() {
   const { zoom, fitMode, setFitMode, setZoom } = usePreviewStore(
     useShallow((s) => ({ zoom: s.zoom, fitMode: s.fitMode, setFitMode: s.setFitMode, setZoom: s.setZoom }))
@@ -186,16 +142,10 @@ function ZoomDropdown() {
   }
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', marginRight: '8px' }}>
+    <div ref={containerRef} className="relative mr-2">
       <BrutalistBtn
         ref={triggerRef}
-        style={{
-          width: 'auto',
-          padding: '0 12px 0 8px',
-          gap: '4px',
-          fontWeight: 600,
-          ...BRUTALIST_FONT,
-        }}
+        className="preview-brutalist-btn--wide brutalist-text"
         onClick={toggle}
         title="Zoom"
         aria-haspopup="menu"
@@ -207,24 +157,16 @@ function ZoomDropdown() {
 
       {open && menuPosition && (
         <div
+          className="toolbar-menu min-w-35"
           style={{
-            ...toolbarMenuBaseStyle,
-            top: menuPosition.top,
-            right: menuPosition.right,
-            minWidth: '140px',
-          }}
+            '--menu-top': `${menuPosition.top}px`,
+            '--menu-right': `${menuPosition.right}px`,
+          } as React.CSSProperties}
         >
           {ZOOM_OPTIONS.map((opt, i) => {
             if (opt.type === 'divider') {
               return (
-                <div
-                  key={i}
-                  style={{
-                    height: '1px',
-                    background: 'var(--border-default)',
-                    margin: '4px 0',
-                  }}
-                />
+                <div key={i} className="toolbar-menu-sep" />
               )
             }
             if (opt.type === 'fit') {
@@ -257,21 +199,8 @@ function ZoomDropdown() {
           })}
 
           {/* Custom zoom input */}
-          <div
-            style={{
-              height: '1px',
-              background: 'var(--border-default)',
-              margin: '4px 0',
-            }}
-          />
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              padding: '4px 8px',
-            }}
-          >
+          <div className="toolbar-menu-sep" />
+          <div className="flex items-center gap-1 py-1 px-2">
             <input
               ref={customInputRef}
               type="number"
@@ -286,20 +215,10 @@ function ZoomDropdown() {
                 if (e.key === 'Escape') setCustomValue('')
               }}
               onBlur={() => commitCustomZoom(false)}
-              style={{
-                width: '60px',
-                height: '24px',
-                padding: '0 6px',
-                background: 'var(--bg-inset)',
-                border: '1px solid var(--border-default)',
-                borderRadius: '2px',
-                color: 'var(--text-primary)',
-                ...BRUTALIST_FONT,
-                fontSize: '10px',
-                outline: 'none',
-              }}
+              className="w-15 h-6 px-1.5 bg-(--bg-inset) border border-(color:--border-default) rounded-xs text-(--text-primary) brutalist-text outline-none"
+              style={{ '--bfs': '10px' } as React.CSSProperties}
             />
-            <span style={{ ...BRUTALIST_FONT, fontSize: '10px', color: 'var(--text-tertiary)' }}>%</span>
+            <span className="brutalist-text text-(--text-tertiary)" style={{ '--bfs': '10px' } as React.CSSProperties}>%</span>
           </div>
         </div>
       )}
@@ -313,17 +232,9 @@ function ZoomMenuItem({ label, isActive, onClick }: { label: string; isActive: b
       className="preview-zoom-menu-item"
       onClick={onClick}
       style={{
-        display: 'block',
-        width: '100%',
-        padding: '6px 12px',
-        background: 'transparent',
-        color: isActive ? 'var(--accent)' : 'var(--text-secondary)',
-        border: 'none',
-        cursor: 'pointer',
-        textAlign: 'left',
-        ...BRUTALIST_FONT,
-        fontWeight: isActive ? 700 : 400,
-      }}
+        '--zm-fg': isActive ? 'var(--accent)' : 'var(--text-secondary)',
+        '--zm-fw': isActive ? '700' : '400',
+      } as React.CSSProperties}
     >
       {label}
     </button>
@@ -342,16 +253,10 @@ function RenderModeDropdown() {
     : renderMode.toUpperCase()
 
   return (
-    <div ref={containerRef} style={{ position: 'relative', marginRight: '8px' }}>
+    <div ref={containerRef} className="relative mr-2">
       <BrutalistBtn
         ref={triggerRef}
-        style={{
-          width: 'auto',
-          padding: '0 12px 0 8px',
-          gap: '4px',
-          fontWeight: 600,
-          ...BRUTALIST_FONT,
-        }}
+        className="preview-brutalist-btn--wide brutalist-text"
         onClick={toggle}
         title="Preview render mode"
         aria-haspopup="menu"
@@ -363,12 +268,11 @@ function RenderModeDropdown() {
 
       {open && menuPosition && (
         <div
+          className="toolbar-menu min-w-40"
           style={{
-            ...toolbarMenuBaseStyle,
-            top: menuPosition.top,
-            right: menuPosition.right,
-            minWidth: '160px',
-          }}
+            '--menu-top': `${menuPosition.top}px`,
+            '--menu-right': `${menuPosition.right}px`,
+          } as React.CSSProperties}
         >
           {RENDER_MODE_OPTIONS.map((option) => (
             <ZoomMenuItem
@@ -381,22 +285,10 @@ function RenderModeDropdown() {
               }}
             />
           ))}
+          <div className="toolbar-menu-sep" />
           <div
-            style={{
-              height: '1px',
-              background: 'var(--border-default)',
-              margin: '4px 0',
-            }}
-          />
-          <div
-            style={{
-              padding: '4px 12px 6px',
-              color: 'var(--text-tertiary)',
-              ...BRUTALIST_FONT,
-              fontSize: '9px',
-              textTransform: 'none',
-              letterSpacing: '0.03em',
-            }}
+            className="pt-1 px-3 pb-1.5 text-(--text-tertiary) brutalist-text"
+            style={{ '--bfs': '9px', '--btt': 'none', '--bls': '0.03em' } as React.CSSProperties}
           >
             Canvas: faster, no click-to-source
           </div>
@@ -461,31 +353,13 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
 
   return (
     <div
-      className="preview-toolbar flex items-center justify-between h-10 pl-3 pr-5 shrink-0 select-none overflow-x-auto"
-      style={{
-        background: 'var(--bg-surface)',
-        borderBottom: '1px solid var(--border-default)',
-        ...BRUTALIST_FONT,
-        fontVariantNumeric: 'tabular-nums',
-      }}
+      className="preview-toolbar flex items-center justify-between h-10 pl-3 pr-5 shrink-0 select-none overflow-x-auto bg-(--bg-surface) border-b border-b-(color:--border-default) brutalist-text tabular-nums"
     >
       {/* Left -- Compile button + toast + errors */}
-      <div className="flex items-center" style={{ gap: '8px', paddingLeft: '8px' }}>
+      <div className="flex items-center gap-2 pl-2">
         <button
           onClick={handleCompile}
           className="preview-compile-button flex items-center gap-1.5"
-          style={{
-            height: '28px',
-            padding: '0 12px',
-            borderRadius: '2px',
-            background: 'var(--accent)',
-            color: '#fff',
-            border: '1px solid var(--accent)',
-            cursor: 'pointer',
-            ...BRUTALIST_FONT,
-            fontWeight: 700,
-            transition: 'background 0.1s',
-          }}
         >
           <Sparkles size={12} />
           Compile
@@ -493,27 +367,20 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
         {compileToast && (
           <span
             role="status"
+            className="py-1 px-2 rounded-xs bg-(--bg-elevated) border border-(color:--toast-bc) text-(--toast-fg) brutalist-text font-semibold"
             style={{
-              padding: '4px 8px',
-              borderRadius: '2px',
-              background: 'var(--bg-elevated)',
-              border: `1px solid ${compileToast.type === 'error' ? 'var(--status-error)' : 'var(--border-strong)'}`,
-              color: compileToast.type === 'error' ? 'var(--status-error)' : 'var(--text-secondary)',
-              ...BRUTALIST_FONT,
-              fontSize: '10px',
-              fontWeight: 600,
-            }}
+              '--toast-bc': compileToast.type === 'error' ? 'var(--status-error)' : 'var(--border-strong)',
+              '--toast-fg': compileToast.type === 'error' ? 'var(--status-error)' : 'var(--text-secondary)',
+              '--bfs': '10px',
+            } as React.CSSProperties}
           >
             {compileToast.message}
           </span>
         )}
         {errors > 0 && (
           <>
-            <div style={dividerStyle} />
-            <span
-              className="flex items-center gap-1"
-              style={{ color: 'var(--status-error)', ...BRUTALIST_FONT }}
-            >
+            <div className="toolbar-divider" />
+            <span className="flex items-center gap-1 text-(--status-error) brutalist-text">
               <AlertCircle size={12} />
               [{errors}] Error{errors !== 1 ? 's' : ''}
             </span>
@@ -522,15 +389,15 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
       </div>
 
       {/* Right -- page counter, nav, zoom */}
-      <div className="flex items-center" style={{ gap: '8px' }}>
+      <div className="flex items-center gap-2">
         {/* Page counter */}
         {totalPages > 0 && (
           <>
-            <span style={{ color: 'var(--text-secondary)', ...BRUTALIST_FONT }}>
-              <span style={{ color: 'var(--text-primary)' }}>{String(currentPage).padStart(2, '0')}</span>
-              <span style={{ color: 'var(--text-tertiary)' }}> / {String(totalPages).padStart(2, '0')}</span>
+            <span className="text-(--text-secondary) brutalist-text">
+              <span className="text-(--text-primary)">{String(currentPage).padStart(2, '0')}</span>
+              <span className="text-(--text-tertiary)"> / {String(totalPages).padStart(2, '0')}</span>
             </span>
-            <div style={dividerStyle} />
+            <div className="toolbar-divider" />
           </>
         )}
 
@@ -538,10 +405,11 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
         {totalPages > 1 && (
           <>
             <BrutalistBtn
+              className="opacity-(--op) cursor-(--cur)"
               style={{
-                opacity: currentPage <= 1 ? 0.35 : 1,
-                cursor: currentPage <= 1 ? 'default' : 'pointer',
-              }}
+                '--op': currentPage <= 1 ? '0.35' : '1',
+                '--cur': currentPage <= 1 ? 'default' : 'pointer',
+              } as React.CSSProperties}
               onClick={() => navigateTo(Math.max(1, currentPage - 1))}
               disabled={currentPage <= 1}
               title="Previous page"
@@ -549,22 +417,23 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
               <ChevronLeft size={14} />
             </BrutalistBtn>
             <BrutalistBtn
+              className="opacity-(--op) cursor-(--cur)"
               style={{
-                opacity: currentPage >= totalPages ? 0.35 : 1,
-                cursor: currentPage >= totalPages ? 'default' : 'pointer',
-              }}
+                '--op': currentPage >= totalPages ? '0.35' : '1',
+                '--cur': currentPage >= totalPages ? 'default' : 'pointer',
+              } as React.CSSProperties}
               onClick={() => navigateTo(Math.min(totalPages, currentPage + 1))}
               disabled={currentPage >= totalPages}
               title="Next page"
             >
               <ChevronRight size={14} />
             </BrutalistBtn>
-            <div style={dividerStyle} />
+            <div className="toolbar-divider" />
           </>
         )}
 
         <RenderModeDropdown />
-        <div style={dividerStyle} />
+        <div className="toolbar-divider" />
 
         {/* Zoom dropdown */}
         <ZoomDropdown />
@@ -598,24 +467,8 @@ function PageIndicator({ totalPages }: { totalPages: number }) {
 
   return (
     <div
-      style={{
-        position: 'absolute',
-        bottom: '12px',
-        right: '12px',
-        padding: '4px 10px',
-        borderRadius: '2px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border-default)',
-        color: 'var(--text-secondary)',
-        ...BRUTALIST_FONT,
-        fontSize: '10px',
-        fontWeight: 600,
-        pointerEvents: 'none',
-        opacity: visible ? 1 : 0,
-        transition: 'opacity 0.3s ease',
-        zIndex: 10,
-        fontVariantNumeric: 'tabular-nums',
-      }}
+      className="absolute bottom-3 right-3 py-1 px-2.5 rounded-xs bg-(--bg-surface) border border-(color:--border-default) text-(--text-secondary) brutalist-text font-semibold pointer-events-none opacity-(--op) transition-opacity duration-300 z-10 tabular-nums"
+      style={{ '--bfs': '10px', '--op': visible ? '1' : '0' } as React.CSSProperties}
     >
       Page {currentPage} of {totalPages}
     </div>
@@ -821,48 +674,13 @@ function usePageMetrics() {
 function PageBreakLine({ percent, pageNum }: { percent: number; pageNum: number }) {
   return (
     <div
-      style={{
-        position: 'absolute',
-        top: `${percent}%`,
-        left: 0,
-        right: 0,
-        height: 0,
-        pointerEvents: 'none',
-        zIndex: 5,
-      }}
+      className="absolute left-0 right-0 h-0 pointer-events-none z-5 top-(--pct)"
+      style={{ '--pct': `${percent}%` } as React.CSSProperties}
     >
       {/* The dashed line */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '-0.5px',
-          left: 0,
-          right: 0,
-          height: '1px',
-          backgroundImage: 'repeating-linear-gradient(to right, var(--accent) 0, var(--accent) 6px, transparent 6px, transparent 12px)',
-        }}
-      />
+      <div className="page-break-line" />
       {/* Page label */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '50%',
-          right: '8px',
-          transform: 'translateY(-50%)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '4px',
-          padding: '2px 6px',
-          borderRadius: '2px',
-          background: 'var(--accent)',
-          color: '#fff',
-          ...BRUTALIST_FONT,
-          fontSize: '8px',
-          fontWeight: 700,
-          lineHeight: 1,
-          whiteSpace: 'nowrap',
-        }}
-      >
+      <div className="page-break-label">
         <Scissors size={8} />
         PAGE {pageNum}
       </div>
@@ -1719,27 +1537,22 @@ export function PreviewPanel() {
 
       <div
         ref={scrollRef}
-        className="flex-1 overflow-auto relative"
+        className={`flex-1 overflow-auto relative bg-(--bg-app) cursor-(--pan-cursor)${isPanning ? ' select-none' : ''}`}
         onPointerDown={handlePanStart}
         onPointerMove={handlePanMove}
         onPointerUp={handlePanEnd}
         onPointerCancel={handlePanEnd}
         onLostPointerCapture={handlePanEnd}
         style={{
-          background: 'var(--bg-app)',
-          cursor: interactiveSvg ? (isPanning ? 'grabbing' : 'grab') : 'default',
-          userSelect: isPanning ? 'none' : undefined,
-        }}
+          '--pan-cursor': interactiveSvg ? (isPanning ? 'grabbing' : 'grab') : 'default',
+        } as React.CSSProperties}
       >
         {/* Loading state */}
         {!hasPreview && (status === 'idle' || status === 'compiling') && (
-          <div
-            className="h-full flex items-center justify-center"
-            style={{ minHeight: '200px' }}
-          >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
-              <Loader2 size={20} className="animate-spin" style={{ color: 'var(--accent)' }} />
-              <span style={BRUTALIST_FONT}>
+          <div className="h-full flex items-center justify-center min-h-50">
+            <div className="flex flex-col items-center gap-3 text-(--text-tertiary)">
+              <Loader2 size={20} className="animate-spin text-(--accent)" />
+              <span className="brutalist-text">
                 {status === 'idle' ? 'Initializing compiler...' : 'Compiling...'}
               </span>
             </div>
@@ -1749,28 +1562,17 @@ export function PreviewPanel() {
         {/* Preview surface */}
         {hasPreview && (
           <div
-            className="flex flex-col"
-            style={{
-              padding: '32px 24px',
-              alignItems: fitMode === 'custom' ? 'flex-start' : 'center',
-            }}
+            className={`flex flex-col py-8 px-6 ${fitMode === 'custom' ? 'items-start' : 'items-center'}`}
           >
             <div
               ref={previewPageRef}
               className="preview-page"
+              data-render-mode={resolvedRenderMode}
               onClick={interactiveSvg ? handlePreviewClick : undefined}
               onDoubleClick={interactiveSvg ? handlePreviewDoubleClick : undefined}
               style={{
-                position: 'relative',
-                background: resolvedRenderMode === 'svg' ? 'white' : 'transparent',
-                borderRadius: 0,
-                boxShadow: resolvedRenderMode === 'svg'
-                  ? '0 1px 3px rgba(0,0,0,0.3), 0 0 0 1px rgba(0,0,0,0.08)'
-                  : 'none',
-                cursor: interactiveSvg ? (isPanning ? 'grabbing' : 'grab') : 'default',
-                width: '100%',
-                maxWidth: '800px',
-              }}
+                '--pg-cursor': interactiveSvg ? (isPanning ? 'grabbing' : 'grab') : 'default',
+              } as React.CSSProperties}
             >
               {resolvedRenderMode === 'svg' && svg && (
                 <>
@@ -1797,13 +1599,10 @@ export function PreviewPanel() {
 
         {/* Error state with no preview */}
         {!hasPreview && status === 'error' && errors.length > 0 && (
-          <div
-            className="h-full flex items-center justify-center"
-            style={{ minHeight: '200px' }}
-          >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
-              <AlertCircle size={20} style={{ color: 'var(--status-error)' }} />
-              <span style={BRUTALIST_FONT}>
+          <div className="h-full flex items-center justify-center min-h-50">
+            <div className="flex flex-col items-center gap-3 text-(--text-tertiary)">
+              <AlertCircle size={20} className="text-(--status-error)" />
+              <span className="brutalist-text">
                 Compilation failed with {errors.length} error{errors.length !== 1 ? 's' : ''}
               </span>
               <button
@@ -1813,16 +1612,8 @@ export function PreviewPanel() {
                   const currentPath = useProjectStore.getState().currentFilePath
                   void forceCompile(source, currentPath)
                 }}
-                style={{
-                  border: '1px solid var(--border-default)',
-                  background: 'var(--bg-elevated)',
-                  color: 'var(--text-secondary)',
-                  borderRadius: '2px',
-                  padding: '6px 10px',
-                  cursor: 'pointer',
-                  ...BRUTALIST_FONT,
-                  fontSize: '10px',
-                }}
+                className="border border-(color:--border-default) bg-(--bg-elevated) text-(--text-secondary) rounded-xs py-1.5 px-2.5 cursor-pointer brutalist-text"
+                style={{ '--bfs': '10px' } as React.CSSProperties}
               >
                 Retry Compile
               </button>
@@ -1832,13 +1623,10 @@ export function PreviewPanel() {
 
         {/* Empty state */}
         {!hasPreview && (status === 'success' || (status === 'error' && errors.length === 0)) && (
-          <div
-            className="h-full flex items-center justify-center"
-            style={{ minHeight: '200px' }}
-          >
-            <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
+          <div className="h-full flex items-center justify-center min-h-50">
+            <div className="flex flex-col items-center gap-3 text-(--text-tertiary)">
               <FileText size={20} />
-              <span style={BRUTALIST_FONT}>
+              <span className="brutalist-text">
                 No preview available
               </span>
             </div>
@@ -1856,22 +1644,8 @@ export function PreviewPanel() {
         {clickToast && (
           <div
             role="status"
-            style={{
-              position: 'absolute',
-              top: '12px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              padding: '4px 10px',
-              borderRadius: '2px',
-              background: 'var(--bg-elevated)',
-              border: '1px solid var(--border-strong)',
-              color: 'var(--text-secondary)',
-              ...BRUTALIST_FONT,
-              fontSize: '10px',
-              fontWeight: 600,
-              pointerEvents: 'none',
-              zIndex: 10,
-            }}
+            className="absolute top-3 left-1/2 -translate-x-1/2 py-1 px-2.5 rounded-xs bg-(--bg-elevated) border border-(color:--border-strong) text-(--text-secondary) brutalist-text font-semibold pointer-events-none z-10"
+            style={{ '--bfs': '10px' } as React.CSSProperties}
           >
             {clickToast}
           </div>
@@ -1880,62 +1654,30 @@ export function PreviewPanel() {
 
       {/* Error panel */}
       {errors.length > 0 && (
-        <div
-          className="shrink-0 overflow-auto"
-          style={{
-            maxHeight: '200px',
-            padding: '12px 16px',
-            background: 'var(--bg-surface)',
-            borderTop: '1px solid var(--border-default)',
-          }}
-        >
+        <div className="shrink-0 overflow-auto max-h-50 py-3 px-4 bg-(--bg-surface) border-t border-t-(color:--border-default)">
           <div
-            style={{
-              ...BRUTALIST_FONT,
-              fontSize: '10px',
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              color: 'var(--status-error)',
-              marginBottom: '8px',
-              paddingBottom: '6px',
-              borderBottom: '1px solid var(--border-default)',
-            }}
+            className="brutalist-text font-bold text-(--status-error) mb-2 pb-1.5 border-b border-b-(color:--border-default)"
+            style={{ '--bfs': '10px', '--bls': '0.08em' } as React.CSSProperties}
           >
             Errors [{errors.length}]
           </div>
-          <div className="flex flex-col" style={{ gap: '4px' }}>
+          <div className="flex flex-col gap-1">
             {errors.map((d, i) => (
               <button
                 key={i}
                 type="button"
-                className="flex items-start gap-2"
+                className="diag-item"
+                data-clickable={Boolean(d.range)}
                 disabled={!d.range}
-                style={{
-                  ...BRUTALIST_FONT,
-                  padding: '4px 0',
-                  textTransform: 'none',
-                  letterSpacing: 'normal',
-                  cursor: d.range ? 'pointer' : 'default',
-                  borderRadius: '3px',
-                  border: 'none',
-                  background: 'transparent',
-                  width: '100%',
-                  textAlign: 'left',
-                }}
+                style={{ '--diag-cursor': d.range ? 'pointer' : 'default' } as React.CSSProperties}
                 onClick={() => {
                   if (!d.range) return
                   jumpToDiagnosticInEditor(d)
                 }}
-                onMouseEnter={(e) => {
-                  if (d.range) e.currentTarget.style.backgroundColor = 'var(--bg-hover)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = ''
-                }}
               >
-                <AlertCircle size={12} className="shrink-0 mt-0.5" style={{ color: 'var(--status-error)' }} />
-                <span style={{ color: 'var(--text-secondary)' }}>
-                  {d.path && <span style={{ color: 'var(--text-tertiary)' }}>{d.path}:{d.range} </span>}
+                <AlertCircle size={12} className="shrink-0 mt-0.5 text-(--status-error)" />
+                <span className="text-(--text-secondary)">
+                  {d.path && <span className="text-(--text-tertiary)">{d.path}:{d.range} </span>}
                   {d.message}
                 </span>
               </button>

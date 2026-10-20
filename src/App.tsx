@@ -12,20 +12,10 @@ const WorkspaceShell = lazy(() => import('@/components/workspace/workspace-shell
 
 function FullscreenLoading({ label }: { label: string }) {
   return (
-    <div
-      className="flex items-center justify-center h-full w-full"
-      style={{ background: 'var(--bg-app)' }}
-    >
-      <div className="flex flex-col items-center gap-3" style={{ color: 'var(--text-tertiary)' }}>
+    <div className="flex items-center justify-center h-full w-full bg-(--bg-app)">
+      <div className="flex flex-col items-center gap-3 text-(--text-tertiary)">
         <Loader2 size={20} className="animate-spin" />
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase',
-          }}
-        >
+        <span className="font-mono fs-12 tracking-wider uppercase">
           {label}
         </span>
       </div>
