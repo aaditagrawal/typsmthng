@@ -1,0 +1,196 @@
+diff --git a/lib/compile.js b/lib/compile.js
+index dce69beb90ece5c3b0ca234a949418f9f34eedbc..228637a16e1b69ad8e597e8f6800d64a2252606d 100644
+--- a/lib/compile.js
++++ b/lib/compile.js
+@@ -1,10 +1,12 @@
+ 'use strict';
+ 
++const run = require('./walk');
++
+ const fill = require('fill-range');
+ const utils = require('./utils');
+ 
+ const compile = (ast, options = {}) => {
+-  const walk = (node, parent = {}) => {
++  const walk = function* (node, parent = {}) {
+     const invalidBlock = utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+     const invalid = invalidBlock === true || invalidNode === true;
+@@ -47,14 +49,14 @@ const compile = (ast, options = {}) => {
+ 
+     if (node.nodes) {
+       for (const child of node.nodes) {
+-        output += walk(child, node);
++        output += yield [child, node];
+       }
+     }
+ 
+     return output;
+   };
+ 
+-  return walk(ast);
++  return run(walk, ast);
+ };
+ 
+ module.exports = compile;
+diff --git a/lib/expand.js b/lib/expand.js
+index 35b2c41d6afdb8f0197959e26079f266e48370d3..1eebf91080e89a8dfc656dbfce141f8e699a2214 100644
+--- a/lib/expand.js
++++ b/lib/expand.js
+@@ -1,10 +1,12 @@
+ 'use strict';
+ 
++const run = require('./walk');
++
+ const fill = require('fill-range');
+ const stringify = require('./stringify');
+ const utils = require('./utils');
+ 
+-const append = (queue = '', stash = '', enclose = false) => {
++const appendVisit = function* (queue = '', stash = '', enclose = false) {
+   const result = [];
+ 
+   queue = [].concat(queue);
+@@ -18,22 +20,24 @@ const append = (queue = '', stash = '', enclose = false) => {
+   for (const item of queue) {
+     if (Array.isArray(item)) {
+       for (const value of item) {
+-        result.push(append(value, stash, enclose));
++        result.push(yield [value, stash, enclose]);
+       }
+     } else {
+       for (let ele of stash) {
+         if (enclose === true && typeof ele === 'string') ele = `{${ele}}`;
+-        result.push(Array.isArray(ele) ? append(item, ele, enclose) : item + ele);
++        result.push(Array.isArray(ele) ? (yield [item, ele, enclose]) : item + ele);
+       }
+     }
+   }
+   return utils.flatten(result);
+ };
+ 
++const append = (...args) => run(appendVisit, ...args);
++
+ const expand = (ast, options = {}) => {
+   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
+ 
+-  const walk = (node, parent = {}) => {
++  const walk = function* (node, parent = {}) {
+     node.queue = [];
+ 
+     let p = parent;
+@@ -100,14 +104,14 @@ const expand = (ast, options = {}) => {
+       }
+ 
+       if (child.nodes) {
+-        walk(child, node);
++        yield [child, node];
+       }
+     }
+ 
+     return queue;
+   };
+ 
+-  return utils.flatten(walk(ast));
++  return utils.flatten(run(walk, ast));
+ };
+ 
+ module.exports = expand;
+diff --git a/lib/stringify.js b/lib/stringify.js
+index 8bcf872c31894f81a8c64d9202fd607e4fd7ea2b..1f43b948253555a72825c54cb6656bf69ae29812 100644
+--- a/lib/stringify.js
++++ b/lib/stringify.js
+@@ -1,9 +1,11 @@
+ 'use strict';
+ 
++const run = require('./walk');
++
+ const utils = require('./utils');
+ 
+ module.exports = (ast, options = {}) => {
+-  const stringify = (node, parent = {}) => {
++  const stringify = function* (node, parent = {}) {
+     const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+     let output = '';
+@@ -21,12 +23,12 @@ module.exports = (ast, options = {}) => {
+ 
+     if (node.nodes) {
+       for (const child of node.nodes) {
+-        output += stringify(child);
++        output += yield [child];
+       }
+     }
+     return output;
+   };
+ 
+-  return stringify(ast);
++  return run(stringify, ast);
+ };
+ 
+diff --git a/lib/utils.js b/lib/utils.js
+index d19311fe044ad5157624077670dc297e8b53da49..eaa7b7a55f3bd4e3d1e06c8691b6a0adf9f252d6 100644
+--- a/lib/utils.js
++++ b/lib/utils.js
+@@ -100,23 +100,19 @@ exports.reduce = nodes => nodes.reduce((acc, node) => {
+ 
+ exports.flatten = (...args) => {
+   const result = [];
+-
+-  const flat = arr => {
+-    for (let i = 0; i < arr.length; i++) {
+-      const ele = arr[i];
+-
+-      if (Array.isArray(ele)) {
+-        flat(ele);
+-        continue;
+-      }
+-
+-      if (ele !== undefined) {
+-        result.push(ele);
+-      }
++  const stack = [{ values: args, index: 0 }];
++  while (stack.length > 0) {
++    const frame = stack[stack.length - 1];
++    if (frame.index === frame.values.length) {
++      stack.pop();
++      continue;
+     }
+-    return result;
+-  };
+-
+-  flat(args);
++    const value = frame.values[frame.index++];
++    if (Array.isArray(value)) {
++      stack.push({ values: value, index: 0 });
++    } else if (value !== undefined) {
++      result.push(value);
++    }
++  }
+   return result;
+ };
+diff --git a/node_modules/braces/lib/walk.js b/lib/walk.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..e2dd4cfe1a298efa073dbad16e42972aaa701344
+--- /dev/null
++++ b/lib/walk.js
+@@ -0,0 +1,19 @@
++'use strict';
++
++// Run suspended tree visits on an explicit heap stack. The parser's existing
++// character limit still applies; valid deeply nested patterns need no depth cap.
++module.exports = (visit, ...args) => {
++  const stack = [visit(...args)];
++  let value;
++  while (stack.length > 0) {
++    const step = stack[stack.length - 1].next(value);
++    if (step.done) {
++      stack.pop();
++      value = step.value;
++    } else {
++      stack.push(visit(...step.value));
++      value = undefined;
++    }
++  }
++  return value;
++};

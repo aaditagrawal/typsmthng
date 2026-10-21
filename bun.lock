@@ -61,6 +61,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "braces@3.0.3": "patches/braces@3.0.3.patch",
+  },
   "overrides": {
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.15",
