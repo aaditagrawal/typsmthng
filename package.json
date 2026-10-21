@@ -22,7 +22,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsrs -b",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:security": "node scripts/security-braces.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.4",
@@ -82,5 +83,8 @@
     "@types/babel__core": "^7.20.5",
     "@babel/core": "^7.29.7"
   },
-  "packageManager": "bun@1.4.2"
+  "packageManager": "bun@1.4.2",
+  "patchedDependencies": {
+    "braces@3.0.3": "patches/braces@3.0.3.patch"
+  }
 }
