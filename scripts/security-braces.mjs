@@ -44,3 +44,27 @@ for (const method of ['compile', 'expand', 'stringify']) {
   }
 }
 console.log('braces: expansion, ranges, escaping, limits and six cold deep-tree regressions passed');
+
+// Recovery must fit the existing 10,000-character parser limit without copying
+// every descendant list into every unfinished ancestor. Use the actual Node
+// consumer and cap V8's heap so the old recovery loop fails reproducibly.
+execFileSync(process.execPath, ["--stack-size=512", "--max-old-space-size=256", "-e", `
+  const assert = require('node:assert/strict');
+  const braces = require(${JSON.stringify(location)});
+  for (const pattern of [
+    '{'.repeat(9999) + 'x', '('.repeat(9999) + 'x',
+    '}'.repeat(9999) + 'x', ')'.repeat(9999) + 'x',
+    '{'.repeat(4999) + 'x' + '}'.repeat(4999),
+    '('.repeat(4999) + 'x' + ')'.repeat(4999),
+    '{('.repeat(2499) + 'x' + ')}'.repeat(2499),
+    '{'.repeat(6000) + 'x' + '}'.repeat(3000),
+  ]) {
+    assert.equal(braces.parse(pattern).input, pattern);
+    for (const method of ['compile', 'stringify', 'expand']) {
+      const expected = method === 'expand' ? [pattern] : pattern;
+      assert.deepEqual(braces[method](pattern), expected);
+      assert.deepEqual(braces[method](braces.parse(pattern)), expected);
+    }
+  }
+`], { timeout: 20000, stdio: "pipe" });
+console.log("braces: bounded-heap malformed and balanced parser regressions passed");

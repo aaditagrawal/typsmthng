@@ -194,3 +194,66 @@ index 0000000000000000000000000000000000000000..e2dd4cfe1a298efa073dbad16e42972a
 +  }
 +  return value;
 +};
+diff --git a/lib/parse.js b/lib/parse.js
+index 3a6988e..35f0d68 100644
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -302,27 +302,39 @@ const parse = (input, options = {}) => {
+     push({ type: 'text', value });
+   }
+ 
+-  // Mark imbalanced braces and brackets as invalid
+-  do {
+-    block = stack.pop();
+-
+-    if (block.type !== 'root') {
+-      block.nodes.forEach(node => {
+-        if (!node.nodes) {
+-          if (node.type === 'open') node.isOpen = true;
+-          if (node.type === 'close') node.isClose = true;
+-          if (!node.nodes) node.type = 'text';
+-          node.invalid = true;
+-        }
+-      });
++  // Flatten unfinished blocks once. Repeatedly splicing descendants into every
++  // ancestor retains quadratic child arrays through the existing parent/prev
++  // links. Keep those discarded blocks' original children instead; valid ASTs
++  // and the recovered root's node order, flags and links are unchanged.
++  if (stack.length > 1) {
++    const unfinished = new Set(stack.slice(1));
++    const nodes = [];
++    const frames = [{ nodes: ast.nodes, index: 0, invalid: false }];
++
++    while (frames.length > 0) {
++      const frame = frames[frames.length - 1];
++      if (frame.index === frame.nodes.length) {
++        frames.pop();
++        continue;
++      }
++
++      const node = frame.nodes[frame.index++];
++      if (unfinished.has(node)) {
++        frames.push({ nodes: node.nodes, index: 0, invalid: true });
++        continue;
++      }
+ 
+-      // get the location of the block on parent.nodes (block's siblings)
+-      const parent = stack[stack.length - 1];
+-      const index = parent.nodes.indexOf(block);
+-      // replace the (invalid) block with it's nodes
+-      parent.nodes.splice(index, 1, ...block.nodes);
++      if (frame.invalid && !node.nodes) {
++        if (node.type === 'open') node.isOpen = true;
++        if (node.type === 'close') node.isClose = true;
++        node.type = 'text';
++        node.invalid = true;
++      }
++      nodes.push(node);
+     }
+-  } while (stack.length > 0);
++    ast.nodes = nodes;
++  }
++  block = ast;
+ 
+   push({ type: 'eos' });
+   return ast;
