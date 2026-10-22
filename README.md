@@ -41,7 +41,7 @@ Editor + live preview (desktop):
 ### Prerequisites
 
 - Bun `1.3+`
-- Node.js `20.19+` or `22.12+` (required by Vite 8)
+- Node.js `24.22.1`, pinned in `.node-version`.
 
 ### Install
 
