@@ -1,4 +1,5 @@
-import '@testing-library/jest-dom'
+import 'fake-indexeddb/auto'
+import '@testing-library/jest-dom/vitest'
 
 // Mock matchMedia for theme detection
 Object.defineProperty(window, 'matchMedia', {

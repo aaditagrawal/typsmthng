@@ -21,3 +21,8 @@ production asset and verify that the compiler stays out of the home precache.
 
 Rebuild instructions and measured tradeoffs are in
 [the performance report](../../docs/compiler-performance.md).
+
+The three `@myriaddreamin` compiler and renderer packages are pinned to
+`0.7.0-rc2` while this local binary uses that release. Upgrading them requires
+rebasing the cache patch and rebuilding both WASM and bindings with the
+recorded toolchain, then running the compiler verification and browser tests.

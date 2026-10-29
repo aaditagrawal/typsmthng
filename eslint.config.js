@@ -23,4 +23,8 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['**/*.{ts,tsx}'],
+    rules: { 'no-useless-assignment': 'warn', 'react-hooks/set-state-in-effect': 'warn' },
+  },
 ])

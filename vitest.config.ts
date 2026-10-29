@@ -1,15 +1,14 @@
 import react from '@vitejs/plugin-react'
-import { stylexOptions } from './stylex.config.mjs'
+import { stylexCompiler } from './stylex-vite-plugin'
 import { configDefaults, defineConfig } from 'vitest/config'
 import wasm from 'vite-plugin-wasm'
-import topLevelAwait from 'vite-plugin-top-level-await'
 import path from 'path'
 
 export default defineConfig({
   plugins: [
-    react({ babel: { plugins: [['@stylexjs/babel-plugin', stylexOptions]] } }),
+    stylexCompiler(),
+    react(),
     wasm(),
-    topLevelAwait(),
   ],
   resolve: {
     alias: {
@@ -21,6 +20,8 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    testTimeout: 10000,
+    // Bound DOM workers so compiler race tests are not starved by parallel imports.
+    maxWorkers: 4,
+    testTimeout: 30000,
   },
 })
