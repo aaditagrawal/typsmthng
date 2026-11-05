@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { persist } = vi.hoisted(() => ({ persist: vi.fn() }))
-vi.mock('idb-keyval', () => ({ createStore: () => 'settings-test', get: vi.fn(), set: persist }))
+vi.mock('@/lib/indexed-db', () => ({ createStore: () => 'settings-test', get: vi.fn(), set: persist }))
 
 import { useSettingsStore } from '@/stores/settings-store'
 

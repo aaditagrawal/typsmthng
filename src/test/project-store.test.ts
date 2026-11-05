@@ -8,8 +8,8 @@ type IdbSetCall = {
   reject: (err: unknown) => void
 }
 
-// Mock idb-keyval before importing project store
-vi.mock('idb-keyval', () => {
+// Mock IndexedDB adapter before importing project store
+vi.mock('@/lib/indexed-db', () => {
   const store = new Map<string, unknown>()
   const delayedKeys = new Set<string>()
   const failedKeyPrefixes = new Map<string, unknown>()
@@ -59,7 +59,7 @@ vi.mock('idb-keyval', () => {
 import { useProjectStore, resetProjectPersistStateForTests } from '@/stores/project-store'
 import { useCompileStore } from '@/stores/compile-store'
 import { useEditorStore } from '@/stores/editor-store'
-import * as idbKeyval from 'idb-keyval'
+import * as idbKeyval from '@/lib/indexed-db'
 
 type MockIdb = typeof idbKeyval & {
   __store: Map<string, unknown>
