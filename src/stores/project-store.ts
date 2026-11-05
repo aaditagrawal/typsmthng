@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
+import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from '@/lib/indexed-db'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { isHiddenInternalPath } from '@/lib/file-index'
 import { assertNoFileFolderConflicts } from '@/lib/paths'
@@ -8,7 +8,7 @@ import { useEditorStore } from './editor-store'
 
 const projectsStore = createStore('typsmthng-projects', 'projects')
 // Legacy second store name — older builds tried to open a `home` object store on
-// the same DB, but idb-keyval never upgrades, so it never exists. Keep reading
+// the same DB, but opening never upgrades, so it never exists. Keep reading
 // from it as a fallback; all new home-meta writes go to `projectsStore`.
 const legacyHomeStore = createStore('typsmthng-projects', 'home')
 const HOME_META_KEY = 'home-meta'

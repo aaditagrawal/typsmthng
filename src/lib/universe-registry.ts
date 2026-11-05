@@ -1,4 +1,4 @@
-import { createStore, del as idbDel, get as idbGet, keys as idbKeys, set as idbSet } from 'idb-keyval'
+import { createStore, del as idbDel, get as idbGet, keys as idbKeys, set as idbSet } from '@/lib/indexed-db'
 import type { ProjectScaffold, ProjectScaffoldFile, ProjectTemplateMeta } from '@/stores/project-store'
 import {
   compareSemver,

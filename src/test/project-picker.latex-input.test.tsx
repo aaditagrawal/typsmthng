@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, waitFor } from '@testing-library/react'
 
-vi.mock('idb-keyval', () => {
+vi.mock('@/lib/indexed-db', () => {
   const store = new Map<string, unknown>()
   return {
     createStore: () => 'mock-store',
