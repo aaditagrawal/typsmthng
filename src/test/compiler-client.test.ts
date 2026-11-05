@@ -5,10 +5,10 @@ const settingsState = {
   systemFontsEnabled: true,
   googleFontsEnabled: true,
 }
-const wrapMock = vi.fn()
+const connectMock = vi.fn()
 
-vi.mock('comlink', () => ({
-  wrap: wrapMock,
+vi.mock('@/lib/compiler-rpc', () => ({
+  connectCompilerWorker: (...args: unknown[]) => ({ api: connectMock(...args), dispose: vi.fn() }),
 }))
 
 vi.mock('@/lib/compiler-backend', () => ({
@@ -198,7 +198,7 @@ describe('compiler-client', () => {
 
     const workerApi = mockWorkerApi()
     installMockEventWorker()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
     await compileTypstClient('#set text(font: "SF Pro Text")\nHello')
@@ -211,9 +211,9 @@ describe('compiler-client', () => {
   it('fails over in-flight calls when the worker dies mid-call', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    // Comlink calls against a dead endpoint never settle on their own.
+    // A pending call must fail over when its worker dies.
     workerApi.compileTypstIncremental.mockImplementation(() => new Promise(() => {}))
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const backend = await import('@/lib/compiler-backend')
     const { useCompileStore } = await import('@/stores/compile-store')
@@ -236,7 +236,7 @@ describe('compiler-client', () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
     workerApi.compileTypstIncremental.mockRejectedValueOnce(new Error('layout panicked'))
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const backend = await import('@/lib/compiler-backend')
     const { compileTypstClient } = await import('@/lib/compiler-client')
@@ -253,7 +253,7 @@ describe('compiler-client', () => {
   it('forwards the wantSvg compile option to the worker', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
     await compileTypstClient('= Doc', undefined, '/main.typ', undefined, { wantSvg: true })
@@ -267,7 +267,7 @@ describe('compiler-client', () => {
   it('sends full payloads to a fresh worker and none when nothing changed', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
 
@@ -294,7 +294,7 @@ describe('compiler-client', () => {
   it('sends only the edited file on subsequent compiles', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
 
@@ -320,7 +320,7 @@ describe('compiler-client', () => {
   it('drops deleted files from the manifest so the worker can unmap them', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
 
@@ -335,7 +335,7 @@ describe('compiler-client', () => {
   it('retries with the payloads the worker reports missing', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
 
@@ -358,7 +358,7 @@ describe('compiler-client', () => {
   it('fully resyncs a fresh worker after the previous transport died', async () => {
     installMockEventWorker()
     const apis: Array<ReturnType<typeof mockWorkerApi>> = []
-    wrapMock.mockImplementation(() => {
+    connectMock.mockImplementation(() => {
       const api = mockWorkerApi()
       apis.push(api)
       return api
@@ -383,7 +383,7 @@ describe('compiler-client', () => {
   it('resends everything after a worker-side PDF export resets the shadow', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    connectMock.mockReturnValue(workerApi)
 
     const { compileTypstClient, compileToPdfClient } = await import('@/lib/compiler-client')
 

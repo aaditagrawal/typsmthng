@@ -2,7 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import babel from '@rolldown/plugin-babel'
 import { stylexOptions } from './stylex.config.mjs'
-import wasm from 'vite-plugin-wasm'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 import { HOME_PRELOAD_FILTER_PATTERNS } from './scripts/check-bundle-budget.mjs'
@@ -11,7 +10,6 @@ export default defineConfig({
   plugins: [
     babel({ plugins: [['@stylexjs/babel-plugin', stylexOptions]] }),
     react(),
-    wasm(),
     VitePWA({
       // Prompt mode so UpdateToast can call the registerSW updater.
       // autoUpdate + skipWaiting never fires onNeedRefresh.
@@ -99,7 +97,7 @@ export default defineConfig({
           // import @codemirror/*) in one chunk. Leaving indentation-markers in
           // `vendor` created vendor → editor-core and preloaded ~486KB on home.
           if (
-            id.includes('@codemirror') || id.includes('/codemirror/')
+            id.includes('@codemirror')
             || id.includes('@lezer') || id.includes('codemirror-lang-typst')
             || id.includes('@replit/codemirror')
           ) return 'editor-core'
@@ -116,7 +114,6 @@ export default defineConfig({
             || id.includes('/node_modules/react-dom/')
             || id.includes('/node_modules/scheduler/')
           ) return 'react-core'
-          if (id.includes('zustand') || id.includes('idb-keyval')) return 'state-core'
           return 'vendor'
         },
       },

@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/store'
 import type { PageDimension } from '@/lib/compiler'
 
 export type CompileStatus = 'idle' | 'compiling' | 'success' | 'error'
