@@ -1,5 +1,4 @@
-import { wrap } from 'comlink'
-import type { Remote } from 'comlink'
+import { createCompilerRpc, WorkerTransportError, type CompilerRpc } from './compiler-rpc'
 import { useCompileStore } from '@/stores/compile-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { loadDeclaredFontData } from './declared-fonts'
@@ -17,50 +16,15 @@ import {
   type PdfCompileResult,
 } from './compiler-backend'
 
-interface CompilerInitOptions {
-  fontData?: Uint8Array[]
-}
-
-interface CompilerWorkerApi {
-  initCompiler: (options?: CompilerInitOptions) => Promise<void>
-  compileTypst: (
-    source: string,
-    extraFiles?: Array<{ path: string; content: string }>,
-    mainFilePath?: string,
-    extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-    options?: CompileOptions,
-  ) => Promise<CompileResult>
-  resolveSourceLoc: (vectorData: Uint8Array, path: Uint32Array) => Promise<string | undefined>
-  resolveSourceLocBatch: (vectorData: Uint8Array, paths: Uint32Array[]) => Promise<Array<string | undefined>>
-  compileToPdf: (
-    source: string,
-    extraFiles?: Array<{ path: string; content: string }>,
-    mainFilePath?: string,
-    extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
-  ) => Promise<PdfCompileResult>
-  ensurePackagesForCompile: (specs: string[]) => Promise<void>
-  isCompilerReady: () => boolean
-}
-
-/**
- * Marks a call that died with its worker. Comlink has no rejection path for a
- * dead endpoint, so these are raised by racing against a per-worker deferred.
- */
-class WorkerTransportError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'WorkerTransportError'
-  }
-}
-
 interface WorkerTransport {
   worker: Worker
-  api: Remote<CompilerWorkerApi>
+  api: CompilerRpc
   /** Rejects with WorkerTransportError when this worker instance is torn down. */
   terminated: Promise<never>
   rejectTerminated: (err: WorkerTransportError) => void
   /** In-worker compiler init for this worker instance; reset on failure so it can retry. */
   initPromise: Promise<void> | null
+  cleanup: () => void
 }
 
 const MAX_CONSECUTIVE_TRANSPORT_FAILURES = 3
@@ -84,7 +48,10 @@ function resetWorkerTransport(reason = 'Compiler worker was terminated'): void {
   if (!active) return
 
   active.worker.terminate()
-  active.rejectTerminated(new WorkerTransportError(reason))
+  const error = new WorkerTransportError(reason)
+  active.api.dispose(error)
+  active.cleanup()
+  active.rejectTerminated(error)
   compilerReady = false
   // Worker-local state (prepared package map, compiler shadow) is gone; let
   // per-worker caches elsewhere invalidate themselves.
@@ -160,10 +127,14 @@ function getWorkerTransport(): WorkerTransport | null {
 
     const instance: WorkerTransport = {
       worker,
-      api: wrap<CompilerWorkerApi>(worker),
+      api: createCompilerRpc(worker),
       terminated,
       rejectTerminated,
       initPromise: null,
+      cleanup: () => {
+        worker.removeEventListener('error', onTransportFailure)
+        worker.removeEventListener('messageerror', onTransportFailure)
+      },
     }
 
     const onTransportFailure = (event: Event): void => {
@@ -186,7 +157,7 @@ function getWorkerTransport(): WorkerTransport | null {
 function initWorkerTransport(active: WorkerTransport): Promise<void> {
   if (!active.initPromise) {
     const pending: Promise<void> = active.api
-      .initCompiler({ fontData: currentFontData })
+      .call('initCompiler', { fontData: currentFontData })
       .catch((err: unknown) => {
         if (active.initPromise === pending) {
           active.initPromise = null
@@ -239,7 +210,7 @@ async function callWithFallback<T>(
 }
 
 async function callWithCompilerFallback<T>(
-  runWorker: (api: Remote<CompilerWorkerApi>) => Promise<T>,
+  runWorker: (api: CompilerRpc) => Promise<T>,
   runFallback: () => Promise<T>,
 ): Promise<T> {
   return callWithFallback(
@@ -332,7 +303,7 @@ export async function compileTypstClient(
   await initCompilerClient(source, extraFiles)
 
   return callWithCompilerFallback(
-    (api) => api.compileTypst(source, extraFiles, mainFilePath, extraBinaryFiles, options),
+    (api) => api.call('compileTypst', source, extraFiles, mainFilePath, extraBinaryFiles, options),
     async () => {
       await ensurePackagesOnMainForFallback(source, extraFiles)
       return compileTypstBackend(source, extraFiles, mainFilePath, extraBinaryFiles, options)
@@ -345,7 +316,7 @@ export async function resolveSourceLocClient(
   path: Uint32Array,
 ): Promise<string | undefined> {
   return callWithCompilerFallback(
-    (api) => api.resolveSourceLoc(vectorData, path),
+    (api) => api.call('resolveSourceLoc', vectorData, path),
     () => resolveSourceLocBackend(vectorData, path),
   )
 }
@@ -355,7 +326,7 @@ export async function resolveSourceLocBatchClient(
   paths: Uint32Array[],
 ): Promise<Array<string | undefined>> {
   return callWithCompilerFallback(
-    (api) => api.resolveSourceLocBatch(vectorData, paths),
+    (api) => api.call('resolveSourceLocBatch', vectorData, paths),
     () => resolveSourceLocBatchBackend(vectorData, paths),
   )
 }
@@ -369,7 +340,7 @@ export async function compileToPdfClient(
   await initCompilerClient(source, extraFiles)
 
   return callWithCompilerFallback(
-    (api) => api.compileToPdf(source, extraFiles, mainFilePath, extraBinaryFiles),
+    (api) => api.call('compileToPdf', source, extraFiles, mainFilePath, extraBinaryFiles),
     async () => {
       await ensurePackagesOnMainForFallback(source, extraFiles)
       return compileToPdfBackend(source, extraFiles, mainFilePath, extraBinaryFiles)
@@ -379,7 +350,7 @@ export async function compileToPdfClient(
 
 export async function ensurePackagesForCompileClient(specs: string[]): Promise<void> {
   await callWithFallback(
-    (active) => active.api.ensurePackagesForCompile(specs),
+    (active) => active.api.call('ensurePackagesForCompile', specs),
     () => ensurePackagesForCompileBackend(specs),
   )
 }

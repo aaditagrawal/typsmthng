@@ -4,10 +4,11 @@ const settingsState = {
   systemFontsEnabled: true,
   googleFontsEnabled: true,
 }
-const wrapMock = vi.fn()
+const createRpcMock = vi.fn()
 
-vi.mock('comlink', () => ({
-  wrap: wrapMock,
+vi.mock('@/lib/compiler-rpc', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/compiler-rpc')>(),
+  createCompilerRpc: createRpcMock,
 }))
 
 vi.mock('@/lib/compiler-backend', () => ({
@@ -181,7 +182,10 @@ describe('compiler-client', () => {
 
     const workerApi = mockWorkerApi()
     installMockEventWorker()
-    wrapMock.mockReturnValue(workerApi)
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose: vi.fn(),
+    })
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
     await compileTypstClient('#set text(font: "SF Pro Text")\nHello')
@@ -194,9 +198,12 @@ describe('compiler-client', () => {
   it('fails over in-flight calls when the worker dies mid-call', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    // Comlink calls against a dead endpoint never settle on their own.
+    // The transport must reject a call that was interrupted by worker death.
     workerApi.compileTypst.mockImplementation(() => new Promise(() => {}))
-    wrapMock.mockReturnValue(workerApi)
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose: vi.fn(),
+    })
 
     const backend = await import('@/lib/compiler-backend')
     const { useCompileStore } = await import('@/stores/compile-store')
@@ -219,7 +226,10 @@ describe('compiler-client', () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
     workerApi.compileTypst.mockRejectedValueOnce(new Error('layout panicked'))
-    wrapMock.mockReturnValue(workerApi)
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose: vi.fn(),
+    })
 
     const backend = await import('@/lib/compiler-backend')
     const { compileTypstClient } = await import('@/lib/compiler-client')
@@ -236,7 +246,10 @@ describe('compiler-client', () => {
   it('forwards the wantSvg compile option to the worker', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    wrapMock.mockReturnValue(workerApi)
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose: vi.fn(),
+    })
 
     const { compileTypstClient } = await import('@/lib/compiler-client')
     await compileTypstClient('= Doc', undefined, '/main.typ', undefined, { wantSvg: true })
@@ -248,5 +261,42 @@ describe('compiler-client', () => {
       undefined,
       { wantSvg: true },
     )
+  })
+
+  it('retries failed compiler initialization on the same live worker', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    workerApi.initCompiler.mockRejectedValueOnce(new Error('init failed'))
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose: vi.fn(),
+    })
+    const { initCompilerClient } = await import('@/lib/compiler-client')
+    await expect(initCompilerClient()).rejects.toThrow('init failed')
+    await initCompilerClient()
+    expect(workerApi.initCompiler).toHaveBeenCalledTimes(2)
+    expect(MockEventWorker.instances).toHaveLength(1)
+  })
+
+  it('disposes the old worker when declared font configuration changes', async () => {
+    installMockEventWorker()
+    installWindow({
+      queryLocalFonts: vi.fn().mockResolvedValue([{ family: 'SF Pro Text', blob: async () => ({
+        arrayBuffer: async () => new Uint8Array([9]).buffer,
+      }) }]),
+    } as Partial<Window>)
+    const workerApi = mockWorkerApi()
+    const dispose = vi.fn()
+    createRpcMock.mockReturnValue({
+      call: (method: keyof typeof workerApi, ...args: unknown[]) => Reflect.apply(workerApi[method], workerApi, args),
+      dispose,
+    })
+    const { compileTypstClient } = await import('@/lib/compiler-client')
+    await compileTypstClient('= Default')
+    await compileTypstClient('#set text(font: "SF Pro Text")')
+    expect(MockEventWorker.instances).toHaveLength(2)
+    expect(MockEventWorker.instances[0].terminate).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(workerApi.initCompiler).toHaveBeenLastCalledWith({ fontData: [new Uint8Array([9])] })
   })
 })
