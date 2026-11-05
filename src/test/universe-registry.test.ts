@@ -66,7 +66,7 @@ function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return copy.buffer
 }
 
-vi.mock('@/lib/key-value-store', () => {
+vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
   return {
     createStore: () => 'mock-store',
@@ -81,7 +81,7 @@ vi.mock('@/lib/key-value-store', () => {
 describe('universe registry', () => {
   beforeEach(async () => {
     vi.resetModules()
-    const idb = await import('@/lib/key-value-store') as unknown as { __store: Map<string, unknown> }
+    const idb = await import('idb-keyval') as unknown as { __store: Map<string, unknown> }
     idb.__store.clear()
     vi.restoreAllMocks()
   })

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { UniverseMarketplacePackage } from '@/lib/universe-registry'
 
-vi.mock('@/lib/key-value-store', () => {
+vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
   return {
     createStore: () => 'mock-store',

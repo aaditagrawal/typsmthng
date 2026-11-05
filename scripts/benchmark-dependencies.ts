@@ -12,7 +12,7 @@ const output = process.argv.find((arg) => arg.startsWith('--output='))?.slice('-
 let chrome: ReturnType<typeof Bun.spawn> | undefined
 try {
   await Bun.write(join(baseline, 'package.json'), JSON.stringify({ private: true, dependencies: {
-    'idb-keyval': '6.3.0', comlink: '4.4.2', zustand: '5.0.15', react: '19.3.1',
+    comlink: '4.4.2', zustand: '5.0.15', react: '19.3.1',
   } }))
   const install = Bun.spawn(['bun', 'install', '--cwd', baseline, '--ignore-scripts'], { stdout: 'ignore', stderr: 'inherit' })
   if (await install.exited) throw new Error('Baseline install failed')

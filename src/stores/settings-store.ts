@@ -1,5 +1,5 @@
 import { create } from '@/lib/external-store'
-import { get as idbGet, set as idbSet, createStore } from '@/lib/key-value-store'
+import { get as idbGet, set as idbSet, createStore } from 'idb-keyval'
 import { useUIStore } from './ui-store'
 
 const settingsDb = createStore('typsmthng-settings', 'settings')

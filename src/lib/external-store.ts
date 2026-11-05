@@ -13,7 +13,7 @@ export function create<T>(initialize: (set: (update: Update<T>, replace?: boolea
     if (Object.is(next, state)) return
     const previous = state
     state = replace ? next as T : Object.assign({}, state, next)
-    listeners.forEach((listener) => listener(state, previous))
+    for (const listener of listeners) listener(state, previous)
   }
   const subscribe = (listener: Listener<T>) => {
     listeners.add(listener)

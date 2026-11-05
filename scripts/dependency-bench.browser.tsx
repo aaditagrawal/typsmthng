@@ -1,11 +1,9 @@
-import * as baselineIdb from 'baseline-idb-keyval'
 import { wrap, releaseProxy } from 'baseline-comlink'
 import { create as baselineCreate } from 'baseline-zustand'
 import { useShallow as baselineShallow } from 'baseline-zustand/react/shallow'
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useLayoutEffect } from 'react'
-import * as candidateIdb from '../src/lib/key-value-store'
 import { createWorkerRpc } from '../src/lib/worker-rpc'
 import { create as candidateCreate, useShallow as candidateShallow } from '../src/lib/external-store'
 
@@ -28,65 +26,6 @@ async function paired(name: string, baseline: () => unknown, candidate: () => un
 function summarize(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
   return { median: sorted[Math.floor(sorted.length / 2)], p95: sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * .95))], min: sorted[0], max: sorted.at(-1) }
-}
-
-async function storageChecks() {
-  const name = `typsmthng-storage-check-${Date.now()}`
-  const store = candidateIdb.createStore(name, 'projects')
-  await candidateIdb.set('project', { files: ['main.typ'] }, store)
-  await candidateIdb.set('binary', new Uint8Array([0, 255, 7]), store)
-  const baselineStore = baselineIdb.createStore(name, 'projects')
-  check((await baselineIdb.get('project', baselineStore)).files[0] === 'main.typ', 'baseline cannot read candidate records')
-  await baselineIdb.set('legacy', 'old content', baselineStore)
-  check(await candidateIdb.get('legacy', store) === 'old content', 'candidate cannot read baseline records')
-  check((await candidateIdb.get<Uint8Array>('binary', store))?.[1] === 255, 'binary persistence')
-  check((await candidateIdb.keys(store)).join() === 'binary,legacy,project', 'key enumeration')
-  await candidateIdb.del('legacy', store)
-  check(await candidateIdb.get('legacy', store) === undefined, 'delete')
-  let failed = false
-  try { await candidateIdb.set('bad', () => {}, store) } catch { failed = true }
-  check(failed, 'uncloneable write must fail')
-  await candidateIdb.set('recovery', 'ok', store)
-  check(await candidateIdb.get('recovery', store) === 'ok', 'write after failure')
-  failed = false
-  try { await candidateIdb.get('home-meta', candidateIdb.createStore(name, 'home')) } catch { failed = true }
-  check(failed, 'missing legacy store must not upgrade database')
-  await baselineIdb.set('legacy-default', 'saved')
-  check(await candidateIdb.get('legacy-default') === 'saved', 'default legacy database')
-
-  // Force a real version change, then verify the cached connection reopens.
-  await baselineStore('readonly', (objectStore: IDBObjectStore) => objectStore.transaction.db.close())
-  await new Promise<void>((resolve, reject) => {
-    const upgrade = indexedDB.open(name, 2)
-    upgrade.onerror = () => reject(upgrade.error)
-    upgrade.onsuccess = () => { upgrade.result.close(); resolve() }
-  })
-  check(await candidateIdb.get('recovery', store) === 'ok', 'version-change recovery')
-}
-
-async function storageBenchmarks() {
-  for (const bytes of [64, 65536, 4194304]) {
-    const value = new Uint8Array(bytes).fill(91)
-    const baselineStore = baselineIdb.createStore(`baseline-${bytes}`, 'values')
-    const candidateStore = candidateIdb.createStore(`candidate-${bytes}`, 'values')
-    const count = bytes === 4194304 ? 5 : 25
-    await baselineIdb.set('value', value, baselineStore)
-    await candidateIdb.set('value', value, candidateStore)
-    await paired(`idb read ${bytes}B x${count}`, async () => { for (let i = 0; i < count; i++) await baselineIdb.get('value', baselineStore) }, async () => { for (let i = 0; i < count; i++) await candidateIdb.get('value', candidateStore) })
-    await paired(`idb concurrent read ${bytes}B x${count}`, () => Promise.all(Array.from({ length: count }, () => baselineIdb.get('value', baselineStore))), () => Promise.all(Array.from({ length: count }, () => candidateIdb.get('value', candidateStore))))
-    await paired(`idb write ${bytes}B x${count}`, async () => { for (let i = 0; i < count; i++) await baselineIdb.set('value', value, baselineStore) }, async () => { for (let i = 0; i < count; i++) await candidateIdb.set('value', value, candidateStore) })
-  }
-  const baselineStore = baselineIdb.createStore('baseline-batch', 'values')
-  const candidateStore = candidateIdb.createStore('candidate-batch', 'values')
-  await paired('idb concurrent 100 writes/keys/deletes', async () => {
-    await Promise.all(Array.from({ length: 100 }, (_, key) => baselineIdb.set(key, { path: 'chapter.typ', content: 'hello'.repeat(100) }, baselineStore)))
-    await baselineIdb.keys(baselineStore)
-    await Promise.all(Array.from({ length: 100 }, (_, key) => baselineIdb.del(key, baselineStore)))
-  }, async () => {
-    await Promise.all(Array.from({ length: 100 }, (_, key) => candidateIdb.set(key, { path: 'chapter.typ', content: 'hello'.repeat(100) }, candidateStore)))
-    await candidateIdb.keys(candidateStore)
-    await Promise.all(Array.from({ length: 100 }, (_, key) => candidateIdb.del(key, candidateStore)))
-  })
 }
 
 interface RpcApi { echo(value: unknown): Promise<unknown>; fail(): Promise<void>; wait(): Promise<void> }
@@ -203,10 +142,7 @@ async function storeBenchmarks() {
 
 Object.assign(globalThis, { runDependencyBenchmarks: async (count: number) => {
   rounds = count
-  console.info('storage compatibility checks')
-  await storageChecks()
-  await storageBenchmarks()
   const startup = await rpcBenchmarks()
   await storeBenchmarks()
-  return { checks: 'Storage compatibility, binary durability, deletion, failed-write recovery, missing legacy store, default database, version-change recovery, worker cloning/errors/teardown, subscription/render/parent-effect parity passed', methodology: { rounds, warmups: 3, order: 'alternating baseline/candidate pairs', baseline_versions: { 'idb-keyval': '6.3.0', comlink: '4.4.2', zustand: '5.0.15' }, react: '19.3.1 production, shared renderer', units: 'milliseconds per named batch', clock: 'performance.now', browser: navigator.userAgent, caveat: 'Worker fixture bundles both adapters, so startup measures protocol setup with shared script parsing, not shipped bundle startup. Concurrent host workloads can broaden tails. No application speed claim follows from a microbenchmark.' }, startup, performance: samples.map((sample) => ({ ...sample, baseline: summarize(sample.baseline_ms), candidate: summarize(sample.candidate_ms) })) }
+  return { checks: 'Worker cloning/errors/teardown and subscription/render/parent-effect parity passed', methodology: { rounds, warmups: 3, order: 'alternating baseline/candidate pairs', baseline_versions: { comlink: '4.4.2', zustand: '5.0.15' }, react: '19.3.1 production, shared renderer', units: 'milliseconds per named batch', clock: 'performance.now', browser: navigator.userAgent, caveat: 'Worker fixture bundles both adapters, so startup measures protocol setup with shared script parsing, not shipped bundle startup. Concurrent host workloads can broaden tails. No application speed claim follows from a microbenchmark.' }, startup, performance: samples.map((sample) => ({ ...sample, baseline: summarize(sample.baseline_ms), candidate: summarize(sample.candidate_ms) })) }
 } })
