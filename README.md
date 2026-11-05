@@ -32,7 +32,7 @@ Editor + live preview (desktop):
 - React 19 + TypeScript
 - Vite 8
 - CodeMirror 6
-- Zustand
+- Local immutable stores using React's `useSyncExternalStore`
 - Typst WASM toolchain via `@myriaddreamin/typst.ts`
 - Vitest + Testing Library
 
@@ -70,7 +70,7 @@ Open the URL printed by Vite (typically `http://localhost:5173`).
 ## Project Structure
 
 - `src/components/` - UI components (editor, preview, layout, sidebar, settings)
-- `src/stores/` - Zustand state stores
+- `src/stores/` - application state stores
 - `src/lib/` - compiler integration, project I/O, keybindings, helpers
 - `src/test/` - unit/integration tests
 - `public/` - static assets and PWA icons

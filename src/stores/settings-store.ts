@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/external-store'
 import { get as idbGet, set as idbSet, createStore } from 'idb-keyval'
 import { useUIStore } from './ui-store'
 

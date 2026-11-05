@@ -1,6 +1,6 @@
 import { useRef, useCallback, useId } from 'react'
 import { X } from 'lucide-react'
-import { useShallow } from 'zustand/react/shallow'
+import { useShallow } from '@/lib/external-store'
 import { useSettingsStore, PAGE_SIZE_OPTIONS } from '@/stores/settings-store'
 import { useEditorStore } from '@/stores/editor-store'
 import { useProjectStore } from '@/stores/project-store'

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react'
-import { useShallow } from 'zustand/react/shallow'
+import { useShallow } from '@/lib/external-store'
 import { useProjectStore, type ProjectFile } from '@/stores/project-store'
 import { useUIStore } from '@/stores/ui-store'
 import { ContextMenu, type ContextMenuAction } from '@/components/ui/context-menu'

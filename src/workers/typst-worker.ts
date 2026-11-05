@@ -1,4 +1,4 @@
-import { expose } from 'comlink'
+import { serveWorkerRpc } from '@/lib/worker-rpc'
 import {
   compileToPdfBackend,
   compileTypstBackend,
@@ -25,4 +25,4 @@ const api = {
   isCompilerReady: isCompilerReadyBackend,
 }
 
-expose(api)
+serveWorkerRpc(api, self)

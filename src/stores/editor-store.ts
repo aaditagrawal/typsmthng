@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/external-store'
 // Type-only: erased at compile time, does not pull CodeMirror into the home graph.
 import type { EditorView } from '@codemirror/view'
 

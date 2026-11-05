@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/external-store'
 import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { isHiddenInternalPath } from '@/lib/file-index'
