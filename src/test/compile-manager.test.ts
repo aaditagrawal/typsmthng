@@ -20,7 +20,7 @@ vi.mock('@/lib/universe-registry', () => ({
 }))
 
 // Mock idb-keyval for project store
-vi.mock('idb-keyval', () => {
+vi.mock('@/lib/key-value-store', () => {
   const store = new Map<string, unknown>()
   return {
     createStore: () => 'mock-store',

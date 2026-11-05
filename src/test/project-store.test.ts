@@ -8,8 +8,8 @@ type IdbSetCall = {
   reject: (err: unknown) => void
 }
 
-// Mock idb-keyval before importing project store
-vi.mock('idb-keyval', () => {
+// Mock storage before importing project store
+vi.mock('@/lib/key-value-store', () => {
   const store = new Map<string, unknown>()
   const delayedKeys = new Set<string>()
   const failedKeyPrefixes = new Map<string, unknown>()
@@ -57,7 +57,7 @@ vi.mock('idb-keyval', () => {
 })
 
 import { useProjectStore, resetProjectPersistStateForTests } from '@/stores/project-store'
-import * as idbKeyval from 'idb-keyval'
+import * as idbKeyval from '@/lib/key-value-store'
 
 type MockIdb = typeof idbKeyval & {
   __store: Map<string, unknown>
@@ -82,7 +82,7 @@ describe('Project Store', () => {
     // Clear the mock idb store
     mockIdb.__store.clear()
 
-    // Reset zustand store state between tests
+    // Reset store state between tests
     useProjectStore.setState({
       projects: [],
       homeWorkspaces: [],

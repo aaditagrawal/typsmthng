@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/external-store'
 
 interface PreviewState {
   zoom: number

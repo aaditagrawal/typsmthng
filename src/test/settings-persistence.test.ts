@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { set as idbSet } from 'idb-keyval'
+import { set as idbSet } from '@/lib/key-value-store'
 import { useSettingsStore } from '@/stores/settings-store'
 
-vi.mock('idb-keyval', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('idb-keyval')>()
+vi.mock('@/lib/key-value-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/key-value-store')>()
   return { ...actual, set: vi.fn(actual.set) }
 })
 

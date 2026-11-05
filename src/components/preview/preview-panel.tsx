@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react'
-import { useShallow } from 'zustand/react/shallow'
+import { useShallow } from '@/lib/external-store'
 import { EditorView } from '@codemirror/view'
 import { useCompileStore, type Diagnostic } from '@/stores/compile-store'
 import { resolvePreviewRenderMode, usePreviewStore } from '@/stores/preview-store'

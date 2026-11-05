@@ -1,5 +1,4 @@
-import { wrap } from 'comlink'
-import type { Remote } from 'comlink'
+import { createWorkerRpc, WorkerTransportError } from './worker-rpc'
 import { useCompileStore } from '@/stores/compile-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { loadDeclaredFontData } from './declared-fonts'
@@ -44,23 +43,13 @@ interface CompilerWorkerApi {
     extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
   ) => Promise<PdfCompileResult>
   ensurePackagesForCompile: (specs: string[]) => Promise<void>
-  isCompilerReady: () => boolean
-}
-
-/**
- * Marks a call that died with its worker. Comlink has no rejection path for a
- * dead endpoint, so these are raised by racing against a per-worker deferred.
- */
-class WorkerTransportError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'WorkerTransportError'
-  }
+  isCompilerReady: () => Promise<boolean>
 }
 
 interface WorkerTransport {
   worker: Worker
-  api: Remote<CompilerWorkerApi>
+  api: CompilerWorkerApi
+  close: (error: WorkerTransportError) => void
   /** Rejects with WorkerTransportError when this worker instance is torn down. */
   terminated: Promise<never>
   rejectTerminated: (err: WorkerTransportError) => void
@@ -96,7 +85,9 @@ function resetWorkerTransport(reason = 'Compiler worker was terminated'): void {
   if (!active) return
 
   active.worker.terminate()
-  active.rejectTerminated(new WorkerTransportError(reason))
+  const error = new WorkerTransportError(reason)
+  active.close(error)
+  active.rejectTerminated(error)
   compilerReady = false
   // Worker-local state (prepared package map, compiler shadow) is gone; let
   // per-worker caches elsewhere invalidate themselves.
@@ -170,9 +161,20 @@ function getWorkerTransport(): WorkerTransport | null {
     // Avoid an unhandled rejection when no call is racing at teardown time.
     terminated.catch(() => undefined)
 
+    const rpc = createWorkerRpc<CompilerWorkerApi>(worker)
     const instance: WorkerTransport = {
       worker,
-      api: wrap<CompilerWorkerApi>(worker),
+      api: {
+        initCompiler: (...args) => rpc.call('initCompiler', ...args),
+        compileTypst: (...args) => rpc.call('compileTypst', ...args),
+        compileTypstIncremental: (...args) => rpc.call('compileTypstIncremental', ...args),
+        resolveSourceLoc: (...args) => rpc.call('resolveSourceLoc', ...args),
+        resolveSourceLocBatch: (...args) => rpc.call('resolveSourceLocBatch', ...args),
+        compileToPdf: (...args) => rpc.call('compileToPdf', ...args),
+        ensurePackagesForCompile: (...args) => rpc.call('ensurePackagesForCompile', ...args),
+        isCompilerReady: () => rpc.call('isCompilerReady'),
+      },
+      close: (error) => rpc.close(error),
       terminated,
       rejectTerminated,
       initPromise: null,
@@ -252,7 +254,7 @@ async function callWithFallback<T>(
 }
 
 async function callWithCompilerFallback<T>(
-  runWorker: (api: Remote<CompilerWorkerApi>) => Promise<T>,
+  runWorker: (api: CompilerWorkerApi) => Promise<T>,
   runFallback: () => Promise<T>,
 ): Promise<T> {
   return callWithFallback(

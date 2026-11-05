@@ -114,7 +114,6 @@ export default defineConfig({
             || id.includes('/node_modules/react-dom/')
             || id.includes('/node_modules/scheduler/')
           ) return 'react-core'
-          if (id.includes('zustand') || id.includes('idb-keyval')) return 'state-core'
           return 'vendor'
         },
       },

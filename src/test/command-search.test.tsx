@@ -14,8 +14,8 @@ const { forceCompile, exportCurrentProjectPdf } = vi.hoisted(() => ({
 vi.mock('@/lib/compile-manager', () => ({ forceCompile }))
 vi.mock('@/lib/pdf-export', () => ({ exportCurrentProjectPdf }))
 
-vi.mock('idb-keyval', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('idb-keyval')>()
+vi.mock('@/lib/key-value-store', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/key-value-store')>()
   return { ...actual, set: vi.fn().mockResolvedValue(undefined) }
 })
 
