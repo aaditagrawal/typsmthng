@@ -8,13 +8,13 @@ The application owns three small adapters covering the APIs it uses:
 | `src/lib/compiler-rpc.ts` | Eight compiler methods, concurrent request IDs, structured-cloned buffers, error names/messages/stacks and rejection of pending calls when the client disposes a worker transport. The client retains its compiler generation, incremental synchronization and fallback policies. |
 | `src/lib/store.ts` | Immutable partial/functional updates, synchronous subscriptions, initial server snapshots and React selectors. Shallow selectors cover the plain objects selected by existing components. |
 
-The unused `codemirror` umbrella package and `vite-plugin-wasm` registration are removed. Individual CodeMirror packages remain. All WASM imports use Vite's native `?url` handling; the compiler checks still validate the emitted WASM against its manifest.
+The unused `codemirror` umbrella package is removed. Individual CodeMirror packages and the original `vite-plugin-wasm` registration remain; the scoped adapter benchmark does not measure the plugin replacement. Compiler checks still validate emitted WASM against its manifest.
 
 ## Validation
 
-Bun 1.4.2 frozen installation, type checking, lint, all 312 tests in 35 files, the production build, compiler manifest/dist checks, bundle budgets and brace security regressions pass. The emitted compiler remains 24,574,197 bytes. Initial JavaScript preloads total 246 KB within the 500 KB budget.
+Bun 1.4.2 frozen installation, type checking, lint, all 312 tests in 35 files, the production build, compiler manifest/dist checks, bundle budgets and brace security regressions pass. The emitted compiler remains 24,574,197 bytes. The final home static closure is 320 KB across eight files, within the 500 KB budget.
 
-The lock removes exactly five package versions and adds none. `bun audit` continues to report the existing advisories for `deepmerge`, `glob`, `minimatch` and `serialize-javascript`; their locked versions are unchanged.
+The lock removes exactly four package versions and adds none. `bun audit` continues to report the existing advisories for `deepmerge`, `glob`, `minimatch` and `serialize-javascript`; their locked versions are unchanged.
 
 ## Reproducing the comparison
 

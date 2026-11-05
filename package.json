@@ -46,7 +46,8 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-resizable-panels": "^4.14.7",
-    "vite-plugin-pwa": "^2.0.0"
+    "vite-plugin-pwa": "^2.0.0",
+    "vite-plugin-wasm": "^3.6.0"
   },
   "overrides": {
     "@codemirror/state": "^6.7.6",
