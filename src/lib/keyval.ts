@@ -6,6 +6,11 @@ export type KeyvalStore = <T>(
 
 export function createStore(databaseName: string, storeName: string): KeyvalStore {
   let connection: Promise<IDBDatabase> | undefined
+  let database: IDBDatabase | undefined
+  const clearConnection = () => {
+    database = undefined
+    connection = undefined
+  }
   const open = (): Promise<IDBDatabase> => {
     if (!connection) {
       connection = new Promise<IDBDatabase>((resolve, reject) => {
@@ -13,13 +18,14 @@ export function createStore(databaseName: string, storeName: string): KeyvalStor
         request.onupgradeneeded = () => request.result.createObjectStore(storeName)
         request.onerror = () => reject(request.error)
         request.onsuccess = () => {
-          const database = request.result
-          database.onclose = () => { connection = undefined }
-          database.onversionchange = () => {
-            database.close()
-            connection = undefined
+          const opened = request.result
+          opened.onclose = clearConnection
+          opened.onversionchange = () => {
+            opened.close()
+            clearConnection()
           }
-          resolve(database)
+          database = opened
+          resolve(opened)
         }
       }).catch((error: unknown) => {
         connection = undefined
@@ -29,26 +35,30 @@ export function createStore(databaseName: string, storeName: string): KeyvalStor
     return connection
   }
 
-  return async (mode, operation) => {
-    const database = await open()
-    return new Promise((resolve, reject) => {
-      const transaction = database.transaction(storeName, mode)
-      transaction.onabort = () => reject(transaction.error ?? new DOMException('Transaction aborted', 'AbortError'))
+  return (mode, operation) => new Promise((resolve, reject) => {
+    const run = (opened: IDBDatabase) => {
+      let transaction: IDBTransaction | undefined
       try {
-        const request = operation(transaction.objectStore(storeName))
+        transaction = opened.transaction(storeName, mode)
+        const active = transaction
+        active.onabort = () => reject(active.error ?? new DOMException('Transaction aborted', 'AbortError'))
+        const request = operation(active.objectStore(storeName))
         request.onerror = () => reject(request.error)
         if (mode === 'readonly') {
           request.onsuccess = () => resolve(request.result)
         } else {
           // A successful write can still be rolled back. Acknowledge only commit.
-          transaction.oncomplete = () => resolve(request.result)
+          active.oncomplete = () => resolve(request.result)
         }
       } catch (error) {
-        transaction.abort()
+        try { transaction?.abort() } catch { /* The callback may have already aborted it. */ }
         reject(error)
       }
-    })
-  }
+    }
+    // Warm calls need only the operation promise, without an async connection hop.
+    if (database) run(database)
+    else open().then(run, reject)
+  })
 }
 
 export function get<T>(key: IDBValidKey, store: KeyvalStore): Promise<T | undefined> {

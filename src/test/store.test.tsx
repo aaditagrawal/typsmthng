@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, render, renderHook, screen } from '@testing-library/react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { create, useShallow } from '@/lib/store'
@@ -45,6 +45,29 @@ describe('application store', () => {
     expect(renderToString(<Counter />)).toContain('>0<')
     const view = render(<Counter />)
     expect(screen.getByRole('status')).toHaveTextContent('3')
+    view.unmount()
+  })
+
+  it('compares own keys and preserves Object.is value semantics in shallow selections', () => {
+    const useStore = create<{ selection: Record<string, number | undefined> }>(() => ({
+      selection: { left: undefined },
+    }))
+    const view = renderHook(() => useStore(useShallow((state) => state.selection)))
+    const first = view.result.current
+    act(() => useStore.setState({ selection: { left: undefined } }))
+    expect(view.result.current).toBe(first)
+    act(() => useStore.setState({ selection: { right: undefined } }))
+    expect(view.result.current).not.toBe(first)
+    expect(view.result.current).toEqual({ right: undefined })
+    act(() => useStore.setState({ selection: { value: NaN } }))
+    const nan = view.result.current
+    act(() => useStore.setState({ selection: { value: NaN } }))
+    expect(view.result.current).toBe(nan)
+    act(() => useStore.setState({ selection: { value: 0 } }))
+    act(() => useStore.setState({ selection: { value: -0 } }))
+    expect(Object.is(view.result.current.value, -0)).toBe(true)
+    act(() => useStore.setState({ selection: {} }))
+    expect(view.result.current).toEqual({})
     view.unmount()
   })
 })

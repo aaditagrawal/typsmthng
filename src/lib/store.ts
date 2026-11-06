@@ -50,11 +50,19 @@ export function useShallow<T, U extends object>(selector: (state: T) => U): (sta
   return (state) => {
     const next = selector(state)
     const last = previous.current
+    if (Object.is(last, next)) return next
     if (last) {
-      const keys = Object.keys(next)
-      if (Object.keys(last).length === keys.length
-        && keys.every((key) => Object.hasOwn(last, key)
-          && Object.is(Reflect.get(last, key), Reflect.get(next, key)))) return last
+      const keys = Object.keys(next) as Array<keyof U>
+      if (Object.keys(last).length === keys.length) {
+        let equal = true
+        for (const key of keys) {
+          if (!Object.hasOwn(last, key) || !Object.is(last[key], next[key])) {
+            equal = false
+            break
+          }
+        }
+        if (equal) return last
+      }
     }
     previous.current = next
     return next

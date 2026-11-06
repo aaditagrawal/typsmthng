@@ -74,10 +74,15 @@ window.run=async({workers,samples,only})=>{
  await errorName(ownedDb.set('bad',()=>{},fresh),'DataCloneError');
  await errorName(fresh('readwrite',store=>{const request=store.put('rollback','rollback');request.onsuccess=()=>store.transaction.abort();return request}),'AbortError');
  check(await ownedDb.get('rollback',fresh)===undefined,'abort rollback');
+ await errorName(fresh('readwrite',store=>{store.transaction.abort();throw new TypeError('aborted callback')}),'TypeError');
+ const retry=ownedDb.createStore('owned-retry-'+crypto.randomUUID(),'projects');
+ const originalOpen=indexedDB.open;
+ try{indexedDB.open=()=>{throw new DOMException('Storage denied','SecurityError')};await errorName(ownedDb.get('record',retry),'SecurityError')}finally{indexedDB.open=originalOpen}
+ await ownedDb.set('record','retried',retry);check(await ownedDb.get('record',retry)==='retried','failed open retry');
  await old('readonly',store=>{store.transaction.db.close()});
  const upgrade=indexedDB.open(name,2);const upgraded=await wait(upgrade);upgraded.close();
  check((await ownedDb.get('settings',fresh)).fontSize===16,'versionchange reopen');
- correctness.push('legacy records and typed arrays, clone isolation, missing legacy store, get/set/delete/keys, clone failure, transaction rollback, versionchange reopen');
+ correctness.push('legacy records and typed arrays, clone isolation, missing legacy store, get/set/delete/keys, clone failure, transaction rollback, aborted callback, failed open retry, versionchange reopen');
  const libraries=[baselineDb,ownedDb];
  const dbStores=libraries.map((lib,i)=>lib.createStore('owned-bench-'+i+'-'+crypto.randomUUID(),'projects'));
  const source='= Document\\n'+('content '.repeat(1024));const binary=new Uint8Array(256*1024);
