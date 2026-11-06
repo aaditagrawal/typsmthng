@@ -40,18 +40,14 @@
     "@replit/codemirror-vim": "^6.4.0",
     "@stylexjs/stylex": "^0.19.1",
     "@unified-latex/unified-latex-util-parse": "^1.8.4",
-    "codemirror": "^6.0.2",
     "codemirror-lang-typst": "^0.6.0",
-    "comlink": "^4.4.2",
     "fflate": "^0.8.3",
-    "idb-keyval": "^6.3.0",
     "lucide-react": "^1.60.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-resizable-panels": "^4.14.7",
     "vite-plugin-pwa": "^2.0.0",
-    "vite-plugin-wasm": "^3.6.0",
-    "zustand": "^5.0.15"
+    "vite-plugin-wasm": "^3.6.0"
   },
   "overrides": {
     "@codemirror/state": "^6.7.6",

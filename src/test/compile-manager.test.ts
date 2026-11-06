@@ -19,8 +19,8 @@ vi.mock('@/lib/universe-registry', () => ({
   ensurePackagesForCompile: vi.fn(async () => {}),
 }))
 
-// Mock idb-keyval for project store
-vi.mock('idb-keyval', () => {
+// Mock IndexedDB operations for project store
+vi.mock('@/lib/keyval', () => {
   const store = new Map<string, unknown>()
   return {
     createStore: () => 'mock-store',

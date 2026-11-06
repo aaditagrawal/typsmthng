@@ -99,7 +99,7 @@ export default defineConfig({
           // import @codemirror/*) in one chunk. Leaving indentation-markers in
           // `vendor` created vendor → editor-core and preloaded ~486KB on home.
           if (
-            id.includes('@codemirror') || id.includes('/codemirror/')
+            id.includes('@codemirror')
             || id.includes('@lezer') || id.includes('codemirror-lang-typst')
             || id.includes('@replit/codemirror')
           ) return 'editor-core'
@@ -116,7 +116,6 @@ export default defineConfig({
             || id.includes('/node_modules/react-dom/')
             || id.includes('/node_modules/scheduler/')
           ) return 'react-core'
-          if (id.includes('zustand') || id.includes('idb-keyval')) return 'state-core'
           return 'vendor'
         },
       },

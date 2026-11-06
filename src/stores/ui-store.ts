@@ -1,4 +1,4 @@
-import { create } from 'zustand'
+import { create } from '@/lib/store'
 
 type Theme = 'light' | 'dark' | 'system'
 
