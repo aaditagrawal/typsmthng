@@ -10,6 +10,8 @@ describe('bundle budget guardrails', () => {
   it('blocks deferred chunks from the home path, allowing editor-store', () => {
     expect(isBlockedHomeChunk('editor-core-abc.js')).toBe(true)
     expect(isBlockedHomeChunk('editor-vim-abc.js')).toBe(true)
+    expect(isBlockedHomeChunk('editor-formatter-abc.js')).toBe(true)
+    expect(isBlockedHomeChunk('workspace-panels-abc.js')).toBe(true)
     expect(isBlockedHomeChunk('latex-converter-1.js')).toBe(true)
     expect(isBlockedHomeChunk('typst-worker-1.js')).toBe(true)
     expect(isBlockedHomeChunk('typst-engine-1.js')).toBe(true)

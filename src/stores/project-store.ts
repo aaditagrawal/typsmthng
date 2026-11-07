@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { get as idbGet, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
+import { get as idbGet, entries as idbEntries, set as idbSet, del as idbDel, keys as idbKeys, createStore } from 'idb-keyval'
 import { SAMPLE_DOCUMENT } from '@/lib/sample-document'
 import { isHiddenInternalPath } from '@/lib/file-index'
 import { useCompileStore } from './compile-store'
@@ -240,7 +240,7 @@ async function deleteProjectBinaryRecords(projectId: string): Promise<void> {
  * missing or unreadable are dropped with a console.error rather than failing
  * the whole project load.
  */
-async function stitchProjectBinaries(stored: Project): Promise<Project> {
+function stitchProjectBinaries(stored: Project, records: ReadonlyMap<IDBValidKey, unknown>): Project {
   if (!stored.files.some((file) => file.isBinary && !file.binaryData)) return stored
 
   const tracked = trackedBinariesFor(stored.id)
@@ -250,20 +250,13 @@ async function stitchProjectBinaries(stored: Project): Promise<Project> {
       files.push(file)
       continue
     }
-    try {
-      const data = await idbGet<Uint8Array>(binaryRecordKey(stored.id, file.path), projectsStore)
-      if (data instanceof Uint8Array) {
-        files.push({ ...file, binaryData: data })
-        tracked.set(file.path, data)
-      } else {
-        console.error(
-          `Missing binary record for "${file.path}" in project "${stored.id}"; dropping the file.`,
-        )
-      }
-    } catch (err) {
+    const data = records.get(binaryRecordKey(stored.id, file.path))
+    if (data instanceof Uint8Array) {
+      files.push({ ...file, binaryData: data })
+      tracked.set(file.path, data)
+    } else {
       console.error(
-        `Failed to read binary record for "${file.path}" in project "${stored.id}"; dropping the file:`,
-        err,
+        `Missing binary record for "${file.path}" in project "${stored.id}"; dropping the file.`,
       )
     }
   }
@@ -543,16 +536,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     let homeMeta: HomeMeta | undefined
     persistedBinaryRecords.clear()
     try {
-      const allKeys = await idbKeys(projectsStore)
-      const projectKeys = allKeys.filter(
-        (key): key is string => typeof key === 'string' && !key.startsWith(BINARY_RECORD_PREFIX),
-      )
-      const loaded = await Promise.all(
-        projectKeys.map((key) => idbGet<Project>(key, projectsStore)),
-      )
-      for (const project of loaded) {
+      // All projects and assets are needed on home. Read one consistent
+      // snapshot with getAll/getAllKeys instead of one request per record.
+      const records = new Map(await idbEntries<IDBValidKey, unknown>(projectsStore))
+      for (const [key, value] of records) {
+        if (typeof key !== 'string' || key.startsWith(BINARY_RECORD_PREFIX)) continue
+        const project = value as Project | undefined
         if (project && Array.isArray(project.files) && typeof project.mainFile === 'string') {
-          projects.push(await stitchProjectBinaries(project))
+          projects.push(stitchProjectBinaries(project, records))
         }
       }
     } catch (err) {
@@ -931,11 +922,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       const project = s.projects[projectIndex]
       const nextFiles = project.files.slice()
+      const fileIndices = new Map(nextFiles.map((file, index) => [file.path, index]))
       const now = Date.now()
 
       for (const entry of normalized) {
-        const existingIndex = nextFiles.findIndex((file) => file.path === entry.path)
-        if (existingIndex >= 0) {
+        const existingIndex = fileIndices.get(entry.path)
+        if (existingIndex !== undefined) {
           const existing = nextFiles[existingIndex]
           if (!existing.isBinary && existing.content === entry.content) continue
           nextFiles[existingIndex] = {
@@ -1093,11 +1085,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
       const project = s.projects[projectIndex]
       const nextFiles = project.files.slice()
+      const fileIndices = new Map(nextFiles.map((file, index) => [file.path, index]))
       const now = Date.now()
 
       for (const entry of normalized) {
-        const existingIndex = nextFiles.findIndex((file) => file.path === entry.path)
-        if (existingIndex >= 0) {
+        const existingIndex = fileIndices.get(entry.path)
+        if (existingIndex !== undefined) {
           const existing = nextFiles[existingIndex]
           if (
             existing.isBinary

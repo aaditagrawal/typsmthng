@@ -42,7 +42,6 @@
     "@unified-latex/unified-latex-util-parse": "^1.8.4",
     "codemirror": "^6.0.2",
     "codemirror-lang-typst": "^0.6.0",
-    "comlink": "^4.4.2",
     "fflate": "^0.8.3",
     "idb-keyval": "^6.3.0",
     "lucide-react": "^1.64.0",
@@ -54,8 +53,8 @@
     "zustand": "^5.0.16"
   },
   "overrides": {
-    "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.40.0"
+    "@codemirror/state": "^6.7.6",
+    "@codemirror/view": "^6.43.15"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

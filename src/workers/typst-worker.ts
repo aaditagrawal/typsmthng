@@ -1,4 +1,6 @@
-import { expose } from 'comlink'
+/// <reference lib="webworker" />
+
+import { exposeCompilerWorker } from '@/lib/compiler-rpc'
 import {
   compileToPdfBackend,
   compileTypstIncrementalBackend,
@@ -7,6 +9,8 @@ import {
   initCompilerBackend,
   resolveSourceLocBatchBackend,
 } from '@/lib/compiler-backend'
+
+declare const self: DedicatedWorkerGlobalScope
 
 const api = {
   initCompiler: async (options?: { fontData?: Uint8Array[] }) => {
@@ -19,4 +23,4 @@ const api = {
   ensurePackagesForCompile: ensurePackagesForCompileBackend,
 }
 
-expose(api)
+exposeCompilerWorker(api, self)
