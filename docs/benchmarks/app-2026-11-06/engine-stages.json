@@ -1,0 +1,47 @@
+[
+  {
+    "client_ms": 51.300000000046566,
+    "engine": {
+      "compileMs": 41.5,
+      "renderMs": 0.5999999998603016,
+      "totalMs": 42.299999999813735
+    },
+    "vector_bytes": 88064
+  },
+  {
+    "client_ms": 40.39999999990687,
+    "engine": {
+      "compileMs": 39,
+      "renderMs": 0.5,
+      "totalMs": 39.700000000186265
+    },
+    "vector_bytes": 88016
+  },
+  {
+    "client_ms": 44.9000000001397,
+    "engine": {
+      "compileMs": 42,
+      "renderMs": 0.7000000001862645,
+      "totalMs": 43
+    },
+    "vector_bytes": 87920
+  },
+  {
+    "client_ms": 43.699999999953434,
+    "engine": {
+      "compileMs": 41.800000000046566,
+      "renderMs": 0.9000000001396984,
+      "totalMs": 42.800000000046566
+    },
+    "vector_bytes": 88160
+  },
+  {
+    "client_ms": 41.199999999953434,
+    "engine": {
+      "compileMs": 39.800000000046566,
+      "renderMs": 0.5999999998603016,
+      "totalMs": 40.5999999998603
+    },
+    "vector_bytes": 88008
+  }
+]

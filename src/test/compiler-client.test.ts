@@ -7,8 +7,8 @@ const settingsState = {
 }
 const wrapMock = vi.fn()
 
-vi.mock('comlink', () => ({
-  wrap: wrapMock,
+vi.mock('@/lib/compiler-rpc', () => ({
+  createCompilerWorkerClient: (...args: unknown[]) => ({ api: wrapMock(...args), dispose: vi.fn() }),
 }))
 
 vi.mock('@/lib/compiler-backend', () => ({
@@ -201,7 +201,7 @@ describe('compiler-client', () => {
   it('fails over in-flight calls when the worker dies mid-call', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()
-    // Comlink calls against a dead endpoint never settle on their own.
+    // Simulate a worker dying while compilation is still pending.
     workerApi.compileTypstIncremental.mockImplementation(() => new Promise(() => {}))
     wrapMock.mockReturnValue(workerApi)
 

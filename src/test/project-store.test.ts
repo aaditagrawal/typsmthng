@@ -18,6 +18,7 @@ vi.mock('idb-keyval', () => {
   return {
     createStore: () => 'mock-store',
     get: vi.fn(async (key: string) => store.get(key)),
+    entries: vi.fn(async () => Array.from(store.entries())),
     set: vi.fn(async (key: string, val: unknown) => {
       for (const [prefix, error] of failedKeyPrefixes) {
         if (key.startsWith(prefix)) throw error

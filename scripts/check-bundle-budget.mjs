@@ -27,6 +27,7 @@ export function isBlockedHomeChunk(file) {
   return (
     file.includes('editor-core')
     || file.includes('editor-vim')
+    || file.includes('editor-formatter')
     || file.includes('typst-engine')
     || file.includes('typst_ts_')
     || file.includes('compiler-')

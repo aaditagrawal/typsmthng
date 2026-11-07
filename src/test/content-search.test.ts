@@ -45,6 +45,31 @@ describe('project content search', () => {
       'needle',
     )[0]?.column).toBe(3)
   })
+
+  it('preserves line boundaries and Unicode offsets and refreshes edited content', () => {
+    const file = { path: '/main.typ', content: 'İ\n😀 İ needle needle\n\tlast NEEDLE\n', isBinary: false }
+    expect(searchProjectContent([file], 'needle')).toEqual([
+      { path: '/main.typ', line: 2, column: 6, preview: '😀 İ needle needle' },
+      { path: '/main.typ', line: 3, column: 7, preview: 'last NEEDLE' },
+    ])
+    expect(searchProjectContent([file], 'needle\nlast')).toEqual([])
+    expect(searchProjectContent([file], 'needle', { currentPath: file.path, currentSource: 'new\nneedle' })).toEqual([
+      { path: file.path, line: 2, column: 1, preview: 'needle' },
+    ])
+    file.content = 'needle moved'
+    expect(searchProjectContent([file], 'needle')).toEqual([
+      { path: file.path, line: 1, column: 1, preview: 'needle moved' },
+    ])
+  })
+
+  it('finds sparse hits beyond the initial prefix without repeating earlier hits', () => {
+    const file = { path: '/large.typ', content: `first target\n${'padding\n'.repeat(2000)}İ 😀 target`, isBinary: false }
+    expect(searchProjectContent([file], 'target')).toEqual([
+      { path: file.path, line: 1, column: 7, preview: 'first target' },
+      { path: file.path, line: 2002, column: 6, preview: 'İ 😀 target' },
+    ])
+    expect(searchProjectContent([file], 'absent')).toEqual([])
+  })
 })
 
 describe('editor jump', () => {

@@ -97,6 +97,9 @@ export default defineConfig({
           if (!id.includes('node_modules')) return undefined
           if (id.includes('unified-latex') || id.includes('pegjs')) return 'latex-converter'
           if (id.includes('@replit/codemirror-vim')) return 'editor-vim'
+          // These features must not ride vendor onto the home static graph.
+          if (id.includes('react-resizable-panels')) return 'workspace-panels'
+          if (id.includes('@typstyle/')) return 'editor-formatter'
           // Keep all CodeMirror + Lezer packages (including @replit helpers that
           // import @codemirror/*) in one chunk. Leaving indentation-markers in
           // `vendor` created vendor → editor-core and preloaded ~486KB on home.
