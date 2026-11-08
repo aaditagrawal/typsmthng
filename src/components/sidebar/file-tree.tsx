@@ -30,6 +30,11 @@ import { useEditorStore } from '@/stores/editor-store'
 const INVALID_NAME_PATTERN = /[/\\\0]/
 const INVALID_NAME_MESSAGE = 'Name cannot contain /, \\, or null characters.'
 
+type RowMode =
+  | { mode: 'idle' }
+  | { mode: 'menu'; x: number; y: number }
+  | { mode: 'renaming' }
+
 /**
  * Push the live editor buffer into the store before a rename/move touches the
  * current file (or an ancestor folder). The editor's debounced sync is keyed
@@ -313,13 +318,14 @@ function InlineNameInput({
   isFolder,
 }: {
   initialValue: string
-  onSubmit: (name: string) => void
+  onSubmit: (name: string) => void | Promise<void>
   onCancel: () => void
   depth: number
   isFolder: boolean
 }) {
   const [value, setValue] = useState(initialValue)
   const inputRef = useRef<HTMLInputElement>(null)
+  const lifecycle = useRef<'editing' | 'submitting'>('editing')
 
   useEffect(() => {
     // Select filename without extension for files
@@ -338,10 +344,16 @@ function InlineNameInput({
     }
   }, [initialValue, isFolder])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (lifecycle.current === 'submitting') return
     const trimmed = value.trim()
     if (trimmed && trimmed !== initialValue) {
-      onSubmit(trimmed)
+      lifecycle.current = 'submitting'
+      try {
+        await onSubmit(trimmed)
+      } finally {
+        lifecycle.current = 'editing'
+      }
     } else {
       onCancel()
     }
@@ -411,13 +423,12 @@ function FolderItem({
   const { deleteFolder, renameFolder } = useProjectStore(
     useShallow((s) => ({ deleteFolder: s.deleteFolder, renameFolder: s.renameFolder }))
   )
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const [renaming, setRenaming] = useState(false)
+  const [rowMode, setRowMode] = useState<RowMode>({ mode: 'idle' })
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
+    setRowMode({ mode: 'menu', x: e.clientX, y: e.clientY })
   }
 
   const handleRename = async (newName: string) => {
@@ -430,18 +441,18 @@ function FolderItem({
     try {
       flushEditorBufferBeforePathChange(node.path, true)
       await renameFolder(node.path, newPath)
-      setRenaming(false)
+      setRowMode({ mode: 'idle' })
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not rename folder.')
     }
   }
 
-  if (renaming) {
+  if (rowMode.mode === 'renaming') {
     return (
       <InlineNameInput
         initialValue={node.name}
         onSubmit={handleRename}
-        onCancel={() => setRenaming(false)}
+        onCancel={() => setRowMode({ mode: 'idle' })}
         depth={depth}
         isFolder={true}
       />
@@ -462,7 +473,7 @@ function FolderItem({
     {
       label: 'RENAME',
       icon: <Pencil size={12} />,
-      onClick: () => setRenaming(true),
+      onClick: () => setRowMode({ mode: 'renaming' }),
     },
     {
       label: 'DELETE',
@@ -492,7 +503,7 @@ function FolderItem({
           borderRadius: '0',
           fontFamily: 'var(--font-mono)',
           fontSize: '12px',
-          transition: 'background 80ms ease, color 80ms ease',
+          transition: 'background 80ms var(--motion-ease-out), color 80ms var(--motion-ease-out)',
         }}
         onClick={onToggle}
         onContextMenu={handleContextMenu}
@@ -500,7 +511,7 @@ function FolderItem({
           if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
             e.preventDefault()
             const rect = e.currentTarget.getBoundingClientRect()
-            setContextMenu({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+            setRowMode({ mode: 'menu', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
           }
         }}
         onMouseEnter={(e) => {
@@ -519,7 +530,7 @@ function FolderItem({
           style={{
             color: 'var(--text-tertiary)',
             transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)',
-            transition: 'transform 120ms ease',
+            transition: 'transform var(--motion-duration) var(--motion-ease-out)',
           }}
         />
         {isOpen
@@ -557,12 +568,12 @@ function FolderItem({
         </div>
       )}
 
-      {contextMenu && (
+      {rowMode.mode === 'menu' && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
+          x={rowMode.x}
+          y={rowMode.y}
           actions={contextActions}
-          onClose={() => setContextMenu(null)}
+          onClose={() => setRowMode((current) => current.mode === 'menu' ? { mode: 'idle' } : current)}
         />
       )}
     </div>
@@ -616,13 +627,12 @@ function FileItem({
       renameFile: s.renameFile,
     }))
   )
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  const [renaming, setRenaming] = useState(false)
+  const [rowMode, setRowMode] = useState<RowMode>({ mode: 'idle' })
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ x: e.clientX, y: e.clientY })
+    setRowMode({ mode: 'menu', x: e.clientX, y: e.clientY })
   }
 
   const handleRename = async (newName: string) => {
@@ -634,7 +644,7 @@ function FileItem({
     try {
       flushEditorBufferBeforePathChange(path, false)
       await renameFile(path, `${dir}/${newName}`)
-      setRenaming(false)
+      setRowMode({ mode: 'idle' })
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Could not rename file.')
     }
@@ -664,12 +674,12 @@ function FileItem({
     await createFile(duplicatePath, content)
   }
 
-  if (renaming) {
+  if (rowMode.mode === 'renaming') {
     return (
       <InlineNameInput
         initialValue={name}
         onSubmit={handleRename}
-        onCancel={() => setRenaming(false)}
+        onCancel={() => setRowMode({ mode: 'idle' })}
         depth={depth}
         isFolder={false}
       />
@@ -687,7 +697,7 @@ function FileItem({
     {
       label: 'RENAME',
       icon: <Pencil size={12} />,
-      onClick: () => setRenaming(true),
+      onClick: () => setRowMode({ mode: 'renaming' }),
     },
     {
       label: 'DELETE',
@@ -717,7 +727,7 @@ function FileItem({
           borderRadius: '0',
           fontFamily: 'var(--font-mono)',
           fontSize: '12px',
-          transition: 'background 80ms ease, color 80ms ease',
+          transition: 'background 80ms var(--motion-ease-out), color 80ms var(--motion-ease-out)',
         }}
         onClick={() => {
           if (isImagePath(name)) {
@@ -731,7 +741,7 @@ function FileItem({
           if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
             e.preventDefault()
             const rect = e.currentTarget.getBoundingClientRect()
-            setContextMenu({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+            setRowMode({ mode: 'menu', x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
           }
         }}
         onMouseEnter={(e) => {
@@ -752,12 +762,12 @@ function FileItem({
         <span {...stylex.props(styles.element22)}>{name}</span>
       </button>
 
-      {contextMenu && (
+      {rowMode.mode === 'menu' && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
+          x={rowMode.x}
+          y={rowMode.y}
           actions={contextActions}
-          onClose={() => setContextMenu(null)}
+          onClose={() => setRowMode((current) => current.mode === 'menu' ? { mode: 'idle' } : current)}
         />
       )}
     </div>
@@ -775,17 +785,19 @@ function NewItemInput({
   parentPath: string
   type: 'file' | 'folder'
   depth: number
-  onSubmit: (name: string) => void
+  onSubmit: (name: string) => void | Promise<void>
   onCancel: () => void
 }) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const lifecycle = useRef<'editing' | 'submitting'>('editing')
 
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (lifecycle.current === 'submitting') return
     const trimmed = value.trim()
     if (!trimmed) {
       onCancel()
@@ -795,14 +807,22 @@ function NewItemInput({
       alert(INVALID_NAME_MESSAGE)
       return
     }
-    onSubmit(trimmed)
+    lifecycle.current = 'submitting'
+    try {
+      await onSubmit(trimmed)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Could not create item.')
+    } finally {
+      lifecycle.current = 'editing'
+    }
   }
 
   const handleBlur = () => {
+    if (lifecycle.current === 'submitting') return
     // Blur must not force-submit: only accept a valid non-empty name.
     const trimmed = value.trim()
     if (trimmed && !INVALID_NAME_PATTERN.test(trimmed)) {
-      onSubmit(trimmed)
+      void handleSubmit()
     } else {
       onCancel()
     }
@@ -1030,8 +1050,8 @@ export function FileTree() {
   const importingRef = useRef(false)
   const dragDepthRef = useRef(0)
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
-  const [renamingProject, setRenamingProject] = useState(false)
-  const [projectNameValue, setProjectNameValue] = useState('')
+  const [projectNameDraft, setProjectNameDraft] = useState<string | null>(null)
+  const renamingProject = projectNameDraft !== null
   const projectNameInputRef = useRef<HTMLInputElement>(null)
   const [dropdownRect, setDropdownRect] = useState<{ left: number; bottom: number } | null>(null)
   const [newItem, setNewItem] = useState<{
@@ -1052,17 +1072,16 @@ export function FileTree() {
   }, [renamingProject])
 
   const handleProjectRenameStart = useCallback(() => {
-    setProjectNameValue(currentProject?.name ?? '')
-    setRenamingProject(true)
+    setProjectNameDraft(currentProject?.name ?? '')
   }, [currentProject?.name])
 
   const handleProjectRenameSubmit = useCallback(() => {
-    const trimmed = projectNameValue.trim()
+    const trimmed = projectNameDraft?.trim()
     if (trimmed && currentProjectId && trimmed !== currentProject?.name) {
       useProjectStore.getState().renameProject(currentProjectId, trimmed)
     }
-    setRenamingProject(false)
-  }, [projectNameValue, currentProjectId, currentProject?.name])
+    setProjectNameDraft(null)
+  }, [projectNameDraft, currentProjectId, currentProject?.name])
 
   // Build tree from files
   const tree = useMemo(() => {
@@ -1375,7 +1394,7 @@ export function FileTree() {
     >
       {/* Project header */}
       <div {...stylex.props(styles.element32)} style={{ borderBottom: '1px solid var(--border-default)' }}>
-        {renamingProject ? (
+        {projectNameDraft !== null ? (
           <div
             {...stylex.props(styles.element33)}
             style={{
@@ -1385,12 +1404,12 @@ export function FileTree() {
           >
             <input
               ref={projectNameInputRef}
-              value={projectNameValue}
-              onChange={(e) => setProjectNameValue(e.target.value)}
+              value={projectNameDraft}
+              onChange={(e) => setProjectNameDraft(e.target.value)}
               onBlur={handleProjectRenameSubmit}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') handleProjectRenameSubmit()
-                if (e.key === 'Escape') setRenamingProject(false)
+                if (e.key === 'Escape') setProjectNameDraft(null)
               }}
               {...stylex.props(styles.element34)}
               style={{
@@ -1435,7 +1454,7 @@ export function FileTree() {
                 color: 'var(--text-tertiary)',
                 flexShrink: 0,
                 transform: projectDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                transition: 'transform 120ms ease',
+                transition: 'transform var(--motion-duration) var(--motion-ease-out)',
               }}
             />
           </button>

@@ -6,19 +6,18 @@ interface ErrorBoundaryProps {
 }
 
 interface ErrorBoundaryState {
-  hasError: boolean
-  error: Error | null
+  failure: { error: Error | null } | null
   showDetails: boolean
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props)
-    this.state = { hasError: false, error: null, showDetails: false }
+    this.state = { failure: null, showDetails: false }
   }
 
   static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
-    return { hasError: true, error }
+    return { failure: { error }, showDetails: false }
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
@@ -26,10 +25,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   render() {
-    if (!this.state.hasError) {
+    if (!this.state.failure) {
       return this.props.children
     }
 
+    const { error } = this.state.failure
     const message = this.props.fallbackMessage ?? 'Something went wrong'
 
     return (
@@ -81,7 +81,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             {message}
           </div>
 
-          {this.state.error && (
+          {error && (
             <div
               style={{
                 fontSize: '12px',
@@ -89,13 +89,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 marginBottom: '20px',
               }}
             >
-              {this.state.error.message}
+              {error.message}
             </div>
           )}
 
           <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
             <button
-              onClick={() => this.setState({ hasError: false, error: null, showDetails: false })}
+              onClick={() => this.setState({ failure: null, showDetails: false })}
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: '11px',
@@ -152,7 +152,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </button>
           </div>
 
-          {this.state.showDetails && this.state.error?.stack && (
+          {this.state.showDetails && error?.stack && (
             <pre
               style={{
                 fontSize: '11px',
@@ -168,7 +168,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 wordBreak: 'break-all',
               }}
             >
-              {this.state.error.stack}
+              {error.stack}
             </pre>
           )}
         </div>

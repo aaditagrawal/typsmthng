@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { FileTree } from '@/components/sidebar/file-tree'
 import { useProjectStore, type Project } from '@/stores/project-store'
@@ -65,5 +65,50 @@ describe('FileTree', () => {
     fireEvent.change(input, { target: { value: 'notes.typ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => expect(createFile).toHaveBeenCalledWith('/notes.typ'))
+  })
+
+  it('submits a new item only once for Enter followed by blur and permits retry', async () => {
+    let rejectCreate!: (error: Error) => void
+    const createFile = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((_, reject) => { rejectCreate = reject }))
+      .mockResolvedValueOnce(undefined)
+    useProjectStore.setState({ createFile })
+    render(<FileTree />)
+    fireEvent.click(screen.getByTitle('New file or folder'))
+    fireEvent.click(screen.getByText('NEW FILE'))
+    const input = screen.getByPlaceholderText('file name')
+    fireEvent.change(input, { target: { value: 'notes.typ' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+    expect(createFile).toHaveBeenCalledTimes(1)
+    await act(async () => rejectCreate(new Error('create failed')))
+    expect(window.alert).toHaveBeenCalledWith('create failed')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(screen.queryByPlaceholderText('file name')).not.toBeInTheDocument())
+    expect(createFile).toHaveBeenCalledTimes(2)
+  })
+
+  it.each(['file', 'folder'] as const)('keeps %s rename active when its context menu closes and deduplicates Enter/blur', async (kind) => {
+    let resolveRename!: () => void
+    const rename = vi.fn(() => new Promise<void>((resolve) => { resolveRename = resolve }))
+    const project = makeProject()
+    if (kind === 'folder') project.files.push({ path: '/chapters/.folder', content: '', isBinary: false, lastModified: 1 })
+    useProjectStore.setState({ projects: [project], ...(kind === 'file' ? { renameFile: rename } : { renameFolder: rename }) })
+    render(<FileTree />)
+    const original = kind === 'file' ? 'main.typ' : 'chapters'
+    fireEvent.contextMenu(screen.getByText(original))
+    fireEvent.click(screen.getByText('RENAME'))
+    const input = screen.getByDisplayValue(original)
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    fireEvent.change(input, { target: { value: 'renamed' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.blur(input)
+    expect(rename).toHaveBeenCalledTimes(1)
+    await act(async () => resolveRename())
+    expect(screen.queryByDisplayValue('renamed')).not.toBeInTheDocument()
+    fireEvent.contextMenu(screen.getByText(original))
+    expect(screen.getByText('RENAME')).toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
   })
 })

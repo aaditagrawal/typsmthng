@@ -167,7 +167,7 @@ function buildEditorTheme(theme: 'light' | 'dark'): Extension {
     },
     '.cm-source-highlight': {
       backgroundColor: isDark ? 'rgba(255, 77, 0, 0.18)' : 'rgba(255, 77, 0, 0.14)',
-      transition: 'background-color 0.3s ease',
+      transition: 'background-color 180ms var(--motion-ease-out)',
     },
     '.cm-diagnostic-error': {
       textDecoration: 'underline wavy',

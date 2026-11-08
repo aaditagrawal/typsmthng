@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useProjectStore } from '@/stores/project-store'
+import { ErrorBoundary } from '@/components/layout/error-boundary'
 
 vi.mock('react-resizable-panels', () => ({
   Group: ({ children, className, orientation }: {
@@ -24,6 +25,24 @@ vi.mock('@/components/search/command-search', () => ({ CommandSearch: () => null
 vi.mock('@/components/preview/image-preview-modal', () => ({ ImagePreviewModal: () => null }))
 
 import WorkspaceShell from '@/components/workspace/workspace-shell'
+
+describe('ErrorBoundary lifecycle', () => {
+  it.each([new Error('render failure'), null])('renders fallback and retries for thrown %s', (failure) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let shouldThrow = true
+    function Content() {
+      if (shouldThrow) throw failure
+      return <div>Recovered content</div>
+    }
+    render(<ErrorBoundary fallbackMessage="Preview failed"><Content /></ErrorBoundary>)
+    expect(screen.getByText('Preview failed')).toBeInTheDocument()
+    shouldThrow = false
+    fireEvent.click(screen.getByRole('button', { name: 'TRY AGAIN' }))
+    expect(screen.getByText('Recovered content')).toBeInTheDocument()
+    expect(screen.queryByText('Preview failed')).not.toBeInTheDocument()
+    log.mockRestore()
+  })
+})
 
 describe('WorkspaceShell responsive layout', () => {
   let narrow = false

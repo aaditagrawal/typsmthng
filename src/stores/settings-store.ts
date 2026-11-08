@@ -75,19 +75,16 @@ const defaults: Settings = {
   googleFontsEnabled: true,
 }
 
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-let pendingSettings: Settings | null = null
+// Idle, or one scheduled snapshot. A pending write always owns its timer.
+let pendingPersist: { settings: Settings; timer: ReturnType<typeof setTimeout> } | null = null
 let settingsRevision = 0
 const PERSIST_DEBOUNCE_MS = 300
 
 function flushPendingSettings() {
-  if (persistTimer) {
-    clearTimeout(persistTimer)
-    persistTimer = null
-  }
-  const settings = pendingSettings
-  pendingSettings = null
-  if (!settings) return
+  if (!pendingPersist) return
+  const { settings, timer } = pendingPersist
+  clearTimeout(timer)
+  pendingPersist = null
   idbSet(SETTINGS_KEY, settings, settingsDb).catch((err) => {
     console.warn('Failed to persist settings to IDB:', err)
   })
@@ -95,9 +92,8 @@ function flushPendingSettings() {
 
 function persistSettings(settings: Settings) {
   settingsRevision += 1
-  pendingSettings = settings
-  if (persistTimer) clearTimeout(persistTimer)
-  persistTimer = setTimeout(flushPendingSettings, PERSIST_DEBOUNCE_MS)
+  if (pendingPersist) clearTimeout(pendingPersist.timer)
+  pendingPersist = { settings, timer: setTimeout(flushPendingSettings, PERSIST_DEBOUNCE_MS) }
 }
 
 // Changes inside the debounce window would otherwise be lost on tab close.

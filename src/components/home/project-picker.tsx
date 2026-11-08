@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useProjectStore, type Project } from '@/stores/project-store'
 import { useSettingsStore } from '@/stores/settings-store'
 import { useUIStore } from '@/stores/ui-store'
@@ -18,6 +18,30 @@ import {
 } from '@/lib/builtin-templates'
 import type { LatexImportResult } from '@/lib/project-io'
 import { isLatexPath } from '@/lib/file-classification'
+
+type TemplateInitState =
+  | { status: 'idle' }
+  | { status: 'running' }
+  | { status: 'success'; message: string }
+  | { status: 'error'; message: string }
+
+type MarketplaceState =
+  | { status: 'idle' }
+  | { status: 'searching'; query: string }
+  | { status: 'success'; query: string; results: UniverseMarketplacePackage[] }
+  | { status: 'error'; query: string; message: string }
+
+type LatexImportState =
+  | { status: 'idle' }
+  | { status: 'importing' }
+  | { status: 'success'; result: LatexImportResult }
+  | { status: 'error'; message: string }
+
+type WorkspaceImportState =
+  | { status: 'idle' }
+  | { status: 'importing' }
+  | { status: 'success'; message: string }
+  | { status: 'error'; message: string }
 
 async function loadProjectIo() {
   return import('@/lib/project-io')
@@ -115,10 +139,14 @@ function ProjectCard({
   onRename: (name: string) => void
   onPreloadWorkspace?: () => void
 }) {
-  const [editing, setEditing] = useState(false)
-  const [editName, setEditName] = useState(project.name)
-  const [confirmDelete, setConfirmDelete] = useState(false)
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
+  const [mode, setMode] = useState<
+    | { status: 'idle' }
+    | { status: 'renaming'; draft: string }
+    | { status: 'confirm-delete' }
+    | { status: 'menu'; x: number; y: number }
+  >({ status: 'idle' })
+  const editing = mode.status === 'renaming'
+  const confirmDelete = mode.status === 'confirm-delete'
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -131,13 +159,12 @@ function ProjectCard({
   const fileCount = project.files.filter((f) => !f.path.endsWith('/.folder') && !isHiddenInternalPath(f.path)).length
 
   const commitRename = () => {
-    const trimmed = editName.trim()
+    if (mode.status !== 'renaming') return
+    const trimmed = mode.draft.trim()
     if (trimmed && trimmed !== project.name) {
       onRename(trimmed)
-    } else {
-      setEditName(project.name)
     }
-    setEditing(false)
+    setMode({ status: 'idle' })
   }
 
   const contextActions: ContextMenuAction[] = [
@@ -150,8 +177,7 @@ function ProjectCard({
       label: 'Rename',
       icon: <Pencil size={12} />,
       onClick: () => {
-        setEditName(project.name)
-        setEditing(true)
+        setMode({ status: 'renaming', draft: project.name })
       },
     },
     {
@@ -172,7 +198,7 @@ function ProjectCard({
       onContextMenu={(e) => {
         e.preventDefault()
         if (editing) return
-        setContextMenu({ x: e.clientX, y: e.clientY })
+        setMode({ status: 'menu', x: e.clientX, y: e.clientY })
       }}
       onClick={(e) => {
         if (editing || confirmDelete) return
@@ -183,8 +209,9 @@ function ProjectCard({
       onKeyDown={(e) => {
         if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
           e.preventDefault()
+          if (editing) return
           const rect = e.currentTarget.getBoundingClientRect()
-          setContextMenu({ x: rect.left + rect.width / 2, y: rect.top + 24 })
+          setMode({ status: 'menu', x: rect.left + rect.width / 2, y: rect.top + 24 })
           return
         }
         if (e.key === 'Enter' || e.key === ' ') {
@@ -203,7 +230,7 @@ function ProjectCard({
         borderRadius: '2px',
         padding: '14px 16px',
         cursor: editing || confirmDelete ? 'default' : 'pointer',
-        transition: 'background 100ms ease, border-color 100ms ease, box-shadow 100ms ease',
+        transition: 'background 100ms var(--motion-ease-out), border-color 100ms var(--motion-ease-out), box-shadow 100ms var(--motion-ease-out)',
         fontFamily: 'var(--font-mono)',
         position: 'relative',
         boxShadow: selected ? '0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent)' : 'none',
@@ -218,7 +245,7 @@ function ProjectCard({
       onMouseLeave={(e) => {
         e.currentTarget.style.background = 'var(--bg-surface)'
         e.currentTarget.style.borderColor = selected ? 'var(--accent)' : 'var(--border-default)'
-        if (confirmDelete) setConfirmDelete(false)
+        if (confirmDelete) setMode({ status: 'idle' })
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
@@ -245,14 +272,13 @@ function ProjectCard({
           {editing ? (
             <input
               ref={inputRef}
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
+              value={mode.draft}
+              onChange={(e) => setMode({ status: 'renaming', draft: e.target.value })}
               onBlur={commitRename}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') commitRename()
                 if (e.key === 'Escape') {
-                  setEditName(project.name)
-                  setEditing(false)
+                  setMode({ status: 'idle' })
                 }
               }}
               onClick={(e) => e.stopPropagation()}
@@ -275,8 +301,7 @@ function ProjectCard({
               onDoubleClick={(e) => {
                 if (selectionMode) return
                 e.stopPropagation()
-                setEditName(project.name)
-                setEditing(true)
+                setMode({ status: 'renaming', draft: project.name })
               }}
               style={{
                 color: 'var(--text-primary)',
@@ -300,7 +325,7 @@ function ProjectCard({
             if (confirmDelete) {
               onDelete()
             } else {
-              setConfirmDelete(true)
+              setMode({ status: 'confirm-delete' })
             }
           }}
           style={{
@@ -314,7 +339,7 @@ function ProjectCard({
             background: 'transparent',
             color: confirmDelete ? 'var(--status-error)' : 'var(--text-tertiary)',
             cursor: 'pointer',
-            transition: 'color 100ms ease',
+            transition: 'color 100ms var(--motion-ease-out)',
             flexShrink: 0,
           }}
           title={confirmDelete ? 'Click again to confirm delete' : 'Delete project'}
@@ -347,12 +372,12 @@ function ProjectCard({
         <span>{formatDate(project.updatedAt)}</span>
       </div>
 
-      {contextMenu && (
+      {mode.status === 'menu' && (
         <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
+          x={mode.x}
+          y={mode.y}
           actions={contextActions}
-          onClose={() => setContextMenu(null)}
+          onClose={() => setMode((current) => current.status === 'menu' ? { status: 'idle' } : current)}
         />
       )}
     </div>
@@ -452,27 +477,40 @@ export function ProjectPicker({
   const [showNewInput, setShowNewInput] = useState(false)
   const [newName, setNewName] = useState('')
   const [initCommand, setInitCommand] = useState('')
-  const [initBusy, setInitBusy] = useState(false)
-  const [initError, setInitError] = useState<string | null>(null)
-  const [initSuccess, setInitSuccess] = useState<string | null>(null)
+  const [initState, setInitState] = useState<TemplateInitState>({ status: 'idle' })
+  const initInFlight = useRef(false)
+  const initBusy = initState.status === 'running'
+  const initError = initState.status === 'error' ? initState.message : null
+  const initSuccess = initState.status === 'success' ? initState.message : null
   const [showTemplateInit, setShowTemplateInit] = useState(false)
   const [marketplaceOpen, setMarketplaceOpen] = useState(false)
   const [marketplaceQuery, setMarketplaceQuery] = useState('')
-  const [marketplaceBusy, setMarketplaceBusy] = useState(false)
-  const [marketplaceError, setMarketplaceError] = useState<string | null>(null)
-  const [marketplaceResults, setMarketplaceResults] = useState<UniverseMarketplacePackage[]>([])
+  const [marketplaceState, setMarketplaceState] = useState<MarketplaceState>({ status: 'idle' })
+  const marketplaceSearchable = marketplaceQuery.trim().length >= MIN_MARKETPLACE_QUERY_LENGTH
+  const currentMarketplaceState = !marketplaceSearchable
+    ? { status: 'idle' } as const
+    : marketplaceState.status !== 'idle' && marketplaceState.query === marketplaceQuery.trim()
+    ? marketplaceState
+    : { status: 'searching', query: marketplaceQuery.trim() } as const
+  const marketplaceBusy = currentMarketplaceState.status === 'searching'
+  const marketplaceError = currentMarketplaceState.status === 'error' ? currentMarketplaceState.message : null
+  const marketplaceResults = currentMarketplaceState.status === 'success' ? currentMarketplaceState.results : []
   const newInputRef = useRef<HTMLInputElement>(null)
   const latexFileInputRef = useRef<HTMLInputElement>(null)
   const latexFolderInputRef = useRef<HTMLInputElement>(null)
   const latexZipInputRef = useRef<HTMLInputElement>(null)
-  const [latexBusy, setLatexBusy] = useState(false)
-  const [latexResult, setLatexResult] = useState<LatexImportResult | null>(null)
-  const [latexError, setLatexError] = useState<string | null>(null)
+  const [latexState, setLatexState] = useState<LatexImportState>({ status: 'idle' })
+  const latexInFlight = useRef(false)
+  const latexBusy = latexState.status === 'importing'
+  const latexResult = latexState.status === 'success' ? latexState.result : null
+  const latexError = latexState.status === 'error' ? latexState.message : null
   const [latexMenuOpen, setLatexMenuOpen] = useState(false)
   const importAllInputRef = useRef<HTMLInputElement>(null)
-  const [importAllBusy, setImportAllBusy] = useState(false)
-  const [importAllResult, setImportAllResult] = useState<string | null>(null)
-  const [importAllError, setImportAllError] = useState<string | null>(null)
+  const [importAllState, setImportAllState] = useState<WorkspaceImportState>({ status: 'idle' })
+  const importAllInFlight = useRef(false)
+  const importAllBusy = importAllState.status === 'importing'
+  const importAllResult = importAllState.status === 'success' ? importAllState.message : null
+  const importAllError = importAllState.status === 'error' ? importAllState.message : null
   const [selectionMode, setSelectionMode] = useState(false)
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [workspaceSheetOpen, setWorkspaceSheetOpen] = useState(false)
@@ -480,7 +518,6 @@ export function ProjectPicker({
   const [workspaceActionError, setWorkspaceActionError] = useState<string | null>(null)
   const [workspaceQuickAddOpen, setWorkspaceQuickAddOpen] = useState(false)
   const [workspaceContextMenu, setWorkspaceContextMenu] = useState<{ workspaceId: string; x: number; y: number } | null>(null)
-  const marketplaceSearchToken = useRef(0)
   const workspaceSheetRef = useRef<HTMLDivElement>(null)
   const marketplaceModalRef = useRef<HTMLDivElement>(null)
   const builtInTemplates = listBuiltInTemplates()
@@ -498,33 +535,27 @@ export function ProjectPicker({
     if (!marketplaceOpen) return
 
     const query = marketplaceQuery.trim()
-    if (query.length < MIN_MARKETPLACE_QUERY_LENGTH) {
-      setMarketplaceBusy(false)
-      setMarketplaceError(null)
-      setMarketplaceResults([])
-      return
-    }
+    if (query.length < MIN_MARKETPLACE_QUERY_LENGTH) return
 
-    const token = ++marketplaceSearchToken.current
-    setMarketplaceBusy(true)
-    setMarketplaceError(null)
+    let cancelled = false
 
     const timer = setTimeout(() => {
+      setMarketplaceState({ status: 'searching', query })
       void searchUniverseMarketplace(query)
         .then((results) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceResults(results)
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceState({ status: 'success', query, results })
         })
         .catch((err) => {
-          if (token !== marketplaceSearchToken.current) return
-          setMarketplaceError(err instanceof Error ? err.message : 'Failed to fetch marketplace packages')
-          setMarketplaceResults([])
-          setMarketplaceBusy(false)
+          if (cancelled) return
+          setMarketplaceState({ status: 'error', query, message: err instanceof Error ? err.message : 'Failed to fetch marketplace packages' })
         })
     }, 160)
 
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [marketplaceOpen, marketplaceQuery])
 
   useEffect(() => {
@@ -555,16 +586,15 @@ export function ProjectPicker({
     command: string,
     options?: { clearCommandInput?: boolean; closeMarketplace?: boolean; successPrefix?: string },
   ) => {
-    if (initBusy) return
+    if (initInFlight.current) return
 
-    setInitBusy(true)
-    setInitError(null)
-    setInitSuccess(null)
+    initInFlight.current = true
+    setInitState({ status: 'running' })
     try {
       onPreloadWorkspace?.()
       const result = await runInitCommand(command)
       const successPrefix = options?.successPrefix ?? 'Created'
-      setInitSuccess(`${successPrefix} "${result.projectName}" from ${result.resolvedSpec}`)
+      setInitState({ status: 'success', message: `${successPrefix} "${result.projectName}" from ${result.resolvedSpec}` })
       if (options?.clearCommandInput) {
         setInitCommand('')
       }
@@ -572,9 +602,9 @@ export function ProjectPicker({
         setMarketplaceOpen(false)
       }
     } catch (err) {
-      setInitError(err instanceof Error ? err.message : 'Failed to initialize template project')
+      setInitState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to initialize template project' })
     } finally {
-      setInitBusy(false)
+      initInFlight.current = false
     }
   }
 
@@ -586,28 +616,27 @@ export function ProjectPicker({
 
   const handleImportBuiltInTemplate = async (templateId: string) => {
     const template = getBuiltInTemplate(templateId)
-    if (!template || initBusy) return
+    if (!template || initInFlight.current) return
 
-    setInitBusy(true)
-    setInitError(null)
-    setInitSuccess(null)
+    initInFlight.current = true
+    setInitState({ status: 'running' })
     try {
       onPreloadWorkspace?.()
       const scaffold = createBuiltInTemplateScaffold(templateId)
       await createProject(template.suggestedProjectName, scaffold)
-      setInitSuccess(`Created "${template.suggestedProjectName}" from built-in starter`)
+      setInitState({ status: 'success', message: `Created "${template.suggestedProjectName}" from built-in starter` })
       setMarketplaceOpen(false)
     } catch (err) {
-      setInitError(err instanceof Error ? err.message : 'Failed to import built-in starter')
+      setInitState({ status: 'error', message: err instanceof Error ? err.message : 'Failed to import built-in starter' })
     } finally {
-      setInitBusy(false)
+      initInFlight.current = false
     }
   }
 
   const handleMarketplacePrefill = (item: UniverseMarketplacePackage) => {
+    if (initInFlight.current) return
     setInitCommand(item.initCommand)
-    setInitError(null)
-    setInitSuccess(`Prefilled command for @preview/${item.name}`)
+    setInitState({ status: 'success', message: `Prefilled command for @preview/${item.name}` })
     setMarketplaceOpen(false)
   }
 
@@ -623,10 +652,9 @@ export function ProjectPicker({
     // Snapshot before any await: resetting the input's value (done right after
     // this handler is invoked) empties the live FileList it passed us.
     const files = Array.from(fileList)
-    if (files.length === 0 || latexBusy) return
-    setLatexBusy(true)
-    setLatexResult(null)
-    setLatexError(null)
+    if (files.length === 0 || latexInFlight.current) return
+    latexInFlight.current = true
+    setLatexState({ status: 'importing' })
     setLatexMenuOpen(false)
 
     try {
@@ -634,7 +662,7 @@ export function ProjectPicker({
       const firstFile = files[0]
       if (files.length === 1 && /\.zip$/i.test(firstFile.name)) {
         const result = await importLatexZip(firstFile)
-        setLatexResult(result)
+        setLatexState({ status: 'success', result })
         return
       }
 
@@ -651,23 +679,23 @@ export function ProjectPicker({
 
       const hasTeX = entries.some((e) => isLatexPath(e.file.name))
       if (!hasTeX) {
-        setLatexError('No .tex files found. Select files containing at least one .tex file.')
+        setLatexState({ status: 'error', message: 'No .tex files found. Select files containing at least one .tex file.' })
         return
       }
 
       const result = await importLatexProject(entries)
-      setLatexResult(result)
+      setLatexState({ status: 'success', result })
     } catch (err) {
-      setLatexError(err instanceof Error ? err.message : 'Import failed')
+      setLatexState({ status: 'error', message: err instanceof Error ? err.message : 'Import failed' })
     } finally {
-      setLatexBusy(false)
+      latexInFlight.current = false
     }
   }
 
-  const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt)
-  const visibleProjects = selectedHomeWorkspaceId
+  const sorted = useMemo(() => [...projects].sort((a, b) => b.updatedAt - a.updatedAt), [projects])
+  const visibleProjects = useMemo(() => selectedHomeWorkspaceId
     ? sorted.filter((project) => projectWorkspaceAssignments[project.id] === selectedHomeWorkspaceId)
-    : sorted
+    : sorted, [sorted, selectedHomeWorkspaceId, projectWorkspaceAssignments])
   const activeWorkspace = homeWorkspaces.find((workspace) => workspace.id === selectedHomeWorkspaceId) ?? null
   const selectedCount = selectedProjectIds.length
 
@@ -1027,21 +1055,20 @@ export function ProjectPicker({
         <input ref={importAllInputRef} type="file" accept=".zip" style={{ display: 'none' }}
           onChange={(e) => {
             const file = e.target.files?.[0]
-            if (!file) return
-            setImportAllBusy(true)
-            setImportAllResult(null)
-            setImportAllError(null)
+            e.target.value = ''
+            if (!file || importAllInFlight.current) return
+            importAllInFlight.current = true
+            setImportAllState({ status: 'importing' })
             void loadProjectIo()
               .then(({ importAllProjects }) => importAllProjects(file))
               .then((count) => {
-                setImportAllResult(`Imported ${count} project${count === 1 ? '' : 's'}`)
+                setImportAllState({ status: 'success', message: `Imported ${count} project${count === 1 ? '' : 's'}` })
                 void loadProjects()
               })
               .catch((err) => {
-                setImportAllError(err instanceof Error ? err.message : 'Import failed')
+                setImportAllState({ status: 'error', message: err instanceof Error ? err.message : 'Import failed' })
               })
-              .finally(() => { setImportAllBusy(false) })
-            e.target.value = ''
+              .finally(() => { importAllInFlight.current = false })
           }}
         />
 
@@ -1313,7 +1340,7 @@ export function ProjectPicker({
             <div style={{ fontSize: '11px', color: 'var(--status-error)' }}>{latexError}</div>
             <button
               type="button"
-              onClick={() => setLatexError(null)}
+              onClick={() => setLatexState({ status: 'idle' })}
               aria-label="Dismiss import error"
               style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0 }}
             >
@@ -1362,7 +1389,7 @@ export function ProjectPicker({
               </div>
               <button
                 type="button"
-                onClick={() => setLatexResult(null)}
+                onClick={() => setLatexState({ status: 'idle' })}
                 aria-label="Dismiss import result"
                 style={{ width: '20px', height: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: 'none', background: 'transparent', color: 'var(--text-tertiary)', cursor: 'pointer', flexShrink: 0, alignSelf: 'flex-start' }}
               >
@@ -1494,7 +1521,7 @@ export function ProjectPicker({
                 fontSize: '12px',
                 fontWeight: 600,
                 letterSpacing: '0.03em',
-                transition: 'color 100ms ease, border-color 100ms ease',
+                transition: 'color 100ms var(--motion-ease-out), border-color 100ms var(--motion-ease-out)',
                 minHeight: '80px',
               }}
               onMouseEnter={(e) => {
@@ -1867,7 +1894,7 @@ export function ProjectPicker({
                   </div>
                 )}
 
-                {!marketplaceBusy && !marketplaceError && marketplaceQuery.trim().length >= MIN_MARKETPLACE_QUERY_LENGTH && marketplaceResults.length === 0 && (
+                {currentMarketplaceState.status === 'success' && marketplaceResults.length === 0 && (
                   <div style={{ border: '1px dashed var(--border-default)', borderRadius: '2px', padding: '10px', color: 'var(--text-tertiary)', fontSize: '11px' }}>
                     No packages matched your query.
                   </div>
@@ -1960,25 +1987,25 @@ const spin = stylex.keyframes({ to: { transform: 'rotate(360deg)' } })
 const styles = stylex.create({
   "element1": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },
   "element2": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },
   "element3": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },
   "element4": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   }

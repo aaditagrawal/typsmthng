@@ -177,11 +177,47 @@ describe('Compile Manager', () => {
       }))
 
     const oldCompile = forceCompile('= Old')
+    await Promise.resolve()
     const newCompile = forceCompile('= New')
     await Promise.all([oldCompile, newCompile])
 
     // forceCompile must not resolve until the queued request has settled.
     expect(useCompileStore.getState().svg).toContain('NEW')
+  })
+
+  it('skips obsolete work before entering the compiler', async () => {
+    const oldCompile = forceCompile('= Superseded before initialization')
+    const latest = forceCompile('= Latest initialization input')
+    await Promise.all([oldCompile, latest])
+
+    expect(compileTypst).toHaveBeenCalledTimes(1)
+    expect(useCompileStore.getState().svg).toContain('Latest initialization input')
+  })
+
+  it('keeps the newest debounced edit when an older forced request is queued', async () => {
+    vi.useFakeTimers()
+    useSettingsStore.setState({ compileDelay: 200 })
+    let release!: () => void
+    vi.mocked(compileTypst).mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { release = resolve })
+      return {
+        svg: '<svg>Obsolete</svg>', vectorData: new Uint8Array([1]),
+        pageDimensions: [{ width: 1, height: 1 }], diagnostics: [], success: true,
+      }
+    })
+
+    const active = forceCompile('= Active before edits')
+    await Promise.resolve()
+    const queued = forceCompile('= Queued before edit')
+    requestCompile('= Newest debounced edit')
+    release()
+    await active
+    await vi.runAllTimersAsync()
+    await queued
+
+    expect(useCompileStore.getState().svg).toContain('Newest debounced edit')
+    expect(compileTypst).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 
   it('awaits a queued forceCompile until its result is applied', async () => {

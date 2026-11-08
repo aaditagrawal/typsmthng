@@ -129,8 +129,7 @@ function clearRecoveryJournal(): void {
 // Debounced auto-save for file content changes.
 // Bound to a project id so switching projects cannot save the wrong one
 // or drop the previous project's pending edits.
-let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
-let autoSaveProjectId: string | null = null
+let scheduledAutoSave: { projectId: string; timer: ReturnType<typeof setTimeout> } | null = null
 const AUTO_SAVE_MS = 2000
 
 /** Bumped on delete so in-flight idbSet cannot resurrect a removed project. */
@@ -279,44 +278,33 @@ function bumpProjectEpoch(projectId: string): number {
   return next
 }
 
-function clearAutoSaveTimer() {
-  if (autoSaveTimer) {
-    clearTimeout(autoSaveTimer)
-    autoSaveTimer = null
-  }
+function cancelScheduledAutoSave(projectId?: string) {
+  if (!scheduledAutoSave || (projectId && scheduledAutoSave.projectId !== projectId)) return
+  clearTimeout(scheduledAutoSave.timer)
+  scheduledAutoSave = null
 }
 
 function scheduleAutoSave(projectId: string, persist: (id: string) => Promise<void>) {
   // If a different project was pending, flush it before debouncing the new one.
-  if (autoSaveProjectId && autoSaveProjectId !== projectId) {
-    const previousId = autoSaveProjectId
-    clearAutoSaveTimer()
-    autoSaveProjectId = null
+  if (scheduledAutoSave && scheduledAutoSave.projectId !== projectId) {
+    const previousId = scheduledAutoSave.projectId
+    cancelScheduledAutoSave()
     void persist(previousId)
   }
 
-  clearAutoSaveTimer()
-  autoSaveProjectId = projectId
-  autoSaveTimer = setTimeout(() => {
-    autoSaveTimer = null
-    const id = autoSaveProjectId
-    autoSaveProjectId = null
-    if (id) void persist(id)
+  cancelScheduledAutoSave()
+  const timer = setTimeout(() => {
+    scheduledAutoSave = null
+    void persist(projectId)
   }, AUTO_SAVE_MS)
+  scheduledAutoSave = { projectId, timer }
 }
 
 function flushScheduledAutoSave(persist: (id: string) => Promise<void>): Promise<void> {
-  const id = autoSaveProjectId
-  clearAutoSaveTimer()
-  autoSaveProjectId = null
+  const id = scheduledAutoSave?.projectId
+  cancelScheduledAutoSave()
   if (!id) return Promise.resolve()
   return persist(id)
-}
-
-function cancelScheduledAutoSave(projectId?: string) {
-  if (projectId && autoSaveProjectId !== projectId) return
-  clearAutoSaveTimer()
-  autoSaveProjectId = null
 }
 
 function enqueueProjectSave(projectId: string, work: () => Promise<void>): Promise<void> {
@@ -328,8 +316,7 @@ function enqueueProjectSave(projectId: string, work: () => Promise<void>): Promi
 
 /** Test-only: clear debounce timers and persist epochs between cases. */
 export function resetProjectPersistStateForTests(): void {
-  clearAutoSaveTimer()
-  autoSaveProjectId = null
+  cancelScheduledAutoSave()
   projectPersistEpoch.clear()
   projectSaveChains.clear()
   persistedBinaryRecords.clear()

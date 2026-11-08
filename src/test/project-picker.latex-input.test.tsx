@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('idb-keyval', () => {
   const store = new Map<string, unknown>()
@@ -19,12 +19,14 @@ const importLatexProjectMock = vi.hoisted(() => vi.fn(async (entries: Array<{ re
   warnings: [],
   metadata: {},
 })))
+const importAllProjectsMock = vi.hoisted(() => vi.fn<(file: File) => Promise<number>>())
 
 vi.mock('@/lib/project-io', async () => {
   const actual = await vi.importActual<typeof import('@/lib/project-io')>('@/lib/project-io')
   return {
     ...actual,
     importLatexProject: importLatexProjectMock,
+    importAllProjects: importAllProjectsMock,
   }
 })
 
@@ -34,11 +36,54 @@ import { useProjectStore } from '@/stores/project-store'
 describe('ProjectPicker LaTeX file input', () => {
   beforeEach(() => {
     importLatexProjectMock.mockClear()
+    importAllProjectsMock.mockReset()
     useProjectStore.setState({
       projects: [],
       currentProjectId: null,
       currentFilePath: null,
     })
+  })
+
+  it('deduplicates LaTeX imports before React rerenders', async () => {
+    const result = { projectName: 'One import', fileCount: 1, texFilesConverted: 1, warnings: [], metadata: {} }
+    let resolveImport!: (value: typeof result) => void
+    importLatexProjectMock.mockImplementationOnce(() => new Promise((resolve) => { resolveImport = resolve }))
+    const { container } = render(<ProjectPicker onShowGuide={() => {}} />)
+    const input = container.querySelector('input[accept=".tex"]')!
+    const files = [new File(['hello'], 'doc.tex')]
+    act(() => {
+      fireEvent.change(input, { target: { files } })
+      fireEvent.change(input, { target: { files } })
+    })
+    await waitFor(() => expect(importLatexProjectMock).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Converting...' })).toBeDisabled()
+    await act(async () => resolveImport(result))
+    expect(screen.getByText(/One import/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss import result' }))
+    expect(screen.queryByText(/One import/)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Import LaTeX' })).toBeEnabled()
+  })
+
+  it('deduplicates workspace imports and replaces an error with retry success', async () => {
+    let rejectImport!: (error: Error) => void
+    importAllProjectsMock.mockImplementationOnce(() => new Promise((_, reject) => { rejectImport = reject }))
+    importAllProjectsMock.mockResolvedValueOnce(2)
+    const { container } = render(<ProjectPicker onShowGuide={() => {}} />)
+    const input = [...container.querySelectorAll('input[accept=".zip"]')].at(-1)!
+    const files = [new File(['zip'], 'workspace.zip')]
+    act(() => {
+      fireEvent.change(input, { target: { files } })
+      fireEvent.change(input, { target: { files } })
+    })
+    await waitFor(() => expect(importAllProjectsMock).toHaveBeenCalledTimes(1))
+    expect(screen.getByRole('button', { name: 'Importing...' })).toBeDisabled()
+    await act(async () => rejectImport(new Error('bad archive')))
+    expect(screen.getByText('bad archive')).toBeInTheDocument()
+    fireEvent.change(input, { target: { files } })
+    expect(await screen.findByText('Imported 2 projects')).toBeInTheDocument()
+    expect(screen.queryByText('bad archive')).not.toBeInTheDocument()
+    expect(importAllProjectsMock).toHaveBeenCalledTimes(2)
+    expect(screen.getByRole('button', { name: 'Import all' })).toBeEnabled()
   })
 
   it('survives the input value reset emptying the live FileList mid-import', async () => {

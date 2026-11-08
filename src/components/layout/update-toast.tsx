@@ -1,30 +1,24 @@
 import * as stylex from '@stylexjs/stylex'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { X, RefreshCw } from 'lucide-react'
 
 type UpdateDetail = { update: () => void }
 
 export function UpdateToast() {
-  const [show, setShow] = useState(false)
-  const updateRef = useRef<(() => void) | null>(null)
+  // An available update carries its action; dismissed/absent has neither.
+  const [pending, setPending] = useState<UpdateDetail | null>(null)
 
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<UpdateDetail>).detail
       if (typeof detail?.update !== 'function') return
-      updateRef.current = detail.update
-      setShow(true)
+      setPending({ update: detail.update })
     }
     window.addEventListener('sw-update-available', handler)
     return () => window.removeEventListener('sw-update-available', handler)
   }, [])
 
-  const handleUpdate = useCallback(() => {
-    updateRef.current?.()
-    setShow(false)
-  }, [])
-
-  if (!show) return null
+  if (!pending) return null
 
   return (
     <div
@@ -39,7 +33,10 @@ export function UpdateToast() {
     >
       <span {...stylex.props(styles.element2)}>New version available</span>
       <button
-        onClick={handleUpdate}
+        onClick={() => {
+          setPending(null)
+          pending.update()
+        }}
         {...stylex.props(styles.element3)}
         style={{ background: 'var(--accent)', color: '#fff' }}
       >
@@ -47,7 +44,7 @@ export function UpdateToast() {
         Refresh
       </button>
       <button
-        onClick={() => setShow(false)}
+        onClick={() => setPending(null)}
         {...stylex.props(styles.element4)}
         style={{ color: 'var(--text-tertiary)' }}
         aria-label="Dismiss update"

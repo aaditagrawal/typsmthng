@@ -222,6 +222,57 @@ describe('compiler-client', () => {
     expect(useCompileStore.getState().compilerGeneration).toBe(generationBefore + 1)
   })
 
+  it('shares worker initialization and retries application init failures on the same transport', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    let rejectInit!: (error: Error) => void
+    workerApi.initCompiler.mockImplementationOnce(() => new Promise<void>((_, reject) => {
+      rejectInit = reject
+    }))
+    wrapMock.mockReturnValue(workerApi)
+    const backend = await import('@/lib/compiler-backend')
+    const { initCompilerClient, isCompilerReadyClient } = await import('@/lib/compiler-client')
+
+    const first = initCompilerClient()
+    const second = initCompilerClient()
+    const rejected = Promise.all([
+      expect(first).rejects.toThrow('font init failed'),
+      expect(second).rejects.toThrow('font init failed'),
+    ])
+    expect(workerApi.initCompiler).toHaveBeenCalledTimes(1)
+    expect(isCompilerReadyClient()).toBe(false)
+    rejectInit(new Error('font init failed'))
+    await rejected
+    expect(isCompilerReadyClient()).toBe(false)
+    expect(backend.initCompilerBackend).not.toHaveBeenCalled()
+
+    await initCompilerClient()
+    expect(isCompilerReadyClient()).toBe(true)
+    expect(workerApi.initCompiler).toHaveBeenCalledTimes(2)
+    expect(MockEventWorker.instances).toHaveLength(1)
+  })
+
+  it('disables worker retries after three concurrent calls fail with their transport', async () => {
+    installMockEventWorker()
+    const workerApi = mockWorkerApi()
+    workerApi.compileTypstIncremental.mockImplementation(() => new Promise(() => {}))
+    wrapMock.mockReturnValue(workerApi)
+    const backend = await import('@/lib/compiler-backend')
+    const { initCompilerClient, compileTypstClient } = await import('@/lib/compiler-client')
+    await initCompilerClient()
+
+    const calls = Array.from({ length: 3 }, () => compileTypstClient('= Crash'))
+    await vi.waitFor(() => expect(workerApi.compileTypstIncremental).toHaveBeenCalledTimes(3))
+    MockEventWorker.instances[0].dispatch('error')
+    await Promise.all(calls)
+    expect(backend.compileTypstBackend).toHaveBeenCalledTimes(3)
+
+    await compileTypstClient('= Backend only')
+    expect(backend.compileTypstBackend).toHaveBeenCalledTimes(4)
+    expect(MockEventWorker.instances).toHaveLength(1)
+    expect(workerApi.compileTypstIncremental).toHaveBeenCalledTimes(3)
+  })
+
   it('propagates worker application errors without falling back or disabling the worker', async () => {
     installMockEventWorker()
     const workerApi = mockWorkerApi()

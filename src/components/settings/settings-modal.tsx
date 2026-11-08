@@ -37,7 +37,7 @@ function Toggle({ checked, onChange, labelId }: {
         border: '1px solid var(--border-default)',
         background: checked ? 'var(--accent)' : 'var(--bg-inset)',
         cursor: 'pointer',
-        transition: 'background 150ms ease',
+        transition: 'background var(--motion-duration) var(--motion-ease-out)',
         flexShrink: 0,
         padding: 0,
       }}
@@ -51,7 +51,7 @@ function Toggle({ checked, onChange, labelId }: {
           height: '14px',
           borderRadius: '2px',
           background: '#fff',
-          transition: 'left 150ms ease',
+          transition: 'left var(--motion-duration) var(--motion-ease-out)',
         }}
       />
     </button>
@@ -166,7 +166,7 @@ function ThemeSegment({ value, onChange, labelId }: {
             background: value === opt.value ? 'var(--accent)' : 'var(--bg-inset)',
             color: value === opt.value ? '#fff' : 'var(--text-secondary)',
             cursor: 'pointer',
-            transition: 'background 100ms ease, color 100ms ease',
+            transition: 'background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out)',
           }}
         >
           {opt.label}
@@ -302,7 +302,7 @@ export function SettingsModal() {
               background: 'transparent',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
-              transition: 'background 100ms ease, color 100ms ease',
+              transition: 'background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-hover)'
@@ -489,7 +489,7 @@ export function SettingsModal() {
               background: 'var(--bg-inset)',
               color: 'var(--text-secondary)',
               cursor: 'pointer',
-              transition: 'background 100ms ease, color 100ms ease, border-color 100ms ease',
+              transition: 'background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out), border-color 100ms var(--motion-ease-out)',
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'var(--bg-hover)'

@@ -240,19 +240,19 @@ const styles = stylex.create({
   },
   "element8": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },
   "element9": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },
   "element10": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   }

@@ -158,7 +158,7 @@ const styles = stylex.create({
   },
   "element3": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   }

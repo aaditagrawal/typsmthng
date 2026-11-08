@@ -46,7 +46,7 @@ const brutalistBtnBase: React.CSSProperties = {
   padding: 0,
   flexShrink: 0,
   fontFamily: 'var(--font-mono)',
-  transition: 'background 0.1s, color 0.1s',
+  transition: 'background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out)',
 }
 
 function BrutalistBtn({
@@ -99,25 +99,25 @@ interface ToolbarMenuPosition {
  * Escape (restoring focus to the trigger), and repositions on scroll/resize.
  */
 function useToolbarDropdown() {
-  const [open, setOpen] = useState(false)
+  // Closed has no position; open always has the trigger's measured position.
   const [menuPosition, setMenuPosition] = useState<ToolbarMenuPosition | null>(null)
+  const open = menuPosition !== null
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
   const close = useCallback((restoreFocus = false) => {
-    setOpen(false)
+    setMenuPosition(null)
     if (restoreFocus) triggerRef.current?.focus()
   }, [])
 
   const toggle = useCallback(() => {
     const rect = triggerRef.current?.getBoundingClientRect()
     if (rect) {
-      setMenuPosition({
+      setMenuPosition((position) => position ? null : {
         top: rect.bottom + 4,
         right: Math.max(8, window.innerWidth - rect.right),
       })
     }
-    setOpen((value) => !value)
   }, [])
 
   useEffect(() => {
@@ -134,12 +134,12 @@ function useToolbarDropdown() {
 
     const handleMouseDown = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false)
+        setMenuPosition(null)
       }
     }
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setOpen(false)
+        setMenuPosition(null)
         triggerRef.current?.focus()
       }
     }
@@ -485,7 +485,7 @@ function PreviewToolbar({ onNavigate }: { onNavigate?: (page: number) => void })
             cursor: 'pointer',
             ...BRUTALIST_FONT,
             fontWeight: 700,
-            transition: 'background 0.1s',
+            transition: 'background 100ms var(--motion-ease-out)',
           }}
         >
           <Sparkles size={12} />
@@ -613,7 +613,7 @@ function PageIndicator({ totalPages }: { totalPages: number }) {
         fontWeight: 600,
         pointerEvents: 'none',
         opacity: visible ? 1 : 0,
-        transition: 'opacity 0.3s ease',
+        transition: 'opacity 180ms var(--motion-ease-out)',
         zIndex: 10,
         fontVariantNumeric: 'tabular-nums',
       }}
@@ -1218,15 +1218,14 @@ interface PreviewPanState {
   startClientY: number
   startScrollLeft: number
   startScrollTop: number
-  didMove: boolean
 }
 
-interface PreviewLongPressState {
-  pointerId: number
-  clientX: number
-  clientY: number
-  target: Element
-}
+// Keep pointer updates outside React; only start/end change the cursor UI.
+type PreviewPointerState = PreviewPanState & (
+  | { phase: 'pressed'; timer: ReturnType<typeof setTimeout>; target: Element }
+  | { phase: 'dragging' }
+  | { phase: 'long-pressed' }
+)
 
 interface ZoomAnchorSnapshot {
   cursorOffsetX: number
@@ -1345,10 +1344,8 @@ export function PreviewPanel() {
   const suppressPreviewClickRef = useRef(false)
   const suppressPreviewClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const linkClickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const longPressStateRef = useRef<PreviewLongPressState | null>(null)
   const longPressTriggeredRef = useRef(false)
-  const panStateRef = useRef<PreviewPanState | null>(null)
+  const panStateRef = useRef<PreviewPointerState | null>(null)
   const [isPanning, setIsPanning] = useState(false)
   const { breaks: pageBreaks, cumulativeRatios } = usePageMetrics()
   const { clickToast, handleDoubleClick, locatePreviewContent } = usePreviewClickHandler(suppressPreviewClickRef)
@@ -1392,8 +1389,8 @@ export function PreviewPanel() {
       if (linkClickTimerRef.current) {
         clearTimeout(linkClickTimerRef.current)
       }
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
+      if (panStateRef.current?.phase === 'pressed') {
+        clearTimeout(panStateRef.current.timer)
       }
       if (commitZoomTimeoutRef.current) {
         clearTimeout(commitZoomTimeoutRef.current)
@@ -1407,32 +1404,28 @@ export function PreviewPanel() {
     if (!pageEl || !(e.target instanceof Element) || !pageEl.contains(e.target)) return
     if ((e.target as HTMLElement).closest('button, a, input, textarea, select, label')) return
 
+    if (panStateRef.current?.phase === 'pressed') {
+      clearTimeout(panStateRef.current.timer)
+    }
+    longPressTriggeredRef.current = false
+    const timer = setTimeout(() => {
+      const pressed = panStateRef.current
+      if (!pressed || pressed.phase !== 'pressed' || pressed.pointerId !== e.pointerId) return
+      panStateRef.current = { ...pressed, phase: 'long-pressed' }
+      longPressTriggeredRef.current = true
+      suppressPreviewClickRef.current = true
+      void locatePreviewContent(pressed.target, pressed.startClientX, pressed.startClientY)
+    }, PREVIEW_LONG_PRESS_DURATION_MS)
     panStateRef.current = {
+      phase: 'pressed',
       pointerId: e.pointerId,
       startClientX: e.clientX,
       startClientY: e.clientY,
       startScrollLeft: e.currentTarget.scrollLeft,
       startScrollTop: e.currentTarget.scrollTop,
-      didMove: false,
-    }
-    longPressTriggeredRef.current = false
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-    }
-    longPressStateRef.current = {
-      pointerId: e.pointerId,
-      clientX: e.clientX,
-      clientY: e.clientY,
+      timer,
       target: e.target as Element,
     }
-    longPressTimerRef.current = setTimeout(() => {
-      const longPressState = longPressStateRef.current
-      if (!longPressState || longPressState.pointerId !== e.pointerId) return
-      longPressTimerRef.current = null
-      longPressTriggeredRef.current = true
-      suppressPreviewClickRef.current = true
-      void locatePreviewContent(longPressState.target, longPressState.clientX, longPressState.clientY)
-    }, PREVIEW_LONG_PRESS_DURATION_MS)
     setIsPanning(true)
     e.currentTarget.setPointerCapture(e.pointerId)
     e.preventDefault()
@@ -1445,19 +1438,16 @@ export function PreviewPanel() {
     const dx = e.clientX - panState.startClientX
     const dy = e.clientY - panState.startClientY
     if (
-      !panState.didMove
+      panState.phase !== 'dragging'
       && (Math.abs(dx) > PREVIEW_PAN_DRAG_THRESHOLD_PX || Math.abs(dy) > PREVIEW_PAN_DRAG_THRESHOLD_PX)
     ) {
-      panState.didMove = true
-      if (longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
-        longPressTimerRef.current = null
-      }
+      if (panState.phase === 'pressed') clearTimeout(panState.timer)
+      panStateRef.current = { ...panState, phase: 'dragging' }
     }
 
     e.currentTarget.scrollLeft = panState.startScrollLeft - dx
     e.currentTarget.scrollTop = panState.startScrollTop - dy
-    if (panState.didMove) e.preventDefault()
+    if (panStateRef.current?.phase === 'dragging') e.preventDefault()
   }, [])
 
   const handlePanEnd = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
@@ -1470,13 +1460,9 @@ export function PreviewPanel() {
 
     panStateRef.current = null
     setIsPanning(false)
-    longPressStateRef.current = null
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
+    if (panState.phase === 'pressed') clearTimeout(panState.timer)
 
-    if (!panState.didMove) return
+    if (panState.phase !== 'dragging') return
     suppressPreviewClickRef.current = true
     if (suppressPreviewClickTimerRef.current) {
       clearTimeout(suppressPreviewClickTimerRef.current)
@@ -2003,7 +1989,7 @@ const styles = stylex.create({
   },
   "element10": {
     "animationName": spin,
-    "animationDuration": "1s",
+    "animationDuration": "var(--motion-spinner-duration)",
     "animationTimingFunction": "linear",
     "animationIterationCount": "infinite"
   },

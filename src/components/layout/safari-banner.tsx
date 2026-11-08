@@ -1,5 +1,5 @@
 import * as stylex from '@stylexjs/stylex'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { X, AlertTriangle } from 'lucide-react'
 
 function isSafari(): boolean {
@@ -14,38 +14,54 @@ async function requestPersistentStorage(): Promise<boolean> {
   return false
 }
 
-export function SafariBanner() {
-  const [show, setShow] = useState(() => {
-    if (typeof window === 'undefined') return false
-    if (!isSafari()) return false
-    return !localStorage.getItem('safari-banner-dismissed')
-  })
-  const [storageStatus, setStorageStatus] = useState<'idle' | 'granted' | 'denied'>('idle')
+type BannerState = 'hidden' | 'idle' | 'requesting' | 'granted' | 'denied'
 
-  if (!show) return null
+export function SafariBanner() {
+  const [state, setState] = useState<BannerState>(() => {
+    if (typeof window === 'undefined' || !isSafari()) return 'hidden'
+    return localStorage.getItem('safari-banner-dismissed') ? 'hidden' : 'idle'
+  })
+  const activeRequest = useRef<object | null>(null)
+
+  useEffect(() => () => { activeRequest.current = null }, [])
+
+  useEffect(() => {
+    if (state !== 'granted') return
+    const timer = setTimeout(() => setState('hidden'), 2000)
+    return () => clearTimeout(timer)
+  }, [state])
+
+  if (state === 'hidden') return null
 
   const dismiss = () => {
-    setShow(false)
+    activeRequest.current = null
+    setState('hidden')
     localStorage.setItem('safari-banner-dismissed', '1')
   }
 
   const handleAllowStorage = () => {
+    if (state !== 'idle' || activeRequest.current) return
+    const request = {}
+    activeRequest.current = request
+    setState('requesting')
     void requestPersistentStorage()
       .then((granted) => {
+        if (activeRequest.current !== request) return
         if (granted) {
-          setStorageStatus('granted')
+          setState('granted')
           localStorage.setItem('safari-banner-dismissed', '1')
-          setTimeout(() => setShow(false), 2000)
         } else {
-          setStorageStatus('denied')
+          setState('denied')
         }
       })
-      .catch(() => setStorageStatus('denied'))
+      .catch(() => {
+        if (activeRequest.current === request) setState('denied')
+      })
   }
 
-  const message = storageStatus === 'granted'
+  const message = state === 'granted'
     ? 'Storage protected. Safari will keep your data.'
-    : storageStatus === 'denied'
+    : state === 'denied'
       ? 'Request denied — download backups regularly to avoid data loss.'
       : 'Safari may clear stored data after 7 days of inactivity. Download your work regularly to avoid data loss.'
 
@@ -60,10 +76,11 @@ export function SafariBanner() {
     >
       <AlertTriangle size={14} {...stylex.props(styles.element2)} />
       <span {...stylex.props(styles.element3)}>{message}</span>
-      {storageStatus === 'idle' && (
+      {(state === 'idle' || state === 'requesting') && (
         <button
           type="button"
           onClick={handleAllowStorage}
+          disabled={state === 'requesting'}
           {...stylex.props(styles.element4)}
           style={{
             fontFamily: 'var(--font-mono)',

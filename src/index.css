@@ -65,9 +65,12 @@
     --text-xs--line-height: calc(1 / .75);
     --font-weight-medium: 500;
     --radius-lg: .5rem;
-    --animate-spin: spin 1s linear infinite;
-    --default-transition-duration: .15s;
-    --default-transition-timing-function: cubic-bezier(.4, 0, .2, 1);
+    --motion-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --motion-duration: 120ms;
+    --motion-spinner-duration: 600ms;
+    --animate-spin: spin var(--motion-spinner-duration) linear infinite;
+    --default-transition-duration: var(--motion-duration);
+    --default-transition-timing-function: var(--motion-ease-out);
     --default-font-family: var(--font-sans);
     --default-mono-font-family: var(--font-mono);
     --color-accent-400: #ff6d2d;
@@ -456,7 +459,7 @@ body {
   background: var(--border-default);
   cursor: col-resize;
   flex-shrink: 0;
-  transition: background .15s, width .15s;
+  transition: background var(--motion-duration) var(--motion-ease-out), width var(--motion-duration) var(--motion-ease-out);
   position: relative;
   width: 1px !important;
   min-width: 1px !important;
@@ -527,7 +530,7 @@ body {
   flex-shrink: 0;
   justify-content: center;
   align-items: center;
-  transition: background .1s, color .1s, border-color .1s;
+  transition: background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out), border-color 100ms var(--motion-ease-out);
   display: inline-flex;
 }
 
@@ -582,7 +585,7 @@ body {
   border-radius: 2px;
   justify-content: center;
   align-items: center;
-  transition: background .1s, color .1s, border-color .1s;
+  transition: background 100ms var(--motion-ease-out), color 100ms var(--motion-ease-out), border-color 100ms var(--motion-ease-out);
   display: inline-flex;
 }
 
@@ -858,3 +861,10 @@ body {
 
 
 @stylex;
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

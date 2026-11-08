@@ -170,7 +170,6 @@ export function applyPagePreamble(source: string): string {
   return preamble ? preamble + source : source
 }
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let pendingDiagnosticTimer: ReturnType<typeof setTimeout> | null = null
 let pendingDiagnosticGeneration = 0
 let quietDiagnosticCache: {
@@ -245,9 +244,12 @@ interface CompileRequest {
   requestId: number
 }
 
-let scheduledRequest: CompileRequest | null = null
-let pendingRequest: CompileRequest | null = null
-let compiling = false
+// Debouncing and execution are orthogonal: edits can debounce while WASM runs.
+let scheduled: { request: CompileRequest; timer: ReturnType<typeof setTimeout> } | null = null
+type CompileExecution =
+  | { phase: 'idle' }
+  | { phase: 'running'; pending: CompileRequest | null }
+let execution: CompileExecution = { phase: 'idle' }
 let initPromise: Promise<void> | null = null
 let lastEnsuredPackagesKey: string | null = null
 let lastSuccessfulCompileFingerprint: string | null = null
@@ -364,25 +366,20 @@ export async function ensureCompilerReady(): Promise<void> {
 }
 
 function clearScheduledCompile(): void {
-  if (debounceTimer) {
-    clearTimeout(debounceTimer)
-    debounceTimer = null
-  }
-  if (scheduledRequest) {
-    // Dropped without running — release any forceCompile awaiters.
-    settleRequest(scheduledRequest.requestId)
-    scheduledRequest = null
-  }
+  if (!scheduled) return
+  clearTimeout(scheduled.timer)
+  // Dropped without running — release any forceCompile awaiters.
+  settleRequest(scheduled.request.requestId)
+  scheduled = null
 }
 
 function scheduleCompileTimer(request: CompileRequest, delay: number): void {
   clearScheduledCompile()
-  scheduledRequest = request
-  debounceTimer = setTimeout(() => {
-    debounceTimer = null
-    scheduledRequest = null
+  const timer = setTimeout(() => {
+    scheduled = null
     void doCompile(request)
   }, delay)
+  scheduled = { request, timer }
 }
 
 function scheduleDeferredCompile(request: CompileRequest): void {
@@ -427,17 +424,18 @@ async function waitForEditorIdle(requestId: number): Promise<number> {
 }
 
 async function doCompile(request: CompileRequest): Promise<void> {
-  if (compiling) {
-    if (pendingRequest && pendingRequest.requestId !== request.requestId) {
+  if (execution.phase === 'running') {
+    if (execution.pending && execution.pending.requestId !== request.requestId) {
       // Replaced before it could run — release any awaiters.
-      settleRequest(pendingRequest.requestId)
+      settleRequest(execution.pending.requestId)
     }
-    pendingRequest = request
+    execution.pending = request
     await waitForRequestSettle(request.requestId)
     return
   }
 
-  compiling = true
+  const running: Extract<CompileExecution, { phase: 'running' }> = { phase: 'running', pending: null }
+  execution = running
   cancelPendingDiagnosticApply()
   const store = useCompileStore.getState()
 
@@ -486,6 +484,9 @@ async function doCompile(request: CompileRequest): Promise<void> {
 
     store.setStatus('compiling')
     await ensureCompilerReady()
+    // Initialization can outlive several edits. Don't enter WASM for an
+    // obsolete request; the latest pending/debounced request owns the work.
+    if (isStaleRequest(request.requestId)) return
 
     const packageStart = perfMark()
     const packageSpecs = new Set<string>()
@@ -537,6 +538,7 @@ async function doCompile(request: CompileRequest): Promise<void> {
       requestId: request.requestId,
     })
 
+    if (isStaleRequest(request.requestId)) return
     const compileStageStart = perfMark()
     const result = await compileTypst(
       finalSource,
@@ -628,20 +630,23 @@ async function doCompile(request: CompileRequest): Promise<void> {
       )
     }
   } finally {
-    compiling = false
-
-    const next = pendingRequest
-    pendingRequest = null
+    const next = running.pending
+    execution = { phase: 'idle' }
     settleRequest(request.requestId)
 
-    if (next !== null) {
+    if (next !== null && !isStaleRequest(next.requestId)) {
       scheduleDeferredCompile(next)
-    } else if (
-      useCompileStore.getState().status === 'compiling'
-      && !debounceTimer
-    ) {
-      // Stale abandon with nothing queued — don't leave the UI stuck on Compiling.
-      useCompileStore.getState().setStatus('idle')
+    } else {
+      // A newer edit can still be debouncing when an older queued request
+      // finishes. Never replace that newer timer with the older request.
+      if (next) settleRequest(next.requestId)
+      if (
+        useCompileStore.getState().status === 'compiling'
+        && !scheduled
+      ) {
+        // Stale abandon with nothing queued — don't leave the UI stuck on Compiling.
+        useCompileStore.getState().setStatus('idle')
+      }
     }
   }
 }

@@ -1,15 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-type Deferred = { promise: Promise<void>; resolve: () => void }
+type Deferred = { promise: Promise<void>; resolve: () => void; reject: (error: Error) => void }
 
 function deferred(): Deferred {
   let resolve!: () => void
-  const promise = new Promise<void>((r) => { resolve = r })
-  return { promise, resolve }
+  let reject!: (error: Error) => void
+  const promise = new Promise<void>((r, j) => { resolve = r; reject = j })
+  return { promise, resolve, reject }
 }
 
 const initGates: Deferred[] = []
 const compileGates: Deferred[] = []
+let rendererInitGate: Deferred | null = null
 let compileCall = 0
 const renderSvgMock = vi.fn(async () => '<svg/>')
 
@@ -67,7 +69,7 @@ vi.mock('@myriaddreamin/typst.ts', () => {
       return instance
     },
     createTypstRenderer: () => ({
-      init: vi.fn(async () => {}),
+      init: vi.fn(async () => { await rendererInitGate?.promise }),
       runWithSession: vi.fn(async (_opts: unknown, cb: (session: {
         retrievePagesInfo: () => []
         renderSvg: () => Promise<string>
@@ -101,6 +103,7 @@ describe('compiler-backend races', () => {
     initGates.length = 0
     compileGates.length = 0
     compilerInstances.length = 0
+    rendererInitGate = null
     compileCall = 0
     renderSvgMock.mockClear()
     vi.resetModules()
@@ -125,6 +128,67 @@ describe('compiler-backend races', () => {
     initGates[1].resolve()
     await Promise.all([first, second])
     expect(backend.isCompilerReadyBackend()).toBe(true)
+  })
+
+  it('shares initialization and publishes readiness only after both bindings finish', async () => {
+    rendererInitGate = deferred()
+    const backend = await import('@/lib/compiler-backend')
+    const first = backend.initCompilerBackend()
+    const second = backend.initCompilerBackend()
+    await vi.waitFor(() => expect(initGates.length).toBe(1))
+
+    initGates[0].resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(backend.isCompilerReadyBackend()).toBe(false)
+    await expect(backend.compileToPdfBackend('= Not ready')).rejects.toThrow('Compiler not initialized')
+
+    rendererInitGate.resolve()
+    await Promise.all([first, second])
+    expect(backend.isCompilerReadyBackend()).toBe(true)
+    expect(compilerInstances).toHaveLength(1)
+  })
+
+  it('does not publish a partial backend after renderer init fails and allows retry', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      rendererInitGate = deferred()
+      const backend = await import('@/lib/compiler-backend')
+      const first = backend.initCompilerBackend()
+      const rejected = expect(first).rejects.toThrow('renderer init failed')
+      await vi.waitFor(() => expect(initGates.length).toBe(1))
+      initGates[0].resolve()
+      rendererInitGate.reject(new Error('renderer init failed'))
+      await rejected
+      expect(backend.isCompilerReadyBackend()).toBe(false)
+
+      rendererInitGate = null
+      const retry = backend.initCompilerBackend()
+      await vi.waitFor(() => expect(initGates.length).toBe(2))
+      initGates[1].resolve()
+      await retry
+      expect(backend.isCompilerReadyBackend()).toBe(true)
+    } finally {
+      errorLog.mockRestore()
+    }
+  })
+
+  it('keeps an in-flight compile paired with its renderer when configuration invalidates readiness', async () => {
+    const backend = await import('@/lib/compiler-backend')
+    const ready = backend.initCompilerBackend()
+    await vi.waitFor(() => expect(initGates.length).toBe(1))
+    initGates[0].resolve()
+    await ready
+    compileCall = 1 // Return a vector artifact so the renderer is exercised.
+
+    const compile = backend.compileTypstBackend('= Old config', undefined, '/main.typ', undefined, { wantSvg: true })
+    await vi.waitFor(() => expect(compileGates.length).toBe(1))
+    backend.configureCompilerBackend({ fontData: [new Uint8Array([7])] })
+    expect(backend.isCompilerReadyBackend()).toBe(false)
+    compileGates[0].resolve()
+    expect((await compile).svg).toBe('<svg/>')
+    expect(backend.isCompilerReadyBackend()).toBe(false)
+    await expect(backend.compileToPdfBackend('= New config')).rejects.toThrow('Compiler not initialized')
   })
 
   it('serializes overlapping SVG compile and PDF export on the shared compiler', async () => {

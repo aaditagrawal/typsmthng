@@ -94,8 +94,8 @@ function ContextMenuPanel({
   onClose: () => void
   onCloseSubmenu?: () => void
 }) {
-  const [openSubmenuIndex, setOpenSubmenuIndex] = useState<number | null>(null)
-  const [submenuPosition, setSubmenuPosition] = useState<{ x: number; y: number } | null>(null)
+  const [submenu, setSubmenu] = useState<{ index: number; x: number; y: number } | null>(null)
+  const openSubmenuIndex = submenu?.index ?? null
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const panelRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState(() => ({
@@ -154,16 +154,15 @@ function ContextMenuPanel({
       ? preferredLeft
       : rect.left - estimatedWidth + 2
 
-    setOpenSubmenuIndex(index)
-    setSubmenuPosition({
+    setSubmenu({
+      index,
       x: resolvedLeft,
       y: Math.max(8, Math.min(rect.top - 6, window.innerHeight - 80)),
     })
   }
 
   const closeSubmenu = () => {
-    setOpenSubmenuIndex(null)
-    setSubmenuPosition(null)
+    setSubmenu(null)
   }
 
   return (
@@ -319,11 +318,11 @@ function ContextMenuPanel({
         ))}
       </div>
 
-      {openSubmenuIndex !== null && actions[openSubmenuIndex]?.children?.length && submenuPosition && (
+      {submenu && actions[submenu.index]?.children?.length && (
         <ContextMenuPanel
-          x={submenuPosition.x}
-          y={submenuPosition.y}
-          actions={actions[openSubmenuIndex].children!}
+          x={submenu.x}
+          y={submenu.y}
+          actions={actions[submenu.index].children!}
           onClose={onClose}
           onCloseSubmenu={closeSubmenu}
         />

@@ -99,7 +99,7 @@ function CodeBlock({ children, style }: { children: string; style?: React.CSSPro
           background: 'var(--bg-elevated)',
           color: copied ? 'var(--status-success)' : 'var(--text-tertiary)',
           cursor: 'pointer',
-          transition: 'color 100ms ease',
+          transition: 'color 100ms var(--motion-ease-out)',
         }}
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -214,13 +214,13 @@ function HierarchyDiagram() {
           borderRadius: '2px',
           padding: '10px',
           cursor: 'pointer',
-          transition: 'border-color 150ms ease',
+          transition: 'border-color var(--motion-duration) var(--motion-ease-out)',
           background: active === 'workspace' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
         }}
         {...layerProps('workspace')}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-          <ChevronRight size={10} style={{ color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'workspace' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
+          <ChevronRight size={10} style={{ color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'workspace' ? 'rotate(90deg)' : 'none', transition: 'transform var(--motion-duration) var(--motion-ease-out)' }} />
           <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'workspace' ? 'var(--accent)' : 'var(--text-tertiary)' }}>WORKSPACE</span>
           <span style={{ fontSize: '10px', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>optional grouping</span>
         </div>
@@ -234,13 +234,13 @@ function HierarchyDiagram() {
               borderRadius: '2px',
               padding: '10px',
               cursor: 'pointer',
-              transition: 'border-color 150ms ease',
+              transition: 'border-color var(--motion-duration) var(--motion-ease-out)',
               background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
             }}
             {...layerProps('project')}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-              <ChevronRight size={10} style={{ color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'project' ? 'rotate(90deg)' : 'none', transition: 'transform 150ms ease' }} />
+              <ChevronRight size={10} style={{ color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)', transform: active === 'project' ? 'rotate(90deg)' : 'none', transition: 'transform var(--motion-duration) var(--motion-ease-out)' }} />
               <span style={{ fontSize: '10px', letterSpacing: '0.1em', fontWeight: 700, color: active === 'project' ? 'var(--accent)' : 'var(--text-tertiary)' }}>PROJECT</span>
               <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>My Thesis</span>
             </div>
@@ -257,7 +257,7 @@ function HierarchyDiagram() {
                     fontFamily: 'var(--font-mono)',
                     color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
                     cursor: 'pointer',
-                    transition: 'border-color 150ms ease, color 150ms ease',
+                    transition: 'border-color var(--motion-duration) var(--motion-ease-out), color var(--motion-duration) var(--motion-ease-out)',
                     background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                   }}
                   {...layerProps('file')}
@@ -274,7 +274,7 @@ function HierarchyDiagram() {
                   fontFamily: 'var(--font-mono)',
                   color: active === 'file' ? 'var(--accent)' : 'var(--text-tertiary)',
                   cursor: 'pointer',
-                  transition: 'border-color 150ms ease, color 150ms ease',
+                  transition: 'border-color var(--motion-duration) var(--motion-ease-out), color var(--motion-duration) var(--motion-ease-out)',
                   background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                 }}
                 {...layerProps('file')}
@@ -293,7 +293,7 @@ function HierarchyDiagram() {
               borderRadius: '2px',
               padding: '10px',
               cursor: 'pointer',
-              transition: 'border-color 150ms ease',
+              transition: 'border-color var(--motion-duration) var(--motion-ease-out)',
               background: active === 'project' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'var(--bg-surface)',
             }}
             {...layerProps('project')}
@@ -313,7 +313,7 @@ function HierarchyDiagram() {
                     fontFamily: 'var(--font-mono)',
                     color: active === 'file' ? 'var(--accent)' : 'var(--text-secondary)',
                     cursor: 'pointer',
-                    transition: 'border-color 150ms ease, color 150ms ease',
+                    transition: 'border-color var(--motion-duration) var(--motion-ease-out), color var(--motion-duration) var(--motion-ease-out)',
                     background: active === 'file' ? 'color-mix(in srgb, var(--accent) 4%, transparent)' : 'transparent',
                   }}
                   {...layerProps('file')}
@@ -414,7 +414,7 @@ function WorkflowDiagram() {
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
                 cursor: 'pointer',
-                transition: 'all 150ms ease',
+                transition: 'all var(--motion-duration) var(--motion-ease-out)',
                 whiteSpace: 'nowrap',
               }}
             >

@@ -84,8 +84,9 @@ function saveLiveEditorBuffer(view: EditorView | null) {
 export function TypstEditor() {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
-  const projectSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Idle, or one pending buffer snapshot with the timer that owns its delivery.
   const pendingProjectSyncRef = useRef<{
+    timer: ReturnType<typeof setTimeout>
     projectId: string
     path: string
     source: string
@@ -110,6 +111,7 @@ export function TypstEditor() {
   const deliverPendingProjectSync = useCallback(() => {
     const pending = pendingProjectSyncRef.current
     if (!pending) return
+    clearTimeout(pending.timer)
     pendingProjectSyncRef.current = null
 
     // Target the project id captured at edit time so a later project switch
@@ -145,10 +147,6 @@ export function TypstEditor() {
   }, [])
 
   const flushPendingProjectSync = useCallback(() => {
-    if (projectSyncTimerRef.current) {
-      clearTimeout(projectSyncTimerRef.current)
-      projectSyncTimerRef.current = null
-    }
     deliverPendingProjectSync()
   }, [deliverPendingProjectSync])
 
@@ -162,15 +160,11 @@ export function TypstEditor() {
       const file = project?.files.find((f) => f.path === path && !f.isBinary)
       baseContent = file ? file.content : null
     }
-    pendingProjectSyncRef.current = { projectId, path, source, baseContent }
-    if (projectSyncTimerRef.current) {
-      clearTimeout(projectSyncTimerRef.current)
+    if (previous) clearTimeout(previous.timer)
+    pendingProjectSyncRef.current = {
+      projectId, path, source, baseContent,
+      timer: setTimeout(deliverPendingProjectSync, PROJECT_SYNC_DELAY_MS),
     }
-
-    projectSyncTimerRef.current = setTimeout(() => {
-      projectSyncTimerRef.current = null
-      deliverPendingProjectSync()
-    }, PROJECT_SYNC_DELAY_MS)
   }, [deliverPendingProjectSync])
 
   useEffect(() => subscribeZoomBadge(setZoomBadge), [])

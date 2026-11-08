@@ -85,6 +85,26 @@ describe('CommandSearch actions', () => {
     expect(useUIStore.getState().commandSearchOpen).toBe(false)
   })
 
+  it('reopens with a fresh query and the latest editor content', () => {
+    useProjectStore.setState({
+      projects: [{
+        id: 'reopen', name: 'Reopen', mainFile: '/main.typ', createdAt: 1, updatedAt: 1,
+        files: [{ path: '/main.typ', content: 'old text', isBinary: false, lastModified: 1 }],
+      }],
+      currentProjectId: 'reopen', currentFilePath: '/main.typ',
+    })
+    render(<CommandSearch />)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'old query' } })
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    act(() => useEditorStore.setState({ source: 'fresh needle' }))
+    act(() => useUIStore.getState().setCommandSearchOpen(true))
+    expect(screen.getByRole('combobox')).toHaveValue('')
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'needle' } })
+    expect(screen.getByText('/main.typ:1:7 fresh needle')).toBeInTheDocument()
+  })
+
   it('keeps settings exclusive, cycles theme, and delegates PDF export', async () => {
     const { rerender } = render(<CommandSearch />)
     fireEvent.click(screen.getByText('Open settings'))

@@ -10,8 +10,14 @@ import compilerWasmUrl from '../../vendor/typst-compiler/compiler_bg.wasm?url'
 import type { Diagnostic } from '@/stores/compile-store'
 import { getPreparedPackageForResolver, ensurePackagesForCompile as ensurePackagesForCompileRegistry } from './universe-registry'
 
-let compiler: Awaited<ReturnType<typeof createTypstCompiler>> | null = null
-let renderer: Awaited<ReturnType<typeof createTypstRenderer>> | null = null
+interface ReadyBackend {
+  compiler: Awaited<ReturnType<typeof createTypstCompiler>>
+  renderer: Awaited<ReturnType<typeof createTypstRenderer>>
+}
+
+// A backend is ready only when both bindings belong to the same initialization.
+let readyBackend: ReadyBackend | null = null
+// Kept separate: a superseded initialization must still settle for its waiters.
 let initPromise: Promise<void> | null = null
 /** Bumped on font/config teardown so in-flight WASM inits cannot publish stale instances. */
 let initGeneration = 0
@@ -47,8 +53,7 @@ export function configureCompilerBackend(options?: { fontData?: Uint8Array[] }):
   if (sameFontData(nextFontData)) return
 
   additionalFontData = nextFontData
-  compiler = null
-  renderer = null
+  readyBackend = null
   shadowDigests.clear()
   initGeneration += 1
   // Leave initPromise set so waiters observe the in-flight attempt; generation
@@ -111,7 +116,7 @@ function ensurePackageInAccessModel(spec: unknown): string | undefined {
 }
 
 export function isCompilerReadyBackend(): boolean {
-  return compiler !== null && renderer !== null
+  return readyBackend !== null
 }
 
 export async function initCompilerBackend(): Promise<void> {
@@ -144,15 +149,13 @@ export async function initCompilerBackend(): Promise<void> {
           // Config changed while WASM was loading — discard this instance.
           if (generation !== initGeneration) return
 
-          compiler = nextCompiler
-          renderer = nextRenderer
+          readyBackend = { compiler: nextCompiler, renderer: nextRenderer }
           // Fresh WASM instance starts with an empty shadow VFS.
           shadowDigests.clear()
         } catch (err) {
           console.error('Failed to initialize compiler:', err)
           if (generation === initGeneration) {
-            compiler = null
-            renderer = null
+            readyBackend = null
           }
           throw err
         } finally {
@@ -308,9 +311,10 @@ async function compileTypstBackendUnlocked(
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
   options?: CompileOptions,
 ): Promise<CompileResult> {
-  if (!compiler || !renderer) {
+  if (!readyBackend) {
     throw new Error('Compiler not initialized')
   }
+  const { compiler } = readyBackend
 
   const totalStart = performance.now()
 
@@ -342,9 +346,12 @@ async function compileAndRenderVectorLocked(
   options: CompileOptions | undefined,
   totalStart: number,
 ): Promise<CompileResult> {
-  if (!compiler || !renderer) {
+  if (!readyBackend) {
     throw new Error('Compiler not initialized')
   }
+  // Keep the matched bindings for this operation even if config changes while
+  // compiler.compile is awaiting; the next operation observes the new state.
+  const { compiler, renderer } = readyBackend
 
   const compileStart = performance.now()
   const { result: vectorData, diagnostics: rawDiags } = await compiler.compile({
@@ -410,9 +417,10 @@ export async function compileTypstIncrementalBackend(
   request: IncrementalCompileRequest,
 ): Promise<IncrementalCompileResponse> {
   return enqueueCompilerOperation(async () => {
-    if (!compiler || !renderer) {
+    if (!readyBackend) {
       throw new Error('Compiler not initialized')
     }
+    const { compiler } = readyBackend
 
     const totalStart = performance.now()
 
@@ -477,7 +485,8 @@ export async function resolveSourceLocBatchBackend(
   paths: Uint32Array[],
 ): Promise<Array<string | undefined>> {
   return enqueueCompilerOperation(async () => {
-    if (!renderer || paths.length === 0) return []
+    if (!readyBackend || paths.length === 0) return []
+    const { renderer } = readyBackend
 
     const locs: Array<string | undefined> = new Array(paths.length).fill(undefined)
     await renderer.runWithSession(
@@ -503,9 +512,10 @@ export async function compileToPdfBackend(
   extraBinaryFiles?: Array<{ path: string; data: Uint8Array }>,
 ): Promise<PdfCompileResult> {
   return enqueueCompilerOperation(async () => {
-    if (!compiler) {
+    if (!readyBackend) {
       throw new Error('Compiler not initialized')
     }
+    const { compiler } = readyBackend
 
     compiler.resetShadow()
     // Wholesale rewrite without digests: incremental state is now unknown.

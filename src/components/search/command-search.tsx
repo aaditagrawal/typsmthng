@@ -26,6 +26,11 @@ type SearchResult = ActionResult | { type: 'file'; path: string } | ContentResul
 
 export function CommandSearch() {
   const open = useUIStore((s) => s.commandSearchOpen)
+  // Closing unmounts subscriptions, indexing, and content searching entirely.
+  return open ? <OpenCommandSearch /> : null
+}
+
+function OpenCommandSearch() {
   const setOpen = useUIStore((s) => s.setCommandSearchOpen)
   const projects = useProjectStore((s) => s.projects)
   const currentProjectId = useProjectStore((s) => s.currentProjectId)
@@ -115,13 +120,10 @@ export function CommandSearch() {
 
   const close = useCallback(() => {
     setOpen(false)
-    setQuery('')
-    setSelectedIndex(0)
-    setScrollTop(0)
     useEditorStore.getState().editorView?.focus()
   }, [setOpen])
 
-  useModalA11y(panelRef, open, close)
+  useModalA11y(panelRef, true, close)
 
   const openFile = useCallback(
     (path: string) => {
@@ -150,20 +152,9 @@ export function CommandSearch() {
   }, [close, openFile])
 
   useEffect(() => {
-    if (!open) return
-
-    const frameId1 = requestAnimationFrame(() => {
-      setQuery('')
-      setSelectedIndex(0)
-      setScrollTop(0)
-    })
-    const frameId2 = requestAnimationFrame(() => inputRef.current?.focus())
-
-    return () => {
-      cancelAnimationFrame(frameId1)
-      cancelAnimationFrame(frameId2)
-    }
-  }, [open])
+    const frameId = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(frameId)
+  }, [])
 
   useEffect(() => {
     const list = listRef.current
@@ -191,7 +182,7 @@ export function CommandSearch() {
     const observer = new ResizeObserver(updateViewport)
     observer.observe(list)
     return () => observer.disconnect()
-  }, [open])
+  }, [])
 
   const effectiveSelectedIndex = filtered.length === 0
     ? 0
@@ -226,8 +217,6 @@ export function CommandSearch() {
     ? Math.min(filtered.length, Math.ceil((scrollTop + viewportHeight) / ROW_HEIGHT) + ROW_OVERSCAN)
     : filtered.length
   const visibleRows = filtered.slice(windowStart, windowEnd)
-
-  if (!open) return null
 
   return (
     <div
@@ -358,7 +347,7 @@ export function CommandSearch() {
                       cursor: 'pointer',
                       borderLeft: isSelected ? '2px solid var(--accent)' : '2px solid transparent',
                       background: isSelected ? 'var(--accent-muted)' : 'transparent',
-                      transition: 'background 80ms ease',
+                      transition: 'background 80ms var(--motion-ease-out)',
                       height: `${ROW_HEIGHT}px`,
                       position: shouldVirtualize ? 'absolute' : 'relative',
                       left: 0,
